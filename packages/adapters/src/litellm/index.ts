@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import type { InvokeContext, InvokeEvent, RuntimeAdapter, RuntimeSession } from "@loom/core";
+import type { InvokeContext, InvokeEvent, McpInvokeServer, RuntimeAdapter, RuntimeSession } from "@loom/core";
 
 export const litellmAdapterId = "litellm";
 
@@ -12,6 +12,36 @@ function getTopic(ctx: InvokeContext): string {
     : typeof ctx.resolvedInputs.prompt === "string"
       ? ctx.resolvedInputs.prompt
       : "anything";
+}
+
+function getFirstMcpServer(ctx: InvokeContext): [string, McpInvokeServer] | undefined {
+  return ctx.mcps ? Object.entries(ctx.mcps)[0] : undefined;
+}
+
+function buildMockToolArgs(topic: string): { text: string } {
+  return { text: `mock tool input: ${topic}` };
+}
+
+function buildOpenAiTools(ctx: InvokeContext): Array<Record<string, unknown>> {
+  return Object.entries(ctx.mcps ?? {}).flatMap(([serverId, server]) => server.tools.map((tool) => ({
+    type: "function",
+    function: {
+      name: `${serverId}__${tool.name}`,
+      description: tool.description,
+      parameters: tool.inputSchema ?? { type: "object", additionalProperties: true },
+    },
+  })));
+}
+
+function parseQualifiedToolName(name: string): { serverId: string; toolName: string } {
+  const divider = name.indexOf("__");
+  if (divider === -1) {
+    throw new Error(`invalid LiteLLM tool name: ${name}`);
+  }
+  return {
+    serverId: name.slice(0, divider),
+    toolName: name.slice(divider + 2),
+  };
 }
 
 async function waitForProxyReady(baseUrl: string): Promise<void> {
@@ -98,7 +128,7 @@ async function resolveBaseUrl(runtime: RuntimeSession | undefined): Promise<stri
   return undefined;
 }
 
-function extractDeltaText(line: string): string | undefined {
+function parseSsePayload(line: string): Record<string, unknown> | undefined {
   if (!line.startsWith("data:")) {
     return undefined;
   }
@@ -108,20 +138,18 @@ function extractDeltaText(line: string): string | undefined {
     return undefined;
   }
 
-  const parsed = JSON.parse(payload) as { choices?: Array<{ delta?: { content?: string } }> };
-  const text = parsed.choices?.[0]?.delta?.content;
-  return typeof text === "string" && text.length > 0 ? text : undefined;
+  return JSON.parse(payload) as Record<string, unknown>;
 }
 
-async function* streamFromLiteLLM(baseUrl: string, model: string, topic: string): AsyncIterable<string> {
+async function streamLiteLLMCompletion(
+  baseUrl: string,
+  body: Record<string, unknown>,
+  onChunk: (chunk: Record<string, unknown>) => Promise<void> | void,
+): Promise<void> {
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      model,
-      stream: true,
-      messages: [{ role: "user", content: topic }],
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok || !response.body) {
@@ -137,16 +165,16 @@ async function* streamFromLiteLLM(baseUrl: string, model: string, topic: string)
     buffer = lines.pop() ?? "";
 
     for (const rawLine of lines) {
-      const text = extractDeltaText(rawLine.trim());
-      if (text) {
-        yield text;
+      const parsed = parseSsePayload(rawLine.trim());
+      if (parsed) {
+        await onChunk(parsed);
       }
     }
   }
 
-  const trailing = extractDeltaText(buffer.trim());
+  const trailing = parseSsePayload(buffer.trim());
   if (trailing) {
-    yield trailing;
+    await onChunk(trailing);
   }
 }
 
@@ -162,11 +190,32 @@ class LitellmAdapter implements RuntimeAdapter {
     const model = typeof ctx.node.config.model === "string" ? ctx.node.config.model : "unknown-model";
 
     if (process.env.LOOM_MOCK === "1") {
-      const reply = `LiteLLM(${model}) replies about ${topic}.`;
-      const words = reply.split(" ");
-      for (let index = 0; index < words.length; index += 1) {
-        const chunk = index === 0 ? words[index] : ` ${words[index]}`;
-        yield { kind: "token", text: chunk };
+      const firstServer = getFirstMcpServer(ctx);
+      if (!firstServer) {
+        const reply = `LiteLLM(${model}) replies about ${topic}.`;
+        const words = reply.split(" ");
+        for (let index = 0; index < words.length; index += 1) {
+          const chunk = index === 0 ? words[index] : ` ${words[index]}`;
+          yield { kind: "token", text: chunk };
+        }
+        yield { kind: "final", output: reply };
+        return;
+      }
+
+      const [, server] = firstServer;
+      const tool = server.tools[0];
+      if (!tool) {
+        throw new Error("mock LiteLLM MCP server exposes no tools");
+      }
+      const args = buildMockToolArgs(topic);
+      yield { kind: "tool_call", name: tool.name, args };
+      const result = await server.callTool(tool.name, args);
+      yield { kind: "tool_result", name: tool.name, result };
+      const reply = `LiteLLM(${model}) replies about ${topic}.\n[tool_call] ${JSON.stringify({ name: tool.name, arguments: args })}\n[tool_result] ${JSON.stringify(result)}`;
+      for (const part of reply.split(/(\s+)/)) {
+        if (part.length > 0) {
+          yield { kind: "token", text: part };
+        }
       }
       yield { kind: "final", output: reply };
       return;
@@ -185,17 +234,76 @@ class LitellmAdapter implements RuntimeAdapter {
         return;
       }
 
+      const tools = buildOpenAiTools(ctx);
+      const messages: Array<Record<string, unknown>> = [{ role: "user", content: topic }];
       let reply = "";
-      for await (const chunk of streamFromLiteLLM(baseUrl, model, topic)) {
-        reply += chunk;
-        yield { kind: "token", text: chunk };
-      }
 
-      if (reply.length === 0) {
-        throw new Error("litellm stream returned no text");
-      }
+      while (true) {
+        let pendingToolCall:
+          | { id: string; name: string; argumentsText: string }
+          | undefined;
 
-      yield { kind: "final", output: reply };
+        const streamedTokens: string[] = [];
+        await streamLiteLLMCompletion(baseUrl, {
+          model,
+          stream: true,
+          messages,
+          tools: tools.length > 0 ? tools : undefined,
+        }, async (chunk) => {
+          const choice = Array.isArray(chunk.choices) ? chunk.choices[0] as Record<string, unknown> : undefined;
+          const delta = choice?.delta as Record<string, unknown> | undefined;
+          const content = delta?.content;
+          if (typeof content === "string" && content.length > 0) {
+            reply += content;
+            streamedTokens.push(content);
+          }
+          const toolCalls = Array.isArray(delta?.tool_calls) ? delta.tool_calls as Array<Record<string, unknown>> : [];
+          for (const toolCall of toolCalls) {
+            const callId = typeof toolCall.id === "string" ? toolCall.id : pendingToolCall?.id ?? "call_0";
+            const fn = toolCall.function as Record<string, unknown> | undefined;
+            const fnName = typeof fn?.name === "string" ? fn.name : pendingToolCall?.name;
+            const argumentsText = typeof fn?.arguments === "string"
+              ? `${pendingToolCall?.argumentsText ?? ""}${fn.arguments}`
+              : pendingToolCall?.argumentsText ?? "";
+            if (fnName) {
+              pendingToolCall = { id: callId, name: fnName, argumentsText };
+            }
+          }
+        });
+        for (const token of streamedTokens) {
+          yield { kind: "token", text: token };
+        }
+
+        if (!pendingToolCall) {
+          if (reply.length === 0) {
+            throw new Error("litellm stream returned no text");
+          }
+          yield { kind: "final", output: reply };
+          return;
+        }
+
+        const { serverId, toolName } = parseQualifiedToolName(pendingToolCall.name);
+        const server = ctx.mcps?.[serverId];
+        if (!server) {
+          throw new Error(`LiteLLM tool requested unknown MCP server ${serverId}`);
+        }
+        const parsedArgs = pendingToolCall.argumentsText.length > 0
+          ? JSON.parse(pendingToolCall.argumentsText)
+          : {};
+        yield { kind: "tool_call", name: toolName, args: parsedArgs };
+        const result = await server.callTool(toolName, parsedArgs);
+        yield { kind: "tool_result", name: toolName, result };
+        messages.push({ role: "assistant", content: reply, tool_calls: [{
+          id: pendingToolCall.id,
+          type: "function",
+          function: { name: pendingToolCall.name, arguments: pendingToolCall.argumentsText },
+        }] });
+        messages.push({
+          role: "tool",
+          tool_call_id: pendingToolCall.id,
+          content: JSON.stringify(result),
+        });
+      }
     } catch (error) {
       yield {
         kind: "error",
