@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import YAML from "yaml";
@@ -141,6 +141,7 @@ async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknow
         const content = typeof resolvedInputs.content === "string"
           ? resolvedInputs.content
           : JSON.stringify(resolvedInputs.content ?? null, null, 2);
+        await mkdir(path.dirname(absolutePath), { recursive: true });
         await writeFile(absolutePath, content, "utf8");
         return { path: filePath, content, mode };
       }
