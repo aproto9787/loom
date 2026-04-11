@@ -4,7 +4,7 @@ import { runFlow } from "./runner.js";
 
 const runRequestSchema = z.object({
   flowPath: z.string().min(1),
-  inputs: z.record(z.unknown()).default({}),
+  inputs: z.record(z.string(), z.unknown()).default({}),
 });
 
 export function buildServer() {
