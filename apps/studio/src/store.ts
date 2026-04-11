@@ -1,0 +1,146 @@
+import { create } from "zustand";
+
+export type RunStreamEvent =
+  | { kind: "run_start"; runId: string; flowName: string }
+  | { kind: "node_start"; nodeId: string; type: string }
+  | { kind: "node_token"; nodeId: string; text: string }
+  | { kind: "node_complete"; nodeId: string; output: unknown }
+  | { kind: "node_skipped"; nodeId: string }
+  | { kind: "node_error"; nodeId: string; message: string }
+  | {
+      kind: "run_complete";
+      runId: string;
+      flowName: string;
+      outputs: Record<string, unknown>;
+      nodeResults: Array<{ nodeId: string; output: unknown }>;
+    }
+  | { kind: "run_error"; runId?: string; message: string };
+
+export type NodeRunState = "pending" | "running" | "done" | "skipped" | "error";
+
+export interface NodeRuntime {
+  id: string;
+  type?: string;
+  state: NodeRunState;
+  tokens: string[];
+  output?: unknown;
+  error?: string;
+}
+
+interface RunState {
+  flowPath: string;
+  inputsJson: string;
+  isStreaming: boolean;
+  runId?: string;
+  flowName?: string;
+  events: RunStreamEvent[];
+  nodeRuntimes: Record<string, NodeRuntime>;
+  finalOutputs?: Record<string, unknown>;
+  runError?: string;
+  setFlowPath: (value: string) => void;
+  setInputsJson: (value: string) => void;
+  beginStream: () => void;
+  ingest: (event: RunStreamEvent) => void;
+  endStream: () => void;
+}
+
+function emptyNode(id: string): NodeRuntime {
+  return { id, state: "pending", tokens: [] };
+}
+
+export const useRunStore = create<RunState>((set) => ({
+  flowPath: "examples/hello.yaml",
+  inputsJson: '{\n  "topic": "loom studio"\n}',
+  isStreaming: false,
+  events: [],
+  nodeRuntimes: {},
+  setFlowPath: (value) => set({ flowPath: value }),
+  setInputsJson: (value) => set({ inputsJson: value }),
+  beginStream: () =>
+    set({
+      isStreaming: true,
+      events: [],
+      nodeRuntimes: {},
+      finalOutputs: undefined,
+      runError: undefined,
+      runId: undefined,
+      flowName: undefined,
+    }),
+  endStream: () => set({ isStreaming: false }),
+  ingest: (event) =>
+    set((state) => {
+      const nextEvents = [...state.events, event];
+      const nextNodes: Record<string, NodeRuntime> = { ...state.nodeRuntimes };
+      let nextRunId = state.runId;
+      let nextFlowName = state.flowName;
+      let nextOutputs = state.finalOutputs;
+      let nextRunError = state.runError;
+
+      switch (event.kind) {
+        case "run_start":
+          nextRunId = event.runId;
+          nextFlowName = event.flowName;
+          break;
+        case "node_start": {
+          const current = nextNodes[event.nodeId] ?? emptyNode(event.nodeId);
+          nextNodes[event.nodeId] = {
+            ...current,
+            state: "running",
+            type: event.type,
+          };
+          break;
+        }
+        case "node_token": {
+          const current = nextNodes[event.nodeId] ?? emptyNode(event.nodeId);
+          nextNodes[event.nodeId] = {
+            ...current,
+            tokens: [...current.tokens, event.text],
+          };
+          break;
+        }
+        case "node_complete": {
+          const current = nextNodes[event.nodeId] ?? emptyNode(event.nodeId);
+          nextNodes[event.nodeId] = {
+            ...current,
+            state: "done",
+            output: event.output,
+          };
+          break;
+        }
+        case "node_skipped": {
+          const current = nextNodes[event.nodeId] ?? emptyNode(event.nodeId);
+          nextNodes[event.nodeId] = {
+            ...current,
+            state: "skipped",
+          };
+          break;
+        }
+        case "node_error": {
+          const current = nextNodes[event.nodeId] ?? emptyNode(event.nodeId);
+          nextNodes[event.nodeId] = {
+            ...current,
+            state: "error",
+            error: event.message,
+          };
+          break;
+        }
+        case "run_complete":
+          nextOutputs = event.outputs;
+          break;
+        case "run_error":
+          nextRunError = event.message;
+          break;
+        default:
+          break;
+      }
+
+      return {
+        events: nextEvents,
+        nodeRuntimes: nextNodes,
+        runId: nextRunId,
+        flowName: nextFlowName,
+        finalOutputs: nextOutputs,
+        runError: nextRunError,
+      };
+    }),
+}));
