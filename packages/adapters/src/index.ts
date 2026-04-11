@@ -1,26 +1,17 @@
 export * from "./claude-api/index.js";
+export * from "./claude-code/index.js";
+export * from "./codex/index.js";
+export * from "./litellm/index.js";
 
-import type { FlowNode, RuntimeAdapter } from "@loom/core";
+import type { RuntimeAdapter } from "@loom/core";
 import { claudeApiAdapter } from "./claude-api/index.js";
-
-class StubAdapter implements RuntimeAdapter {
-  constructor(
-    public readonly id: string,
-    private readonly supported: FlowNode["type"][],
-  ) {}
-
-  supports(nodeType: FlowNode["type"]): boolean {
-    return this.supported.includes(nodeType);
-  }
-
-  async *invoke(): AsyncIterable<never> {
-    throw new Error(`${this.id} is not implemented in this slice`);
-  }
-}
+import { claudeCodeAdapter } from "./claude-code/index.js";
+import { codexAdapter } from "./codex/index.js";
+import { litellmAdapter } from "./litellm/index.js";
 
 export const runtimeAdapters: RuntimeAdapter[] = [
   claudeApiAdapter,
-  new StubAdapter("litellm", ["agent.litellm"]),
-  new StubAdapter("claude-code", ["agent.claude-code"]),
-  new StubAdapter("codex", ["agent.codex"]),
+  litellmAdapter,
+  claudeCodeAdapter,
+  codexAdapter,
 ];
