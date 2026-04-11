@@ -101,3 +101,22 @@ export interface RunResponse {
   outputs: Record<string, unknown>;
   nodeResults: RunNodeResult[];
 }
+
+// Streaming event types surfaced by the runner through `streamRunFlow()`
+// and forwarded to SSE clients. `kind` is used as the SSE `event:` field
+// and the remainder of each object is the JSON `data:` payload.
+export type RunEvent =
+  | { kind: "run_start"; runId: string; flowName: string }
+  | { kind: "node_start"; nodeId: string; type: string }
+  | { kind: "node_token"; nodeId: string; text: string }
+  | { kind: "node_complete"; nodeId: string; output: unknown }
+  | { kind: "node_skipped"; nodeId: string }
+  | { kind: "node_error"; nodeId: string; message: string }
+  | {
+      kind: "run_complete";
+      runId: string;
+      flowName: string;
+      outputs: Record<string, unknown>;
+      nodeResults: RunNodeResult[];
+    }
+  | { kind: "run_error"; runId: string; message: string };
