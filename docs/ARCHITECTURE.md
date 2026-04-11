@@ -89,10 +89,22 @@ interface RuntimeAdapter {
   The real SDK path is a scaffold that throws a descriptive error
   and will be replaced with `@anthropic-ai/sdk` calls in a later
   slice.
-- `claude-code`, `codex` and `litellm` adapters are registered stubs
-  that report the relevant node type via `supports()` and surface
-  a "not implemented" error when invoked, so the registry is always
-  complete and the v0.2 adapter work has a clean place to land.
+- `litellm` is now a mock-first adapter as well. It emits a canned
+  reply embedding the configured model and topic, split into word
+  chunks so the runner and studio see real token events. The real
+  proxy path is scaffolded behind `LOOM_LITELLM_URL` and throws a
+  "not wired" error until the Python subprocess bridge lands.
+- `claude-code` and `codex` adapters are registered stubs that report
+  the relevant node type via `supports()` and surface a "not
+  implemented" error when invoked, so the registry is always complete
+  and the v0.2 adapter work has a clean place to land.
+- `mcp/client.ts` ships an `MCPStdioClient` that speaks the minimal
+  JSON-RPC 2.0 subset (initialize + tools/list + tools/call) over
+  newline-delimited JSON on a child_process. The runner uses it to
+  execute `mcp.server` nodes: spawn the command from `config`, walk
+  the handshake, list tools, expose `{serverInfo, tools, toolCount}`
+  as the node output, and kill every subprocess in a finally block
+  so they cannot leak.
 
 ## Studio canvas
 
@@ -131,10 +143,13 @@ flow just updates the graph preview and leaves the rest in sync.
 
 ## What is not here yet
 
-- Real LLM calls. Every agent node runs through the mock adapter
-  today.
-- MCP server nodes. The `mcps` field in `flow.yaml` parses fine but
-  the runner does not yet spawn subprocesses for them.
+- Real LLM calls. Every agent node runs through a mock adapter
+  today (`claude-api` and `litellm` both fabricate responses).
+- Python LiteLLM proxy subprocess. The real HTTP path is scaffolded
+  behind `LOOM_LITELLM_URL` but not yet exercised end-to-end.
+- MCP `tools/call`. `mcp.server` nodes spawn, initialize and list
+  tools, but actually invoking a listed tool from an agent node
+  is a v0.2 stretch.
 - Graph editing. The canvas is read-only; dragging, connecting and
   inspecting nodes lands later with the node palette work.
 - Run replay. Traces are persisted to SQLite but the studio does

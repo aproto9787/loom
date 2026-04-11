@@ -1,0 +1,306 @@
+# Loom — Build Progress Log
+
+This document tracks what has been shipped so far in the Loom v0.1
+slice, phase by phase, so that a later session can pick up from a
+concrete baseline instead of re-reading the full git history.
+
+Each phase lists the goal, the commits it produced, and the
+acceptance checks that were actually executed against a running
+server. Phases are numbered in the order they landed; they do not
+always map 1:1 to the README v0.1 roadmap because some pragmatic
+splits were made during implementation.
+
+---
+
+## Phase 1 — Scaffold + first vertical slice
+
+**Goal.** Turn the empty `/home/argoss/asos/dev/Project/loom`
+directory (one README.md, no git) into a running monorepo with a
+working `io.input → agent.claude → io.output` flow reachable via
+`POST /runs`.
+
+**Commits.**
+
+```
+894dce6 docs: track existing README spec
+61087eb chore: typescript base configs and workspace tooling
+fa80e48 chore: initial repo layout and pnpm workspace
+0c19210 chore(ts): align workspace tsconfigs
+a688d8f feat(core): extend flow schema
+f6d1a80 feat(core): zod schemas for flow, node, edge, run
+0479f4c feat(server): fastify bootstrap with /health
+9ad6b43 feat(server): wire runner dependencies
+32728fe fix(server): align run request schema
+4a56fad fix(server): resolve flow paths from workspace root
+d95cd5e fix(server): prevent workspace escape on /runs flowPath
+a78df5d feat(adapters/claude-api): mock-mode stub implementing RuntimeAdapter
+d969dd9 feat(adapters): add runtime stub exports
+ba1fb10 fix(core): restrict runnable node types in v0.1 slice
+56ed7f7 feat(adapters): register claude-code/codex/litellm stubs in runtime registry
+fa976b1 fix(core): widen RuntimeAdapter.supports to accept any node type string
+a092e65 chore(workspace): add shared tooling deps
+8482d4d feat(studio): add vite react canvas shell
+f923473 docs: add architecture note
+```
+
+**Acceptance verified.**
+
+- `pnpm install` + `pnpm --filter @loom/server build` pass
+- `GET /health` → `200 {"ok":true}`
+- `POST /runs` with `examples/hello.yaml` returns mock Claude reply
+- `POST /runs` with `flowPath=../../etc/passwd` → `400` (examples/
+  whitelist)
+- `pnpm --filter @loom/studio dev` boots Vite in < 200 ms with an
+  empty React Flow canvas
+- README.md is tracked with no content diff (`diff <(git show
+  HEAD:README.md) README.md` is empty)
+
+---
+
+## Phase 2A — Runtime extension: router.code, io.file, SQLite traces
+
+**Goal.** Add three more v0.1 node types (`router.code`, `io.file`)
+plus a SQLite-backed trace/checkpoint store, and wire everything
+through an example flow that exercises real branching plus file
+output.
+
+**Commits.**
+
+```
+bac310e feat(server): add router file traces
+8d786e6 fix(runner): create parent directories for io.file write
+```
+
+**Acceptance verified.**
+
+- `examples/router-file.yaml` (`mode=short` / `mode=long`) runs end
+  to end, producing distinct `outputs/short.txt` or `outputs/long.txt`
+- `.loom/traces.db` accumulates rows in both `runs` and
+  `node_results` tables (`node:sqlite` internal module)
+- Existing hello.yaml contract still passes (`runId` added, backward
+  compatible `RunResponse` shape preserved)
+- `outputs/` and `.loom/` are in .gitignore
+
+---
+
+## Phase 2B-1 — SSE streaming backend
+
+**Goal.** Replace the "collect then respond" runner with an async
+iterable of `RunEvent`s, and expose a new SSE endpoint so clients
+can observe each node_start / node_token / node_complete /
+node_skipped / node_error / run_complete live.
+
+**Commits.**
+
+```
+ef90ce6 feat(core): add RunEvent stream union for runner output
+16b98d0 refactor(adapters/claude-api): emit mock reply as word-sized token chunks
+e5a8e22 refactor(runner): stream run events through an async iterable
+f5dc22b feat(server): add POST /runs/stream SSE endpoint
+```
+
+**Acceptance verified.**
+
+- `curl -N -X POST /runs/stream` streams a full event sequence for
+  both hello.yaml and router-file.yaml (6+ node_token blocks per
+  agent node)
+- `POST /runs` still returns the identical `RunResponse` payload
+  (runFlow consumes streamRunFlow internally)
+- flowPath whitelist + persistRun still apply to the streaming path
+
+---
+
+## Phase 2B-2 — Studio run panel + live state
+
+**Goal.** Drive the studio from the server. Add a zustand run store,
+an SSE client hook that POSTs to `/runs/stream`, and a RunPanel
+component that renders node cards tinted by live state (running,
+done, skipped, error) and carries a streamed token buffer.
+
+**Commits.**
+
+```
+ab0c91e feat(studio): add zustand store for live run state
+b391639 feat(studio): add useSseRun hook streaming POST /runs/stream
+b7ef995 feat(studio): live run panel rendering streamed node events
+```
+
+**Acceptance verified.**
+
+- `pnpm --filter @loom/studio build` passes end-to-end (tsc -b +
+  vite build)
+- Vite dev boot succeeds with no runtime errors in the browser
+  console
+- Manual smoke: Run flow button against the local server produces a
+  running → done animation across the node cards while the token
+  buffer fills in real time
+
+---
+
+## Phase 2C — React Flow canvas driven by the loaded flow
+
+**Goal.** Stop showing an empty React Flow. Let the sidebar list
+example flows from the server, fetch the selected one, convert it
+into React Flow nodes/edges, and overlay live run state classes on
+the graph so the canvas itself becomes the run visualisation.
+
+**Commits.**
+
+```
+54536dd feat(server): expose /flows and /flows/get for studio loading
+7461c54 feat(studio): flowToGraph converter and expanded run store
+cb1dadb feat(studio): render loaded flow on react flow canvas with live state
+```
+
+**Acceptance verified.**
+
+- `GET /flows` returns the list of `examples/*.yaml`
+- `GET /flows/get?path=examples/hello.yaml` returns a parsed
+  LoomFlow (zod-validated), `?path=../../etc/passwd` → `400`
+- Studio loads flows from the sidebar; switching flow changes the
+  canvas preview and the Run panel's flowPath in lockstep
+- CORS preflight works for the Vite dev server (`Origin:
+  http://localhost:5173` → 204 with permissive headers)
+
+---
+
+## Phase 2D — MCP stdio subprocess nodes
+
+**Goal.** Make `mcp.server` a first-class runnable node. Spawn a
+real subprocess, walk the MCP JSON-RPC initialize handshake, list
+the server's tools, surface them as the node output, and clean up
+every subprocess when the run ends.
+
+**Commits.**
+
+```
+200314d feat(core): allow mcp.server nodes in the v0.1 schema
+241b149 feat(adapters/mcp): stdio JSON-RPC client for MCP subprocesses
+db61319 feat(server): bundled mock MCP server for demos
+1b16594 feat(runner): execute mcp.server nodes via MCPStdioClient
+```
+
+**Acceptance verified.**
+
+- `POST /runs` with `examples/mcp-demo.yaml` spawns
+  `node apps/server/src/mock-mcp-server.mjs`, completes the
+  handshake, returns `{toolCount: 2, tools: [echo, upper]}`
+- Subprocess is terminated in the runner's finally block (no
+  `ps` leak after the run)
+- No external MCP binary is required — the bundled mock server is a
+  regular Node script using the same newline-delimited JSON framing
+  Claude Code hosts expect
+
+---
+
+## Phase 2E — LiteLLM adapter mock mode
+
+**Goal.** Turn the `agent.litellm` adapter from a pure stub into a
+mock-first implementation mirroring `claude-api`, so the studio can
+compare Claude and LiteLLM streams side by side in a single flow.
+
+**Commits.**
+
+```
+31e4896 feat(adapters/litellm): mock-mode token streaming and demo flow
+```
+
+**Acceptance verified.**
+
+- `examples/litellm-demo.yaml` runs both `agent.claude` and
+  `agent.litellm` branches and returns two independent replies
+- `POST /runs/stream` yields distinct `node_token` events tagged
+  with each branch's nodeId (`claude_branch`, `litellm_branch`)
+- Real LiteLLM proxy path is scaffolded behind `LOOM_LITELLM_URL`
+  and surfaces an explicit "not wired" error until wired up in a
+  later slice
+
+---
+
+## Phase 2F — Documentation + progress log (this phase)
+
+**Goal.** Update the architecture document to cover everything that
+landed in Phases 2B-2 → 2E, and drop this PROGRESS.md so that a
+later session can see the phase layout, commit map and acceptance
+evidence without re-reading diffs.
+
+**Commits.**
+
+```
+de35d11 chore(examples): add file-read demo exercising io.file read path
+8f7af58 docs(architecture): describe runner, studio and trace store
+# + the commits produced by this phase
+```
+
+---
+
+## Current v0.1 coverage
+
+README v0.1 roadmap item | status
+--- | ---
+pnpm monorepo + tsc strict + zod schemas | shipped
+Fastify `POST /runs` (sync) | shipped
+Fastify `POST /runs/stream` (SSE) | shipped
+Fastify `GET /flows` + `GET /flows/get` | shipped
+Runner topological executor | shipped
+`io.input` / `io.output` / `io.file` | shipped
+`router.code` + `when:` branch skipping | shipped
+`agent.claude` mock adapter with real token chunks | shipped
+`agent.litellm` mock adapter with real token chunks | shipped
+`mcp.server` subprocess node with JSON-RPC handshake | shipped
+SQLite traces (runs + node_results) via `node:sqlite` | shipped
+Workspace escape protection for flowPath and io.file | shipped
+Studio React Flow canvas rendering the loaded flow | shipped
+Studio RunPanel + SSE client + live token buffer | shipped
+CORS for the Vite dev server | shipped
+Graph editing (drag/connect/inspect) | not yet
+Run replay timeline | not yet
+Real `@anthropic-ai/sdk` calls | not yet
+Real LiteLLM Python proxy bridge | not yet
+Real MCP `tools/call` from an agent node | not yet
+
+---
+
+## Operational notes for next session
+
+- `foreman-run.sh` (GPT-5.4 headless worker) was used for Phase 1
+  and Phase 2A with mixed success: it ships code but keeps
+  forgetting to write the REPORT file (Write tool), and in Phase
+  2B-1 the spawned codex worker never replied. Going forward the
+  team-lead treats backend slices of ≤ 5 files as "lead-direct"
+  escape-hatch territory; foreman stays available for larger
+  surface-area passes but is no longer the default.
+- Frontend work is team-lead-direct by policy (Claude Opus),
+  because the foreman backend runs on GPT-5.4.
+- Every commit so far is a normal merge into `master`. No branches,
+  no rebases, no force-pushes.
+- The `.loom/traces.db`, `outputs/`, `node_modules` and all dist
+  trees are in `.gitignore`. README.md is unchanged since it was
+  first tracked (Phase 1), and every phase has kept that invariant.
+- To drive the system manually:
+  1. Terminal A: `pnpm --filter @loom/server dev` (or
+     `node apps/server/dist/index.js` after `pnpm --filter
+     @loom/server build`)
+  2. Terminal B: `pnpm --filter @loom/studio dev`
+  3. Browser: open `http://localhost:5173/`, pick a flow in the
+     sidebar, hit Run flow.
+
+---
+
+## Natural next slices
+
+1. **Phase 2G — Studio MCP surfacing.** Render `mcp.server` nodes'
+   tool list inside the run panel so the demo is visible in the UI.
+2. **Phase 2H — Real `@anthropic-ai/sdk` wiring.** Replace the
+   `claude-api` mock branch with a real streaming call gated on
+   `ANTHROPIC_API_KEY`. Keep the mock path as a fallback.
+3. **Phase 2I — LiteLLM subprocess bridge.** Spawn a local LiteLLM
+   proxy the first time an `agent.litellm` node runs in non-mock
+   mode, and reuse it for subsequent calls.
+4. **Phase 3 — Graph editing.** Node palette + drag-and-drop +
+   inspector panel; write edits back to the underlying YAML file.
+5. **Phase 4 — Run replay.** Surface the SQLite trace rows in the
+   studio and add a timeline scrubber.
+
+These map roughly onto the README's v0.2 → v1.0 roadmap and are
+the obvious next steps after the current v0.1 MVP+ is in place.
