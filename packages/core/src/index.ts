@@ -23,25 +23,18 @@ export const branchConditionSchema = z.object({
   target: z.string().min(1),
 });
 
+export const supportedNodeTypesV01 = [
+  "io.input",
+  "io.output",
+  "io.file",
+  "agent.claude",
+  "agent.litellm",
+] as const;
+
+// NOTE: v0.1 slice only. v0.2+ types (router.*, control.*, memory.*, mcp.*, agent.claude-code, agent.codex) will join this schema in the next milestone.
 export const flowNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum([
-    "io.input",
-    "io.output",
-    "io.file",
-    "agent.claude",
-    "agent.litellm",
-    "agent.claude-code",
-    "agent.codex",
-    "router.code",
-    "router.llm",
-    "control.loop",
-    "control.parallel",
-    "control.join",
-    "memory.blackboard",
-    "memory.memento",
-    "mcp.server",
-  ]),
+  type: z.enum(supportedNodeTypesV01),
   config: z.record(z.string(), z.unknown()).default({}),
   mcps: z.array(z.string()).default([]),
   inputs: z.record(z.string(), referenceSchema).default({}),
