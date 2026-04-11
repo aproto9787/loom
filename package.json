@@ -1,0 +1,8 @@
+{
+  "name": "loom",
+  "private": true,
+  "packageManager": "pnpm@10.7.1",
+  "scripts": {
+    "typecheck": "pnpm -r typecheck"
+  }
+}

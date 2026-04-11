@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/adapters" },
+    { "path": "./packages/nodes" },
+    { "path": "./apps/server" },
+    { "path": "./apps/studio" }
+  ]
+}

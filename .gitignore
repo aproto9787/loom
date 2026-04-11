@@ -1,0 +1,12 @@
+node_modules
+pnpm-lock.yaml
+*.tsbuildinfo
+dist
+coverage
+.env
+.env.*
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+vite.config.ts.timestamp-*
