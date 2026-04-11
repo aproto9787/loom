@@ -1,0 +1,37 @@
+version: loom/v1
+name: MCP Tool Use Demo
+description: Let a mock Claude agent call the bundled mock MCP echo tool and surface the tool trace.
+
+inputs:
+  - id: prompt
+    type: text
+    prompt: "What should the MCP echo tool repeat?"
+
+mcps:
+  - id: mock_tools
+    command: node
+    args:
+      - apps/server/src/mock-mcp-server.mjs
+
+nodes:
+  - id: prompt_input
+    type: io.input
+  - id: claude_with_tools
+    type: agent.claude
+    mcps:
+      - mock_tools
+    config:
+      model: claude-opus-4-6
+      system: Use the available MCP tool when it helps answer the prompt.
+    inputs:
+      prompt:
+        from: $inputs.prompt
+  - id: output
+    type: io.output
+    inputs:
+      value:
+        from: claude_with_tools.output
+
+outputs:
+  - id: result
+    from: output.output
