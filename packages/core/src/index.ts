@@ -30,9 +30,10 @@ export const supportedNodeTypesV01 = [
   "router.code",
   "agent.claude",
   "agent.litellm",
+  "mcp.server",
 ] as const;
 
-// NOTE: v0.1 slice only. v0.2+ types (router.*, control.*, memory.*, mcp.*, agent.claude-code, agent.codex) will join this schema in the next milestone.
+// NOTE: v0.1 slice. v0.2+ types (router.llm, control.*, memory.*, agent.claude-code, agent.codex) will join this schema in the next milestone.
 export const flowNodeSchema = z.object({
   id: z.string().min(1),
   type: z.enum(supportedNodeTypesV01),
