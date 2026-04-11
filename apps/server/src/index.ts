@@ -1,6 +1,9 @@
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import Fastify from "fastify";
 import { z } from "zod";
+import YAML from "yaml";
+import { flowSchema } from "@loom/core";
 import { runFlow, streamRunFlow } from "./runner.js";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
@@ -25,7 +28,47 @@ const runRequestSchema = z.object({
 export function buildServer() {
   const app = Fastify({ logger: true });
 
+  // CORS for studio dev server (http://localhost:5173 → http://localhost:8787)
+  app.addHook("onSend", async (_request, reply) => {
+    reply.header("Access-Control-Allow-Origin", "*");
+    reply.header("Access-Control-Allow-Headers", "content-type");
+    reply.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  });
+
+  app.options("/*", async (_request, reply) => reply.code(204).send());
+
   app.get("/health", async () => ({ ok: true }));
+
+  app.get("/flows", async () => {
+    const entries = await readdir(allowedFlowDir, { withFileTypes: true });
+    const files = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".yaml"))
+      .map((entry) => `examples/${entry.name}`)
+      .sort();
+    return { flows: files };
+  });
+
+  const flowQuerySchema = z.object({
+    path: z.string().min(1).refine(isAllowedFlowPath, {
+      message: "path must stay within examples/",
+    }),
+  });
+
+  app.get("/flows/get", async (request, reply) => {
+    const parsed = flowQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    const absolutePath = path.resolve(workspaceRoot, parsed.data.path);
+    const raw = await readFile(absolutePath, "utf8");
+    const parsedFlow = flowSchema.safeParse(YAML.parse(raw));
+    if (!parsedFlow.success) {
+      return reply.code(400).send({ error: parsedFlow.error.flatten() });
+    }
+
+    return reply.code(200).send({ flowPath: parsed.data.path, flow: parsedFlow.data });
+  });
 
   app.post("/runs", async (request, reply) => {
     const parsed = runRequestSchema.safeParse(request.body);
