@@ -1,4 +1,5 @@
 import { Background, Controls, ReactFlow, type Edge, type Node } from "reactflow";
+import { RunPanel } from "./RunPanel.js";
 
 const nodes: Node[] = [];
 const edges: Edge[] = [];
@@ -9,7 +10,10 @@ export default function App() {
       <aside className="sidebar">
         <p className="eyebrow">Palette</p>
         <h1>Loom Studio</h1>
-        <p className="sidebar-copy">Drag-and-drop nodes will land here in the next slice.</p>
+        <p className="sidebar-copy">
+          Drive the Loom server from this panel. Flow nodes animate in the run view as
+          the backend streams events.
+        </p>
         <div className="placeholder-card">
           <span>io.input</span>
           <span>router.code</span>
@@ -20,10 +24,13 @@ export default function App() {
       </aside>
       <main className="canvas-shell">
         <div className="canvas-header">Loom Studio</div>
-        <ReactFlow fitView nodes={nodes} edges={edges} proOptions={{ hideAttribution: true }}>
-          <Background gap={20} size={1.1} color="#d9d6cf" />
-          <Controls />
-        </ReactFlow>
+        <div className="canvas-body">
+          <ReactFlow fitView nodes={nodes} edges={edges} proOptions={{ hideAttribution: true }}>
+            <Background gap={20} size={1.1} color="#d9d6cf" />
+            <Controls />
+          </ReactFlow>
+          <RunPanel />
+        </div>
       </main>
     </div>
   );
