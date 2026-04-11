@@ -2,7 +2,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import YAML from "yaml";
-import { flowSchema, type FlowNode, type LoomFlow, type RunNodeResult, type RunResponse } from "@loom/core";
+import {
+  flowSchema,
+  type FlowNode,
+  type LoomFlow,
+  type RunEvent,
+  type RunNodeResult,
+  type RunResponse,
+} from "@loom/core";
 import { runtimeAdapters } from "@loom/adapters";
 import { persistRun } from "./trace-store.js";
 
@@ -175,65 +182,149 @@ export async function loadFlow(flowPath: string): Promise<LoomFlow> {
   return flowSchema.parse(YAML.parse(raw));
 }
 
-export async function runFlow(flowPath: string, requestedInputs: Record<string, unknown>): Promise<RunResponse> {
-  const flow = await loadFlow(flowPath);
-  const values = new Map<string, unknown>();
-  const nodeResults: RunNodeResult[] = [];
-  const runId = randomUUID();
+function evaluateWhen(
+  when: string,
+  values: Map<string, unknown>,
+): boolean {
+  const [left, right] = when.split(/\s*==\s*/);
+  if (!left || right === undefined) {
+    return true;
+  }
+  const expected = right.trim().replace(/^['"]|['"]$/g, "");
+  const [routerId, field] = left.trim().split(".");
+  const routerOutput = values.get(routerId) as Record<string, unknown> | undefined;
+  const actual = field ? routerOutput?.[field] : undefined;
+  return actual === expected;
+}
 
-  for (const node of topologicalSort(flow.nodes)) {
-    if (node.when) {
-      const [left, right] = node.when.split(/\s*==\s*/);
-      const expected = right?.replace(/^['"]|['"]$/g, "");
-      const [routerId, field] = left.split(".");
-      const routerOutput = values.get(routerId) as Record<string, unknown> | undefined;
-      const actual = field ? routerOutput?.[field] : undefined;
-      if (actual !== expected) {
-        continue;
-      }
-    }
-
-    const resolvedInputs = Object.fromEntries(
-      Object.entries(node.inputs).map(([key, reference]) => [
-        key,
-        resolveReference(reference.from, requestedInputs, values) ?? reference.fallback,
-      ]),
-    );
-
-    if (node.type === "io.input") {
-      const payload = Object.fromEntries(
-        flow.inputs.map((input) => [input.id, requestedInputs[input.id]]),
-      );
-      values.set(node.id, payload);
-      nodeResults.push({ nodeId: node.id, output: payload });
-      continue;
-    }
-
-    const output = await executeNode(node, resolvedInputs);
-    values.set(node.id, output);
-    nodeResults.push({ nodeId: node.id, output });
+async function invokeAgentStream(
+  node: FlowNode,
+  resolvedInputs: Record<string, unknown>,
+  onToken: (text: string) => void,
+): Promise<unknown> {
+  const adapter = runtimeAdapters.find((candidate) => candidate.supports(node.type));
+  if (!adapter) {
+    throw new Error(`No runtime adapter for ${node.type}`);
   }
 
-  const outputs = Object.fromEntries(
-    flow.outputs.map((output) => [output.id, resolveReference(output.from, requestedInputs, values)]),
-  );
+  let finalOutput: unknown;
+  for await (const event of adapter.invoke({ node, resolvedInputs })) {
+    if (event.kind === "token") {
+      onToken(event.text);
+    } else if (event.kind === "error") {
+      throw event.error;
+    } else if (event.kind === "final") {
+      finalOutput = event.output;
+    }
+  }
 
-  const response = {
-    runId,
-    flowName: flow.name,
-    requestedInputs,
-    outputs,
-    nodeResults,
-  } satisfies RunResponse;
+  return finalOutput;
+}
 
-  persistRun({
-    runId,
-    flowName: flow.name,
-    flowPath,
-    requestedInputs,
-    outputs,
-    nodeResults,
-  });
+export async function* streamRunFlow(
+  flowPath: string,
+  requestedInputs: Record<string, unknown>,
+): AsyncGenerator<RunEvent, void, undefined> {
+  const flow = await loadFlow(flowPath);
+  const runId = randomUUID();
+  const values = new Map<string, unknown>();
+  const nodeResults: RunNodeResult[] = [];
 
+  yield { kind: "run_start", runId, flowName: flow.name };
+
+  try {
+    for (const node of topologicalSort(flow.nodes)) {
+      if (node.when && !evaluateWhen(node.when, values)) {
+        yield { kind: "node_skipped", nodeId: node.id };
+        continue;
+      }
+
+      yield { kind: "node_start", nodeId: node.id, type: node.type };
+
+      const resolvedInputs = Object.fromEntries(
+        Object.entries(node.inputs).map(([key, reference]) => [
+          key,
+          resolveReference(reference.from, requestedInputs, values) ?? reference.fallback,
+        ]),
+      );
+
+      let output: unknown;
+      try {
+        if (node.type === "io.input") {
+          output = Object.fromEntries(
+            flow.inputs.map((input) => [input.id, requestedInputs[input.id]]),
+          );
+        } else if (node.type === "agent.claude" || node.type === "agent.litellm") {
+          const tokens: { text: string }[] = [];
+          const finalOutput = await invokeAgentStream(node, resolvedInputs, (text) => {
+            tokens.push({ text });
+          });
+          for (const token of tokens) {
+            yield { kind: "node_token", nodeId: node.id, text: token.text };
+          }
+          output = { output: finalOutput };
+        } else {
+          output = await executeNode(node, resolvedInputs);
+        }
+      } catch (nodeError) {
+        const message = nodeError instanceof Error ? nodeError.message : String(nodeError);
+        yield { kind: "node_error", nodeId: node.id, message };
+        yield { kind: "run_error", runId, message };
+        throw nodeError;
+      }
+
+      values.set(node.id, output);
+      nodeResults.push({ nodeId: node.id, output });
+      yield { kind: "node_complete", nodeId: node.id, output };
+    }
+
+    const outputs = Object.fromEntries(
+      flow.outputs.map((output) => [output.id, resolveReference(output.from, requestedInputs, values)]),
+    );
+
+    persistRun({
+      runId,
+      flowName: flow.name,
+      flowPath,
+      requestedInputs,
+      outputs,
+      nodeResults,
+    });
+
+    yield {
+      kind: "run_complete",
+      runId,
+      flowName: flow.name,
+      outputs,
+      nodeResults,
+    };
+  } catch (error) {
+    // run_error already yielded above, but surface unexpected errors here too
+    if (!(error instanceof Error)) {
+      throw new Error(String(error));
+    }
+    throw error;
+  }
+}
+
+export async function runFlow(
+  flowPath: string,
+  requestedInputs: Record<string, unknown>,
+): Promise<RunResponse> {
+  let response: RunResponse | undefined;
+  for await (const event of streamRunFlow(flowPath, requestedInputs)) {
+    if (event.kind === "run_complete") {
+      response = {
+        runId: event.runId,
+        flowName: event.flowName,
+        requestedInputs,
+        outputs: event.outputs,
+        nodeResults: event.nodeResults,
+      };
+    }
+  }
+  if (!response) {
+    throw new Error("flow did not produce a run_complete event");
+  }
   return response;
 }
