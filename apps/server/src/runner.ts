@@ -10,7 +10,7 @@ import {
   type RunNodeResult,
   type RunResponse,
 } from "@loom/core";
-import { runtimeAdapters } from "@loom/adapters";
+import { MCPStdioClient, runtimeAdapters } from "@loom/adapters";
 import { persistRun } from "./trace-store.js";
 
 function resolveReference(reference: string, inputs: Record<string, unknown>, values: Map<string, unknown>): unknown {
@@ -221,6 +221,37 @@ async function invokeAgentStream(
   return finalOutput;
 }
 
+async function executeMcpServer(
+  node: FlowNode,
+  mcpClients: Map<string, MCPStdioClient>,
+): Promise<unknown> {
+  const command = typeof node.config.command === "string" ? node.config.command : undefined;
+  if (!command) {
+    throw new Error("mcp.server requires config.command");
+  }
+  const args = Array.isArray(node.config.args)
+    ? (node.config.args.filter((value) => typeof value === "string") as string[])
+    : [];
+  const env: Record<string, string> = {};
+  if (node.config.env && typeof node.config.env === "object") {
+    for (const [key, value] of Object.entries(node.config.env as Record<string, unknown>)) {
+      if (typeof value === "string") {
+        env[key] = value;
+      }
+    }
+  }
+  const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
+  const client = new MCPStdioClient({ command, args, env, cwd: workspaceRoot });
+  mcpClients.set(node.id, client);
+  await client.initialize();
+  const tools = await client.listTools();
+  return {
+    serverInfo: { command, args },
+    tools,
+    toolCount: tools.length,
+  };
+}
+
 export async function* streamRunFlow(
   flowPath: string,
   requestedInputs: Record<string, unknown>,
@@ -229,6 +260,7 @@ export async function* streamRunFlow(
   const runId = randomUUID();
   const values = new Map<string, unknown>();
   const nodeResults: RunNodeResult[] = [];
+  const mcpClients = new Map<string, MCPStdioClient>();
 
   yield { kind: "run_start", runId, flowName: flow.name };
 
@@ -263,6 +295,8 @@ export async function* streamRunFlow(
             yield { kind: "node_token", nodeId: node.id, text: token.text };
           }
           output = { output: finalOutput };
+        } else if (node.type === "mcp.server") {
+          output = await executeMcpServer(node, mcpClients);
         } else {
           output = await executeNode(node, resolvedInputs);
         }
@@ -299,11 +333,18 @@ export async function* streamRunFlow(
       nodeResults,
     };
   } catch (error) {
-    // run_error already yielded above, but surface unexpected errors here too
     if (!(error instanceof Error)) {
       throw new Error(String(error));
     }
     throw error;
+  } finally {
+    for (const client of mcpClients.values()) {
+      try {
+        client.close();
+      } catch {
+        /* swallow cleanup errors */
+      }
+    }
   }
 }
 
