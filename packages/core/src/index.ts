@@ -68,6 +68,12 @@ export type NodeResultValue = string | number | boolean | null | Record<string, 
 export interface InvokeContext {
   node: FlowNode;
   resolvedInputs: Record<string, unknown>;
+  runtime?: RuntimeSession;
+}
+
+export interface RuntimeSession {
+  registerCleanup(cleanup: () => void | Promise<void>): void;
+  getOrCreateResource<T>(key: string, factory: () => T): T;
 }
 
 export type InvokeEvent =
@@ -110,7 +116,7 @@ export type RunEvent =
   | { kind: "run_start"; runId: string; flowName: string }
   | { kind: "node_start"; nodeId: string; type: string }
   | { kind: "node_token"; nodeId: string; text: string }
-  | { kind: "node_complete"; nodeId: string; output: unknown }
+  | { kind: "node_complete"; nodeId: string; output: unknown; meta?: Record<string, unknown> }
   | { kind: "node_skipped"; nodeId: string }
   | { kind: "node_error"; nodeId: string; message: string }
   | {
