@@ -48,24 +48,84 @@ body {
   color: #5f5349;
 }
 
-.placeholder-card {
+.flow-list {
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
   display: grid;
-  gap: 12px;
-  margin-top: 24px;
-  padding: 18px;
-  border-radius: 18px;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(250, 231, 203, 0.9));
-  box-shadow: 0 16px 40px rgba(77, 53, 27, 0.12);
+  gap: 8px;
 }
 
-.placeholder-card span {
-  display: inline-flex;
-  width: fit-content;
-  padding: 8px 12px;
-  border-radius: 999px;
+.flow-list__empty {
+  font-size: 0.85rem;
+  color: #8f8275;
+}
+
+.flow-list__button {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(32, 26, 22, 0.12);
+  background: rgba(255, 255, 255, 0.75);
+  color: #201a16;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.flow-list__button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(143, 93, 52, 0.4);
+}
+
+.flow-list__button--active {
   background: #201a16;
   color: #fff8ee;
-  font-size: 0.9rem;
+  border-color: transparent;
+}
+
+.canvas-frame {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.canvas-frame .react-flow {
+  width: 100%;
+}
+
+.loom-node {
+  padding: 10px 14px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(32, 26, 22, 0.18) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  font-family: ui-monospace, Menlo, Consolas, monospace !important;
+  font-size: 0.78rem !important;
+  color: #201a16 !important;
+  box-shadow: 0 10px 22px rgba(70, 52, 30, 0.08) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
+}
+
+.loom-node--state-running {
+  border-color: rgba(143, 93, 52, 0.7) !important;
+  box-shadow: 0 0 0 4px rgba(143, 93, 52, 0.18) !important;
+  transform: translateY(-1px);
+}
+
+.loom-node--state-done {
+  border-color: rgba(56, 117, 72, 0.65) !important;
+  background: rgba(232, 246, 232, 0.96) !important;
+}
+
+.loom-node--state-skipped {
+  opacity: 0.5;
+}
+
+.loom-node--state-error {
+  border-color: rgba(178, 45, 33, 0.8) !important;
+  background: rgba(255, 234, 230, 0.96) !important;
 }
 
 .canvas-shell {
