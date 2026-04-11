@@ -1,6 +1,15 @@
+import Anthropic from "@anthropic-ai/sdk";
 import type { FlowNode, InvokeContext, InvokeEvent, RuntimeAdapter } from "@loom/core";
 
 const DEFAULT_REPLY = "Mock Claude response";
+
+function getPrompt(ctx: InvokeContext): string {
+  return typeof ctx.resolvedInputs.prompt === "string"
+    ? ctx.resolvedInputs.prompt
+    : typeof ctx.resolvedInputs.topic === "string"
+      ? ctx.resolvedInputs.topic
+      : DEFAULT_REPLY;
+}
 
 class ClaudeApiAdapter implements RuntimeAdapter {
   public readonly id = "claude-api";
@@ -11,11 +20,7 @@ class ClaudeApiAdapter implements RuntimeAdapter {
 
   async *invoke(ctx: InvokeContext): AsyncIterable<InvokeEvent> {
     const mockEnabled = process.env.LOOM_MOCK === "1" || !process.env.ANTHROPIC_API_KEY;
-    const topic = typeof ctx.resolvedInputs.prompt === "string"
-      ? ctx.resolvedInputs.prompt
-      : typeof ctx.resolvedInputs.topic === "string"
-        ? ctx.resolvedInputs.topic
-        : DEFAULT_REPLY;
+    const topic = getPrompt(ctx);
 
     if (mockEnabled) {
       const reply = `Mock Claude says hello about: ${topic}`;
@@ -32,7 +37,36 @@ class ClaudeApiAdapter implements RuntimeAdapter {
     }
 
     try {
-      throw new Error("not wired");
+      const fetchImpl = typeof ctx.node.config.fetch === "function"
+        ? ctx.node.config.fetch as typeof globalThis.fetch
+        : globalThis.fetch;
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, fetch: fetchImpl });
+      const model = typeof ctx.node.config.model === "string"
+        ? ctx.node.config.model
+        : "claude-sonnet-4-6";
+      const system = typeof ctx.node.config.system === "string"
+        ? ctx.node.config.system
+        : undefined;
+      const stream = await client.messages.stream({
+        model,
+        max_tokens: 512,
+        system,
+        messages: [{ role: "user", content: topic }],
+      });
+
+      let outputText = "";
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          outputText += event.delta.text;
+          yield { kind: "token", text: event.delta.text };
+        }
+      }
+
+      if (outputText.length === 0) {
+        throw new Error("anthropic stream returned no text");
+      }
+
+      yield { kind: "final", output: outputText };
     } catch (error) {
       yield {
         kind: "error",
