@@ -5,7 +5,12 @@ export type RunStreamEvent =
   | { kind: "run_start"; runId: string; flowName: string }
   | { kind: "node_start"; nodeId: string; type: string }
   | { kind: "node_token"; nodeId: string; text: string }
-  | { kind: "node_complete"; nodeId: string; output: unknown }
+  | {
+      kind: "node_complete";
+      nodeId: string;
+      output: unknown;
+      meta?: Record<string, unknown>;
+    }
   | { kind: "node_skipped"; nodeId: string }
   | { kind: "node_error"; nodeId: string; message: string }
   | {
@@ -25,6 +30,7 @@ export interface NodeRuntime {
   state: NodeRunState;
   tokens: string[];
   output?: unknown;
+  meta?: Record<string, unknown>;
   error?: string;
 }
 
@@ -115,6 +121,7 @@ export const useRunStore = create<RunState>((set) => ({
             ...current,
             state: "done",
             output: event.output,
+            meta: event.meta ?? current.meta,
           };
           break;
         }

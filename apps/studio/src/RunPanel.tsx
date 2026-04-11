@@ -16,6 +16,50 @@ function formatOutput(output: unknown): string {
   }
 }
 
+interface McpTool {
+  name: string;
+  description?: string;
+}
+
+function extractMcpTools(meta: Record<string, unknown> | undefined): McpTool[] {
+  if (!meta) return [];
+  const mcp = meta.mcp;
+  if (!mcp || typeof mcp !== "object") return [];
+  const raw = (mcp as Record<string, unknown>).tools;
+  if (!Array.isArray(raw)) return [];
+  const tools: McpTool[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const candidate = entry as Record<string, unknown>;
+    const name = candidate.name;
+    if (typeof name !== "string") continue;
+    const description = candidate.description;
+    tools.push({
+      name,
+      description: typeof description === "string" ? description : undefined,
+    });
+  }
+  return tools;
+}
+
+function McpToolList({ meta }: { meta?: Record<string, unknown> }) {
+  const tools = extractMcpTools(meta);
+  if (tools.length === 0) return null;
+  return (
+    <section className="node-mcp-tools">
+      <p className="eyebrow">MCP tools ({tools.length})</p>
+      <ul>
+        {tools.map((tool) => (
+          <li key={tool.name}>
+            <code>{tool.name}</code>
+            {tool.description ? <span> — {tool.description}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function NodeCard({ node }: { node: NodeRuntime }) {
   const tokens = node.tokens.join("");
   return (
@@ -26,6 +70,7 @@ function NodeCard({ node }: { node: NodeRuntime }) {
         <span className={`node-state node-state--${node.state}`}>{node.state}</span>
       </header>
       {tokens ? <pre className="node-tokens">{tokens}</pre> : null}
+      <McpToolList meta={node.meta} />
       {node.output !== undefined ? (
         <pre className="node-output">{formatOutput(node.output)}</pre>
       ) : null}
