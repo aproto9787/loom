@@ -1,0 +1,29 @@
+version: loom/v1
+name: Hello Loom
+description: Basic hello flow through the mock Claude adapter
+
+inputs:
+  - id: topic
+    type: text
+    prompt: "What should Loom talk about?"
+
+nodes:
+  - id: prompt
+    type: io.input
+  - id: claude
+    type: agent.claude
+    config:
+      model: claude-opus-4-6
+      system: Respond with a short friendly line.
+    inputs:
+      topic:
+        from: $inputs.topic
+  - id: output
+    type: io.output
+    inputs:
+      value:
+        from: claude.output
+
+outputs:
+  - id: result
+    from: output.output
