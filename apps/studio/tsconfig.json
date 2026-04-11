@@ -4,9 +4,15 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],
-    "rootDir": "src",
+    "rootDir": ".",
+    "outDir": "dist",
     "noEmit": true,
-    "composite": true
+    "composite": true,
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@loom/core": ["../../packages/core/src/index.ts"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

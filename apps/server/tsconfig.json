@@ -1,7 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src"
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"],
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@loom/core": ["../../packages/core/src/index.ts"],
+      "@loom/adapters": ["../../packages/adapters/src/index.ts"],
+      "@loom/nodes": ["../../packages/nodes/src/index.ts"]
+    }
   },
   "include": ["src/**/*.ts"],
   "references": [
