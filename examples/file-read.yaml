@@ -1,0 +1,29 @@
+version: loom/v1
+name: File Read Demo
+description: Read a text file from disk, feed it to the mock Claude adapter, and surface the reply.
+
+inputs: []
+
+nodes:
+  - id: source
+    type: io.file
+    config:
+      mode: read
+      path: examples/sample.txt
+  - id: claude
+    type: agent.claude
+    config:
+      model: claude-opus-4-6
+      system: Summarize the supplied text in one friendly sentence.
+    inputs:
+      topic:
+        from: source.content
+  - id: reply
+    type: io.output
+    inputs:
+      value:
+        from: claude.output
+
+outputs:
+  - id: result
+    from: reply.output

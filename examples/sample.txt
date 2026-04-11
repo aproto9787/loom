@@ -1,0 +1,2 @@
+Loom weaves runnable agent flows from plain YAML.
+Every node is a point of observation, not a black box.
