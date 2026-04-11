@@ -6,12 +6,13 @@ import {
   flowSchema,
   type FlowNode,
   type LoomFlow,
+  type McpInvokeServer,
   type RunEvent,
   type RuntimeSession,
   type RunNodeResult,
   type RunResponse,
 } from "@loom/core";
-import { MCPStdioClient, runtimeAdapters } from "@loom/adapters";
+import { MCPStdioClient, runtimeAdapters, type McpClientOptions } from "@loom/adapters";
 import { persistRun } from "./trace-store.js";
 
 function resolveReference(reference: string, inputs: Record<string, unknown>, values: Map<string, unknown>): unknown {
@@ -125,6 +126,67 @@ class RunnerRuntimeSession implements RuntimeSession {
   }
 }
 
+function getMcpClientOptions(node: Pick<FlowNode, "config"> | McpClientOptions): McpClientOptions {
+  if ("command" in node) {
+    return {
+      command: node.command,
+      args: node.args,
+      env: node.env,
+      cwd: node.cwd,
+    };
+  }
+
+  const command = typeof node.config.command === "string" ? node.config.command : undefined;
+  if (!command) {
+    throw new Error("mcp.server requires config.command");
+  }
+  const args = Array.isArray(node.config.args)
+    ? (node.config.args.filter((value) => typeof value === "string") as string[])
+    : [];
+  const env: Record<string, string> = {};
+  if (node.config.env && typeof node.config.env === "object") {
+    for (const [key, value] of Object.entries(node.config.env as Record<string, unknown>)) {
+      if (typeof value === "string") {
+        env[key] = value;
+      }
+    }
+  }
+  const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
+  return { command, args, env, cwd: workspaceRoot };
+}
+
+async function getOrCreateMcpServer(runtime: RuntimeSession, serverId: string, options: McpClientOptions): Promise<McpInvokeServer> {
+  return runtime.getOrCreateResource(`mcp:${serverId}`, () => {
+    const client = new MCPStdioClient(getMcpClientOptions(options));
+    runtime.registerCleanup(() => client.close());
+    return (async () => {
+      await client.initialize();
+      const tools = await client.listTools();
+      return {
+        tools,
+        callTool: (name: string, args: unknown) => client.callTool(name, args),
+      } satisfies McpInvokeServer;
+    })();
+  });
+}
+
+async function buildAgentMcps(node: FlowNode, flow: LoomFlow, runtime: RuntimeSession): Promise<Record<string, McpInvokeServer> | undefined> {
+  if (node.mcps.length === 0) {
+    return undefined;
+  }
+
+  const boundServers = await Promise.all(node.mcps.map(async (serverId) => {
+    const server = flow.mcps.find((candidate) => candidate.id === serverId);
+    if (!server) {
+      throw new Error(`agent node ${node.id} references unknown MCP server ${serverId}`);
+    }
+    const handle = await getOrCreateMcpServer(runtime, serverId, getMcpClientOptions(server));
+    return [serverId, handle] as const;
+  }));
+
+  return Object.fromEntries(boundServers);
+}
+
 function buildNodeMeta(node: FlowNode, output: unknown): Record<string, unknown> | undefined {
   if (node.type !== "mcp.server") {
     return undefined;
@@ -155,14 +217,20 @@ function evaluateCodeRouter(expression: string, resolvedInputs: Record<string, u
   return branch;
 }
 
-async function invokeAgent(node: FlowNode, resolvedInputs: Record<string, unknown>, runtime: RuntimeSession): Promise<unknown> {
+async function invokeAgent(
+  node: FlowNode,
+  resolvedInputs: Record<string, unknown>,
+  runtime: RuntimeSession,
+  flow: LoomFlow,
+): Promise<unknown> {
   const adapter = runtimeAdapters.find((candidate) => candidate.supports(node.type));
   if (!adapter) {
     throw new Error(`No runtime adapter for ${node.type}`);
   }
 
+  const mcps = await buildAgentMcps(node, flow, runtime);
   let finalOutput: unknown;
-  for await (const event of adapter.invoke({ node, resolvedInputs, runtime })) {
+  for await (const event of adapter.invoke({ node, resolvedInputs, runtime, mcps })) {
     if (event.kind === "error") {
       throw event.error;
     }
@@ -174,7 +242,7 @@ async function invokeAgent(node: FlowNode, resolvedInputs: Record<string, unknow
   return finalOutput;
 }
 
-async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknown>, runtime: RuntimeSession): Promise<unknown> {
+async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknown>, runtime: RuntimeSession, flow: LoomFlow): Promise<unknown> {
   switch (node.type) {
     case "io.input":
       return resolvedInputs;
@@ -222,7 +290,7 @@ async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknow
     }
     case "agent.claude":
     case "agent.litellm":
-      return { output: await invokeAgent(node, resolvedInputs, runtime) };
+      return { output: await invokeAgent(node, resolvedInputs, runtime, flow) };
     default:
       throw new Error(`Node type ${node.type} is not supported in this slice`);
   }
@@ -253,18 +321,24 @@ function evaluateWhen(
 async function invokeAgentStream(
   node: FlowNode,
   resolvedInputs: Record<string, unknown>,
-  onToken: (text: string) => void,
+  onEvent: (event: RunEvent) => void,
   runtime: RuntimeSession,
+  flow: LoomFlow,
 ): Promise<unknown> {
   const adapter = runtimeAdapters.find((candidate) => candidate.supports(node.type));
   if (!adapter) {
     throw new Error(`No runtime adapter for ${node.type}`);
   }
 
+  const mcps = await buildAgentMcps(node, flow, runtime);
   let finalOutput: unknown;
-  for await (const event of adapter.invoke({ node, resolvedInputs, runtime })) {
+  for await (const event of adapter.invoke({ node, resolvedInputs, runtime, mcps })) {
     if (event.kind === "token") {
-      onToken(event.text);
+      onEvent({ kind: "node_token", nodeId: node.id, text: event.text });
+    } else if (event.kind === "tool_call") {
+      onEvent({ kind: "node_token", nodeId: node.id, text: `\n[tool_call] ${JSON.stringify({ name: event.name, args: event.args })}` });
+    } else if (event.kind === "tool_result") {
+      onEvent({ kind: "node_token", nodeId: node.id, text: `\n[tool_result] ${JSON.stringify({ name: event.name, result: event.result })}` });
     } else if (event.kind === "error") {
       throw event.error;
     } else if (event.kind === "final") {
@@ -279,30 +353,12 @@ async function executeMcpServer(
   node: FlowNode,
   runtime: RuntimeSession,
 ): Promise<unknown> {
-  const command = typeof node.config.command === "string" ? node.config.command : undefined;
-  if (!command) {
-    throw new Error("mcp.server requires config.command");
-  }
-  const args = Array.isArray(node.config.args)
-    ? (node.config.args.filter((value) => typeof value === "string") as string[])
-    : [];
-  const env: Record<string, string> = {};
-  if (node.config.env && typeof node.config.env === "object") {
-    for (const [key, value] of Object.entries(node.config.env as Record<string, unknown>)) {
-      if (typeof value === "string") {
-        env[key] = value;
-      }
-    }
-  }
-  const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
-  const client = new MCPStdioClient({ command, args, env, cwd: workspaceRoot });
-  runtime.registerCleanup(() => client.close());
-  await client.initialize();
-  const tools = await client.listTools();
+  const options = getMcpClientOptions(node);
+  const handle = await getOrCreateMcpServer(runtime, node.id, options);
   return {
-    serverInfo: { command, args },
-    tools,
-    toolCount: tools.length,
+    serverInfo: { command: options.command, args: options.args ?? [] },
+    tools: handle.tools,
+    toolCount: handle.tools.length,
   };
 }
 
@@ -341,18 +397,18 @@ export async function* streamRunFlow(
             flow.inputs.map((input) => [input.id, requestedInputs[input.id]]),
           );
         } else if (node.type === "agent.claude" || node.type === "agent.litellm") {
-          const tokens: { text: string }[] = [];
-          const finalOutput = await invokeAgentStream(node, resolvedInputs, (text) => {
-            tokens.push({ text });
-          }, runtime);
-          for (const token of tokens) {
-            yield { kind: "node_token", nodeId: node.id, text: token.text };
+          const streamedEvents: RunEvent[] = [];
+          const finalOutput = await invokeAgentStream(node, resolvedInputs, (event) => {
+            streamedEvents.push(event);
+          }, runtime, flow);
+          for (const event of streamedEvents) {
+            yield event;
           }
           output = { output: finalOutput };
         } else if (node.type === "mcp.server") {
           output = await executeMcpServer(node, runtime);
         } else {
-          output = await executeNode(node, resolvedInputs, runtime);
+          output = await executeNode(node, resolvedInputs, runtime, flow);
         }
       } catch (nodeError) {
         const message = nodeError instanceof Error ? nodeError.message : String(nodeError);
