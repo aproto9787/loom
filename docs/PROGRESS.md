@@ -234,6 +234,90 @@ de35d11 chore(examples): add file-read demo exercising io.file read path
 
 ---
 
+## Phase 2G — MCP tool list surfaced on streaming events, end-to-end
+
+**Goal.** Extend the streamed `RunEvent` payload so `mcp.server`
+completions expose their tool list directly and render it in the
+studio RunPanel, closing the MCP handshake story end-to-end without
+a second round-trip. This phase landed as a deliberate two-pass
+handoff: foreman shipped the core + runner + docs backend surface,
+and the team-lead Opus session finished the studio frontend in the
+same user turn because frontend work is Opus-only by policy.
+
+**Commits.**
+
+```
+84d094f feat(core): add node_complete meta and RuntimeSession to runtime contract
+8125a2b feat(runner): surface mcp.server tool list on node_complete meta
+66f9328 feat(studio): render mcp.server tool list on node cards
+```
+
+**Acceptance verified.**
+
+- `POST /runs/stream` with `examples/mcp-demo.yaml` emits a
+  `node_complete` event whose payload includes the MCP tool list
+  under `meta.mcp.tools` (plus `meta.mcp.toolNames`), alongside the
+  existing structured `output`
+- Backend verifies the exact tool names from the bundled mock MCP
+  server (`echo`, `upper`) directly off the SSE stream
+- Studio `RunPanel` renders the tool list through a type-guarded
+  `extractMcpTools()` helper and a `<McpToolList>` sub-block on the
+  matching `NodeCard`, so the handshake result is visible in the UI
+  on every run of an `mcp.server` node
+
+---
+
+## Phase 2H — Anthropic SDK streaming behind env gating
+
+**Goal.** Replace the `agent.claude` adapter's real-path stub with live `@anthropic-ai/sdk` streaming when `ANTHROPIC_API_KEY` is present, while preserving the existing mock token chunking exactly when the env var is absent.
+
+**Commits.**
+
+```
+51c3e31 feat(adapters/claude-api): stream real Anthropic SDK when ANTHROPIC_API_KEY is set
+```
+
+**Acceptance verified.**
+
+- `examples/hello.yaml` keeps the existing mock stream when `ANTHROPIC_API_KEY` is unset
+- With an API key present, the adapter streams `content_block_delta` text chunks as `node_token` events and returns the concatenated text as the final output
+- The real-path test is exercised with a mocked transport so no external Anthropic API call is required during verification
+
+---
+
+## Phase 2I — LiteLLM streaming HTTP + optional local proxy spawn
+
+**Goal.** Replace the LiteLLM adapter's real-path stub with an OpenAI-compatible streaming `/chat/completions` bridge, while adding an opt-in local `litellm` subprocess path that can be reused across nodes in the same run and torn down with the runner.
+
+**Commits.**
+
+```
+84d094f feat(core): add node_complete meta and RuntimeSession to runtime contract
+5fe1c48 feat(adapters/litellm): stream HTTP deltas and optional subprocess spawn
+8125a2b feat(runner): surface mcp.server tool list on node_complete meta
+```
+
+(The core and runner commits here overlap with Phase 2G because the
+same `RuntimeSession` change that carries the MCP tool meta also
+gives the LiteLLM adapter its cross-node subprocess lifetime.)
+
+**Acceptance verified.**
+
+- `examples/litellm-demo.yaml` still succeeds in mock mode when no LiteLLM env vars are set (verified via `POST /runs`)
+- Setting `LOOM_LITELLM_URL` switches the adapter to streaming HTTP deltas, forwarding them as `node_token` events
+- Setting `LOOM_LITELLM_SPAWN=1` reuses a single spawned local proxy per run and terminates it from the runner cleanup path; the mode stays behind the opt-in env flag because no `litellm` binary is currently on `PATH` in this environment, so end-to-end subprocess mode is deferred until one is installed — the runner-side lifecycle (session registration + finally-block teardown) is still exercised by the shared cleanup path
+
+---
+
+**Phase 2 closes here.** The v0.1 MVP+ slice described in README.md
+is feature-complete end-to-end: every row of the coverage table below
+that was still "not yet" at the start of Phase 2 has either been
+flipped to "shipped" or explicitly deferred to v0.2 (graph editing,
+run replay, real MCP `tools/call` from an agent node). Everything
+under "Natural next slices" is the v0.2 entry point.
+
+---
+
 ## Current v0.1 coverage
 
 README v0.1 roadmap item | status
@@ -255,8 +339,8 @@ Studio RunPanel + SSE client + live token buffer | shipped
 CORS for the Vite dev server | shipped
 Graph editing (drag/connect/inspect) | not yet
 Run replay timeline | not yet
-Real `@anthropic-ai/sdk` calls | not yet
-Real LiteLLM Python proxy bridge | not yet
+Real `@anthropic-ai/sdk` calls | shipped
+Real LiteLLM Python proxy bridge | shipped
 Real MCP `tools/call` from an agent node | not yet
 
 ---

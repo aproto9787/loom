@@ -63,7 +63,10 @@ system as it stands at the end of the early v0.1 slices.
    edge references (`$inputs.x`, `node.field`, or `a || b` fallback
    chains), executes the node body, and yields `node_start`,
    `node_token*`, `node_complete`, `node_skipped` or `node_error`
-   events. On success it also yields a terminal `run_complete`.
+   events. `mcp.server` completions now also attach `meta.mcp.tools`
+   (and `meta.mcp.toolNames`) so streaming clients can render the
+   discovered tool list directly from the event payload. On success it
+   also yields a terminal `run_complete`.
 4. `runFlow()` is a thin consumer of `streamRunFlow()` that collects
    the final outputs map and rebuilds the original synchronous
    `RunResponse` shape so `POST /runs` stays backward compatible.
@@ -83,17 +86,21 @@ interface RuntimeAdapter {
 }
 ```
 
-- `claude-api` is the only fully wired adapter today. It ships with
-  a mock branch that splits a canned reply into token chunks so the
-  runner and studio can observe a real stream without an API key.
-  The real SDK path is a scaffold that throws a descriptive error
-  and will be replaced with `@anthropic-ai/sdk` calls in a later
-  slice.
-- `litellm` is now a mock-first adapter as well. It emits a canned
-  reply embedding the configured model and topic, split into word
-  chunks so the runner and studio see real token events. The real
-  proxy path is scaffolded behind `LOOM_LITELLM_URL` and throws a
-  "not wired" error until the Python subprocess bridge lands.
+- `claude-api` remains mock-first when `ANTHROPIC_API_KEY` is
+  absent, preserving the existing word-sized token chunks so the
+  runner and studio still see the same local-first stream. When the
+  key is present, the adapter switches to `@anthropic-ai/sdk`
+  `messages.stream()`, forwards `content_block_delta` text as
+  `node_token` events, and concatenates the streamed text into the
+  final node output.
+- `litellm` is also mock-first, preserving the existing canned reply
+  and token chunking whenever neither `LOOM_LITELLM_URL` nor the opt-in
+  `LOOM_LITELLM_SPAWN=1` path is active. With `LOOM_LITELLM_URL` set it
+  POSTs to the OpenAI-compatible `/chat/completions` endpoint and
+  forwards streaming SSE deltas as `node_token` chunks. With
+  `LOOM_LITELLM_SPAWN=1`, the adapter starts a local `litellm` proxy on
+  first use, reuses it across nodes via the runner runtime session, and
+  tears it down during runner cleanup.
 - `claude-code` and `codex` adapters are registered stubs that report
   the relevant node type via `supports()` and surface a "not
   implemented" error when invoked, so the registry is always complete
@@ -121,7 +128,11 @@ The studio has two side-by-side columns inside the canvas shell:
   editor, and a Run button that calls `useSseRun` against the
   server. As each event arrives the panel renders per-node cards
   (state, streamed token buffer, structured output, error) and the
-  final outputs once the run completes.
+  final outputs once the run completes. When a `node_complete` event
+  carries `meta.mcp.tools`, the matching card also renders the MCP
+  tool list (name + description) in a dedicated sub-block, so the
+  mcp.server handshake surfaces directly in the UI without a second
+  round-trip.
 
 Flow selection from the sidebar drives both the canvas and the run
 panel through the same zustand `flowPath`, so picking a new example
@@ -143,10 +154,6 @@ flow just updates the graph preview and leaves the rest in sync.
 
 ## What is not here yet
 
-- Real LLM calls. Every agent node runs through a mock adapter
-  today (`claude-api` and `litellm` both fabricate responses).
-- Python LiteLLM proxy subprocess. The real HTTP path is scaffolded
-  behind `LOOM_LITELLM_URL` but not yet exercised end-to-end.
 - MCP `tools/call`. `mcp.server` nodes spawn, initialize and list
   tools, but actually invoking a listed tool from an agent node
   is a v0.2 stretch.
