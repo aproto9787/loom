@@ -105,7 +105,8 @@ async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknow
 }
 
 export async function loadFlow(flowPath: string): Promise<LoomFlow> {
-  const absolutePath = path.resolve(process.cwd(), flowPath);
+  const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
+  const absolutePath = path.resolve(workspaceRoot, flowPath);
   const raw = await readFile(absolutePath, "utf8");
   return flowSchema.parse(YAML.parse(raw));
 }
