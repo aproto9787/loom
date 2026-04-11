@@ -8,5 +8,6 @@ coverage
 *.db
 *.db-shm
 *.db-wal
+.loom/
 .DS_Store
 vite.config.ts.timestamp-*

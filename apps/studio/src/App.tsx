@@ -12,6 +12,8 @@ export default function App() {
         <p className="sidebar-copy">Drag-and-drop nodes will land here in the next slice.</p>
         <div className="placeholder-card">
           <span>io.input</span>
+          <span>router.code</span>
+          <span>io.file</span>
           <span>agent.claude</span>
           <span>io.output</span>
         </div>

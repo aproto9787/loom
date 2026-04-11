@@ -27,6 +27,7 @@ export const supportedNodeTypesV01 = [
   "io.input",
   "io.output",
   "io.file",
+  "router.code",
   "agent.claude",
   "agent.litellm",
 ] as const;
@@ -94,6 +95,7 @@ export interface RunNodeResult {
 }
 
 export interface RunResponse {
+  runId: string;
   flowName: string;
   requestedInputs: Record<string, unknown>;
   outputs: Record<string, unknown>;

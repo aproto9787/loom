@@ -1,12 +1,24 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import YAML from "yaml";
 import { flowSchema, type FlowNode, type LoomFlow, type RunNodeResult, type RunResponse } from "@loom/core";
 import { runtimeAdapters } from "@loom/adapters";
+import { persistRun } from "./trace-store.js";
 
 function resolveReference(reference: string, inputs: Record<string, unknown>, values: Map<string, unknown>): unknown {
   if (reference.startsWith("$inputs.")) {
     return inputs[reference.slice("$inputs.".length)];
+  }
+
+  if (reference.includes(" || ") ) {
+    for (const candidate of reference.split(" || ")) {
+      const resolved = resolveReference(candidate.trim(), inputs, values);
+      if (resolved !== undefined) {
+        return resolved;
+      }
+    }
+    return undefined;
   }
 
   const [nodeId, outputName] = reference.split(".");
@@ -71,6 +83,18 @@ function topologicalSort(nodes: FlowNode[]): FlowNode[] {
   return ordered;
 }
 
+function evaluateCodeRouter(expression: string, resolvedInputs: Record<string, unknown>): string {
+  const scopeKeys = Object.keys(resolvedInputs);
+  const evaluator = new Function(...scopeKeys, `return (${expression});`);
+  const branch = evaluator(...scopeKeys.map((key) => resolvedInputs[key]));
+
+  if (typeof branch !== "string" || branch.length === 0) {
+    throw new Error("router.code expression must return a non-empty string branch");
+  }
+
+  return branch;
+}
+
 async function invokeAgent(node: FlowNode, resolvedInputs: Record<string, unknown>): Promise<unknown> {
   const adapter = runtimeAdapters.find((candidate) => candidate.supports(node.type));
   if (!adapter) {
@@ -96,6 +120,45 @@ async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknow
       return resolvedInputs;
     case "io.output":
       return { output: resolvedInputs.value ?? resolvedInputs.result ?? Object.values(resolvedInputs)[0] };
+    case "io.file": {
+      const mode = node.config.mode === "write" ? "write" : "read";
+      const filePath = typeof resolvedInputs.path === "string"
+        ? resolvedInputs.path
+        : typeof node.config.path === "string"
+          ? node.config.path
+          : undefined;
+      if (!filePath) {
+        throw new Error("io.file requires a string path input");
+      }
+
+      const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
+      const absolutePath = path.resolve(workspaceRoot, filePath);
+      if (!absolutePath.startsWith(`${workspaceRoot}${path.sep}`)) {
+        throw new Error("io.file path must stay within workspace root");
+      }
+
+      if (mode === "write") {
+        const content = typeof resolvedInputs.content === "string"
+          ? resolvedInputs.content
+          : JSON.stringify(resolvedInputs.content ?? null, null, 2);
+        await writeFile(absolutePath, content, "utf8");
+        return { path: filePath, content, mode };
+      }
+
+      const content = await readFile(absolutePath, "utf8");
+      return { path: filePath, content, mode };
+    }
+    case "router.code": {
+      const expression = typeof node.config.expression === "string" ? node.config.expression : undefined;
+      if (!expression) {
+        throw new Error("router.code requires config.expression");
+      }
+      const branch = evaluateCodeRouter(expression, resolvedInputs);
+      if (node.branches.length > 0 && !node.branches.includes(branch)) {
+        throw new Error(`router.code returned unknown branch ${branch}`);
+      }
+      return { branch };
+    }
     case "agent.claude":
     case "agent.litellm":
       return { output: await invokeAgent(node, resolvedInputs) };
@@ -115,8 +178,20 @@ export async function runFlow(flowPath: string, requestedInputs: Record<string, 
   const flow = await loadFlow(flowPath);
   const values = new Map<string, unknown>();
   const nodeResults: RunNodeResult[] = [];
+  const runId = randomUUID();
 
   for (const node of topologicalSort(flow.nodes)) {
+    if (node.when) {
+      const [left, right] = node.when.split(/\s*==\s*/);
+      const expected = right?.replace(/^['"]|['"]$/g, "");
+      const [routerId, field] = left.split(".");
+      const routerOutput = values.get(routerId) as Record<string, unknown> | undefined;
+      const actual = field ? routerOutput?.[field] : undefined;
+      if (actual !== expected) {
+        continue;
+      }
+    }
+
     const resolvedInputs = Object.fromEntries(
       Object.entries(node.inputs).map(([key, reference]) => [
         key,
@@ -142,10 +217,22 @@ export async function runFlow(flowPath: string, requestedInputs: Record<string, 
     flow.outputs.map((output) => [output.id, resolveReference(output.from, requestedInputs, values)]),
   );
 
-  return {
+  const response = {
+    runId,
     flowName: flow.name,
     requestedInputs,
     outputs,
     nodeResults,
-  };
+  } satisfies RunResponse;
+
+  persistRun({
+    runId,
+    flowName: flow.name,
+    flowPath,
+    requestedInputs,
+    outputs,
+    nodeResults,
+  });
+
+  return response;
 }
