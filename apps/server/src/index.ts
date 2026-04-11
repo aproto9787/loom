@@ -1,9 +1,24 @@
+import path from "node:path";
 import Fastify from "fastify";
 import { z } from "zod";
 import { runFlow } from "./runner.js";
 
+const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
+const allowedFlowDir = path.join(workspaceRoot, "examples");
+
+function isAllowedFlowPath(flowPath: string): boolean {
+  if (path.isAbsolute(flowPath)) {
+    return false;
+  }
+
+  const absolutePath = path.resolve(workspaceRoot, flowPath);
+  return absolutePath.startsWith(`${allowedFlowDir}${path.sep}`);
+}
+
 const runRequestSchema = z.object({
-  flowPath: z.string().min(1),
+  flowPath: z.string().min(1).refine(isAllowedFlowPath, {
+    message: "flowPath must stay within examples/",
+  }),
   inputs: z.record(z.string(), z.unknown()).default({}),
 });
 
