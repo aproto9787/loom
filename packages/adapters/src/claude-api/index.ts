@@ -18,11 +18,16 @@ class ClaudeApiAdapter implements RuntimeAdapter {
         : DEFAULT_REPLY;
 
     if (mockEnabled) {
-      yield { kind: "token", text: `Thinking about ${topic}` };
-      yield {
-        kind: "final",
-        output: `Mock Claude says hello about: ${topic}`,
-      };
+      const reply = `Mock Claude says hello about: ${topic}`;
+      // Split the mock reply into word-sized chunks so that downstream
+      // consumers (runner, SSE endpoint, studio canvas) can observe a
+      // realistic token stream instead of a single final blob.
+      const words = reply.split(" ");
+      for (let index = 0; index < words.length; index += 1) {
+        const chunk = index === 0 ? words[index] : ` ${words[index]}`;
+        yield { kind: "token", text: chunk };
+      }
+      yield { kind: "final", output: reply };
       return;
     }
 
