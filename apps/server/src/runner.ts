@@ -7,6 +7,7 @@ import {
   type FlowNode,
   type LoomFlow,
   type RunEvent,
+  type RuntimeSession,
   type RunNodeResult,
   type RunResponse,
 } from "@loom/core";
@@ -90,6 +91,58 @@ function topologicalSort(nodes: FlowNode[]): FlowNode[] {
   return ordered;
 }
 
+class RunnerRuntimeSession implements RuntimeSession {
+  private readonly resources = new Map<string, unknown>();
+  private readonly cleanups: Array<() => void | Promise<void>> = [];
+
+  registerCleanup(cleanup: () => void | Promise<void>): void {
+    this.cleanups.push(cleanup);
+  }
+
+  getOrCreateResource<T>(key: string, factory: () => T): T {
+    if (this.resources.has(key)) {
+      return this.resources.get(key) as T;
+    }
+
+    const resource = factory();
+    this.resources.set(key, resource);
+    return resource;
+  }
+
+  async cleanup(): Promise<void> {
+    while (this.cleanups.length > 0) {
+      const cleanup = this.cleanups.pop();
+      if (!cleanup) {
+        continue;
+      }
+
+      try {
+        await cleanup();
+      } catch {
+        /* swallow cleanup errors */
+      }
+    }
+  }
+}
+
+function buildNodeMeta(node: FlowNode, output: unknown): Record<string, unknown> | undefined {
+  if (node.type !== "mcp.server") {
+    return undefined;
+  }
+
+  const record = output && typeof output === "object" ? output as Record<string, unknown> : undefined;
+  const tools = Array.isArray(record?.tools) ? record.tools : [];
+
+  return {
+    mcp: {
+      tools,
+      toolNames: tools
+        .map((tool) => tool && typeof tool === "object" ? (tool as Record<string, unknown>).name : undefined)
+        .filter((name): name is string => typeof name === "string"),
+    },
+  };
+}
+
 function evaluateCodeRouter(expression: string, resolvedInputs: Record<string, unknown>): string {
   const scopeKeys = Object.keys(resolvedInputs);
   const evaluator = new Function(...scopeKeys, `return (${expression});`);
@@ -102,14 +155,14 @@ function evaluateCodeRouter(expression: string, resolvedInputs: Record<string, u
   return branch;
 }
 
-async function invokeAgent(node: FlowNode, resolvedInputs: Record<string, unknown>): Promise<unknown> {
+async function invokeAgent(node: FlowNode, resolvedInputs: Record<string, unknown>, runtime: RuntimeSession): Promise<unknown> {
   const adapter = runtimeAdapters.find((candidate) => candidate.supports(node.type));
   if (!adapter) {
     throw new Error(`No runtime adapter for ${node.type}`);
   }
 
   let finalOutput: unknown;
-  for await (const event of adapter.invoke({ node, resolvedInputs })) {
+  for await (const event of adapter.invoke({ node, resolvedInputs, runtime })) {
     if (event.kind === "error") {
       throw event.error;
     }
@@ -121,7 +174,7 @@ async function invokeAgent(node: FlowNode, resolvedInputs: Record<string, unknow
   return finalOutput;
 }
 
-async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknown>): Promise<unknown> {
+async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknown>, runtime: RuntimeSession): Promise<unknown> {
   switch (node.type) {
     case "io.input":
       return resolvedInputs;
@@ -169,7 +222,7 @@ async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknow
     }
     case "agent.claude":
     case "agent.litellm":
-      return { output: await invokeAgent(node, resolvedInputs) };
+      return { output: await invokeAgent(node, resolvedInputs, runtime) };
     default:
       throw new Error(`Node type ${node.type} is not supported in this slice`);
   }
@@ -201,6 +254,7 @@ async function invokeAgentStream(
   node: FlowNode,
   resolvedInputs: Record<string, unknown>,
   onToken: (text: string) => void,
+  runtime: RuntimeSession,
 ): Promise<unknown> {
   const adapter = runtimeAdapters.find((candidate) => candidate.supports(node.type));
   if (!adapter) {
@@ -208,7 +262,7 @@ async function invokeAgentStream(
   }
 
   let finalOutput: unknown;
-  for await (const event of adapter.invoke({ node, resolvedInputs })) {
+  for await (const event of adapter.invoke({ node, resolvedInputs, runtime })) {
     if (event.kind === "token") {
       onToken(event.text);
     } else if (event.kind === "error") {
@@ -223,7 +277,7 @@ async function invokeAgentStream(
 
 async function executeMcpServer(
   node: FlowNode,
-  mcpClients: Map<string, MCPStdioClient>,
+  runtime: RuntimeSession,
 ): Promise<unknown> {
   const command = typeof node.config.command === "string" ? node.config.command : undefined;
   if (!command) {
@@ -242,7 +296,7 @@ async function executeMcpServer(
   }
   const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
   const client = new MCPStdioClient({ command, args, env, cwd: workspaceRoot });
-  mcpClients.set(node.id, client);
+  runtime.registerCleanup(() => client.close());
   await client.initialize();
   const tools = await client.listTools();
   return {
@@ -260,7 +314,7 @@ export async function* streamRunFlow(
   const runId = randomUUID();
   const values = new Map<string, unknown>();
   const nodeResults: RunNodeResult[] = [];
-  const mcpClients = new Map<string, MCPStdioClient>();
+  const runtime = new RunnerRuntimeSession();
 
   yield { kind: "run_start", runId, flowName: flow.name };
 
@@ -290,15 +344,15 @@ export async function* streamRunFlow(
           const tokens: { text: string }[] = [];
           const finalOutput = await invokeAgentStream(node, resolvedInputs, (text) => {
             tokens.push({ text });
-          });
+          }, runtime);
           for (const token of tokens) {
             yield { kind: "node_token", nodeId: node.id, text: token.text };
           }
           output = { output: finalOutput };
         } else if (node.type === "mcp.server") {
-          output = await executeMcpServer(node, mcpClients);
+          output = await executeMcpServer(node, runtime);
         } else {
-          output = await executeNode(node, resolvedInputs);
+          output = await executeNode(node, resolvedInputs, runtime);
         }
       } catch (nodeError) {
         const message = nodeError instanceof Error ? nodeError.message : String(nodeError);
@@ -309,7 +363,7 @@ export async function* streamRunFlow(
 
       values.set(node.id, output);
       nodeResults.push({ nodeId: node.id, output });
-      yield { kind: "node_complete", nodeId: node.id, output };
+      yield { kind: "node_complete", nodeId: node.id, output, meta: buildNodeMeta(node, output) };
     }
 
     const outputs = Object.fromEntries(
@@ -338,13 +392,7 @@ export async function* streamRunFlow(
     }
     throw error;
   } finally {
-    for (const client of mcpClients.values()) {
-      try {
-        client.close();
-      } catch {
-        /* swallow cleanup errors */
-      }
-    }
+    await runtime.cleanup();
   }
 }
 

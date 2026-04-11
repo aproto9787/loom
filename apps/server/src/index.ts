@@ -117,9 +117,12 @@ export function buildServer() {
 }
 
 const port = Number(process.env.PORT ?? 8787);
-const server = buildServer();
 
-server.listen({ port, host: "0.0.0.0" }).catch((error) => {
-  server.log.error(error);
-  process.exit(1);
-});
+if (process.env.LOOM_SERVER_AUTOSTART !== "0") {
+  const server = buildServer();
+
+  server.listen({ port, host: "0.0.0.0" }).catch((error) => {
+    server.log.error(error);
+    process.exit(1);
+  });
+}
