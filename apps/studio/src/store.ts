@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { LoomFlow } from "@loom/core";
 
 export type RunStreamEvent =
   | { kind: "run_start"; runId: string; flowName: string }
@@ -30,6 +31,8 @@ export interface NodeRuntime {
 interface RunState {
   flowPath: string;
   inputsJson: string;
+  availableFlows: string[];
+  loadedFlow?: LoomFlow;
   isStreaming: boolean;
   runId?: string;
   flowName?: string;
@@ -37,8 +40,12 @@ interface RunState {
   nodeRuntimes: Record<string, NodeRuntime>;
   finalOutputs?: Record<string, unknown>;
   runError?: string;
+  loadError?: string;
   setFlowPath: (value: string) => void;
   setInputsJson: (value: string) => void;
+  setAvailableFlows: (flows: string[]) => void;
+  setLoadedFlow: (flow: LoomFlow | undefined) => void;
+  setLoadError: (message: string | undefined) => void;
   beginStream: () => void;
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
@@ -51,11 +58,15 @@ function emptyNode(id: string): NodeRuntime {
 export const useRunStore = create<RunState>((set) => ({
   flowPath: "examples/hello.yaml",
   inputsJson: '{\n  "topic": "loom studio"\n}',
+  availableFlows: [],
   isStreaming: false,
   events: [],
   nodeRuntimes: {},
   setFlowPath: (value) => set({ flowPath: value }),
   setInputsJson: (value) => set({ inputsJson: value }),
+  setAvailableFlows: (flows) => set({ availableFlows: flows }),
+  setLoadedFlow: (flow) => set({ loadedFlow: flow, loadError: undefined }),
+  setLoadError: (message) => set({ loadError: message }),
   beginStream: () =>
     set({
       isStreaming: true,
