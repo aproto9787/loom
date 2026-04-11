@@ -315,6 +315,45 @@ that was still "not yet" at the start of Phase 2 has either been
 flipped to "shipped" or explicitly deferred to v0.2 (graph editing,
 run replay, real MCP `tools/call` from an agent node). Everything
 under "Natural next slices" is the v0.2 entry point.
+A short retrofit landed afterward as Phase 2J, closing the last v0.1
+coverage gap for agent-driven MCP tool calls without reopening the rest
+of the Phase 2 surface.
+
+---
+
+## Phase 2J — Agent-driven MCP `tools/call`
+
+**Goal.** Let `agent.claude` and `agent.litellm` invoke MCP tools from
+`node.mcps`, reuse the same `MCPStdioClient` across `mcp.server` and
+agent nodes in a single run, and document the final v0.1 coverage row
+as shipped.
+
+**Commits.**
+
+```
+c9c372d feat(adapters/mcp): add tools/call JSON-RPC to MCPStdioClient
+a9e34cc feat(core): expose per-node mcp tool handles on InvokeContext
+75591a0 feat(runner): share MCP stdio clients across mcp.server and agent nodes
+851dae2 feat(adapters/claude-api): MCP tool-use loop for mock and real paths
+41ab343 feat(adapters/litellm): MCP tool-use loop mirroring the claude-api path
+a297a84 feat(examples): add mcp-tool-use demo flow and server integration test
+```
+
+**Acceptance verified.**
+
+- `pnpm --filter @loom/core build` passes
+- `pnpm --filter @loom/server build` passes
+- `POST /runs` continues to succeed for `examples/hello.yaml`,
+  `examples/router-file.yaml`, `examples/mcp-demo.yaml`, and
+  `examples/litellm-demo.yaml`
+- `POST /runs` with `examples/mcp-tool-use.yaml` now includes both
+  `[tool_call] {"name":"echo","arguments":{"text":"mock tool input: ..."}}`
+  and `[tool_result] {"content":[{"type":"text","text":"mock tool input: ..."}]}`
+  inside the agent node output
+- The real Anthropic tool loop is covered by a mocked transport test in
+  `packages/adapters/src/claude-api/index.test.ts`
+- `POST /runs/stream` still surfaces `meta.mcp.tools` for `mcp.server`
+  completions while the shared MCP client path is active
 
 ---
 
@@ -341,7 +380,7 @@ Graph editing (drag/connect/inspect) | not yet
 Run replay timeline | not yet
 Real `@anthropic-ai/sdk` calls | shipped
 Real LiteLLM Python proxy bridge | shipped
-Real MCP `tools/call` from an agent node | not yet
+Real MCP `tools/call` from an agent node | shipped
 
 ---
 

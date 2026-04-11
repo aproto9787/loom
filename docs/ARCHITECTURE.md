@@ -70,7 +70,11 @@ system as it stands at the end of the early v0.1 slices.
 4. `runFlow()` is a thin consumer of `streamRunFlow()` that collects
    the final outputs map and rebuilds the original synchronous
    `RunResponse` shape so `POST /runs` stays backward compatible.
-5. Every completed run is persisted to `.loom/traces.db` through
+5. The runner also owns a per-run `RuntimeSession` resource cache. MCP
+   clients created for `flow.mcps[*]` and `mcp.server` nodes are keyed by
+   server id, so `mcp.server` metadata collection and `agent.*`
+   tool-execution loops share one subprocess per server within a run.
+6. Every completed run is persisted to `.loom/traces.db` through
    `trace-store.ts`, including all node outputs. The SQLite file
    is gitignored.
 
@@ -87,20 +91,24 @@ interface RuntimeAdapter {
 ```
 
 - `claude-api` remains mock-first when `ANTHROPIC_API_KEY` is
-  absent, preserving the existing word-sized token chunks so the
-  runner and studio still see the same local-first stream. When the
-  key is present, the adapter switches to `@anthropic-ai/sdk`
-  `messages.stream()`, forwards `content_block_delta` text as
-  `node_token` events, and concatenates the streamed text into the
-  final node output.
+  absent, preserving the existing word-sized token chunks when no MCP
+  servers are attached and switching to a deterministic first-tool
+  simulation when `node.mcps` is present. When the key is present, the
+  adapter switches to `@anthropic-ai/sdk` `messages.stream()`, declares
+  every bound MCP tool as an Anthropic tool, executes each streamed
+  `tool_use` through the runner-provided MCP handle, and resumes the
+  conversation until the model finishes with plain text.
 - `litellm` is also mock-first, preserving the existing canned reply
   and token chunking whenever neither `LOOM_LITELLM_URL` nor the opt-in
-  `LOOM_LITELLM_SPAWN=1` path is active. With `LOOM_LITELLM_URL` set it
-  POSTs to the OpenAI-compatible `/chat/completions` endpoint and
-  forwards streaming SSE deltas as `node_token` chunks. With
-  `LOOM_LITELLM_SPAWN=1`, the adapter starts a local `litellm` proxy on
-  first use, reuses it across nodes via the runner runtime session, and
-  tears it down during runner cleanup.
+  `LOOM_LITELLM_SPAWN=1` path is active and no MCP servers are attached.
+  With MCP bindings present it mirrors the Claude mock path by issuing a
+  deterministic first-tool simulation. With `LOOM_LITELLM_URL` set it
+  POSTs to the OpenAI-compatible `/chat/completions` endpoint,
+  reconstructs streamed `tool_calls`, executes them against the same MCP
+  handles, and continues streaming text deltas as `node_token` chunks.
+  With `LOOM_LITELLM_SPAWN=1`, the adapter starts a local `litellm`
+  proxy on first use, reuses it across nodes via the runner runtime
+  session, and tears it down during runner cleanup.
 - `claude-code` and `codex` adapters are registered stubs that report
   the relevant node type via `supports()` and surface a "not
   implemented" error when invoked, so the registry is always complete
