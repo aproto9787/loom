@@ -1,7 +1,7 @@
 import path from "node:path";
 import Fastify from "fastify";
 import { z } from "zod";
-import { runFlow } from "./runner.js";
+import { runFlow, streamRunFlow } from "./runner.js";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
 const allowedFlowDir = path.join(workspaceRoot, "examples");
@@ -35,6 +35,39 @@ export function buildServer() {
 
     const result = await runFlow(parsed.data.flowPath, parsed.data.inputs);
     return reply.code(200).send(result);
+  });
+
+  app.post("/runs/stream", async (request, reply) => {
+    const parsed = runRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    const write = (kind: string, data: unknown) => {
+      reply.raw.write(`event: ${kind}\n`);
+      reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      for await (const event of streamRunFlow(parsed.data.flowPath, parsed.data.inputs)) {
+        const { kind, ...payload } = event;
+        write(kind, payload);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      write("run_error", { message });
+    } finally {
+      reply.raw.end();
+    }
+
+    return reply;
   });
 
   return app;
