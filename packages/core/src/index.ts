@@ -65,10 +65,22 @@ export type FlowNode = z.infer<typeof flowNodeSchema>;
 export type LoomFlow = z.infer<typeof flowSchema>;
 export type NodeResultValue = string | number | boolean | null | Record<string, unknown> | unknown[];
 
+export interface McpToolDescriptor {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+}
+
+export interface McpInvokeServer {
+  tools: McpToolDescriptor[];
+  callTool: (name: string, args: unknown) => Promise<unknown>;
+}
+
 export interface InvokeContext {
   node: FlowNode;
   resolvedInputs: Record<string, unknown>;
   runtime?: RuntimeSession;
+  mcps?: Record<string, McpInvokeServer>;
 }
 
 export interface RuntimeSession {
