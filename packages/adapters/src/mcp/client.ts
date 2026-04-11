@@ -115,6 +115,14 @@ export class MCPStdioClient {
     return result?.tools ?? [];
   }
 
+  async callTool(name: string, arguments_: unknown): Promise<unknown> {
+    const response = await this.request("tools/call", { name, arguments: arguments_ });
+    if (response.error) {
+      throw new Error(`mcp tools/call failed: ${response.error.message}`);
+    }
+    return response.result;
+  }
+
   close(): void {
     if (this.closed) {
       return;
