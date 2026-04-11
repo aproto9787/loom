@@ -77,7 +77,9 @@ export type InvokeEvent =
 
 export interface RuntimeAdapter {
   id: string;
-  supports(nodeType: FlowNode["type"]): boolean;
+  // Accepts any node type string: future (v0.2+) types may not yet appear in
+  // FlowNode["type"] while their adapter stubs still need to advertise support.
+  supports(nodeType: string): boolean;
   invoke(ctx: InvokeContext): AsyncIterable<InvokeEvent>;
 }
 

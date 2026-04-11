@@ -1,11 +1,11 @@
-import type { FlowNode, InvokeContext, InvokeEvent, RuntimeAdapter } from "@loom/core";
+import type { InvokeContext, InvokeEvent, RuntimeAdapter } from "@loom/core";
 
 export const codexAdapterId = "codex";
 
 class CodexAdapter implements RuntimeAdapter {
   readonly id = codexAdapterId;
 
-  supports(nodeType: FlowNode["type"]): boolean {
+  supports(nodeType: string): boolean {
     return nodeType === "agent.codex";
   }
 

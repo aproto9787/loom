@@ -1,11 +1,11 @@
-import type { FlowNode, InvokeContext, InvokeEvent, RuntimeAdapter } from "@loom/core";
+import type { InvokeContext, InvokeEvent, RuntimeAdapter } from "@loom/core";
 
 export const litellmAdapterId = "litellm";
 
 class LitellmAdapter implements RuntimeAdapter {
   readonly id = litellmAdapterId;
 
-  supports(nodeType: FlowNode["type"]): boolean {
+  supports(nodeType: string): boolean {
     return nodeType === "agent.litellm";
   }
 

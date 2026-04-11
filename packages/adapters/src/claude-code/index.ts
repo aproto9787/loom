@@ -1,11 +1,11 @@
-import type { FlowNode, InvokeContext, InvokeEvent, RuntimeAdapter } from "@loom/core";
+import type { InvokeContext, InvokeEvent, RuntimeAdapter } from "@loom/core";
 
 export const claudeCodeAdapterId = "claude-code";
 
 class ClaudeCodeAdapter implements RuntimeAdapter {
   readonly id = claudeCodeAdapterId;
 
-  supports(nodeType: FlowNode["type"]): boolean {
+  supports(nodeType: string): boolean {
     return nodeType === "agent.claude-code";
   }
 
