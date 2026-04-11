@@ -10,7 +10,7 @@ export const mcpSchema = z.object({
   id: z.string().min(1),
   command: z.string().min(1),
   args: z.array(z.string()).default([]),
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
 });
 
 export const referenceSchema = z.object({
@@ -42,10 +42,10 @@ export const flowNodeSchema = z.object({
     "memory.memento",
     "mcp.server",
   ]),
-  config: z.record(z.unknown()).default({}),
+  config: z.record(z.string(), z.unknown()).default({}),
   mcps: z.array(z.string()).default([]),
-  inputs: z.record(referenceSchema).default({}),
-  outputs: z.record(z.string()).default({}),
+  inputs: z.record(z.string(), referenceSchema).default({}),
+  outputs: z.record(z.string(), z.string()).default({}),
   branches: z.array(z.string()).default([]),
   when: z.string().optional(),
 });
