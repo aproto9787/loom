@@ -6,6 +6,7 @@ import YAML from "yaml";
 import { flowSchema } from "@loom/core";
 import { runFlow, streamRunFlow } from "./runner.js";
 import { stringifyFlow } from "./flow-writer.js";
+import { getRun, listRuns } from "./trace-store.js";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
 const allowedFlowDir = path.join(workspaceRoot, "examples");
@@ -42,6 +43,15 @@ const runRequestSchema = z.object({
     message: "flowPath must stay within examples/",
   }),
   inputs: z.record(z.string(), z.unknown()).default({}),
+});
+
+const runsListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+const runParamsSchema = z.object({
+  id: z.string().min(1),
 });
 
 export function buildServer() {
@@ -106,6 +116,34 @@ export function buildServer() {
     await rename(tempPath, absolutePath);
 
     return reply.code(200).send({ flowPath: parsed.data.flowPath });
+  });
+
+  app.get("/runs", async (request, reply) => {
+    const parsed = runsListQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    const runs = listRuns(parsed.data.page, parsed.data.pageSize);
+    return reply.code(200).send({
+      page: parsed.data.page,
+      pageSize: parsed.data.pageSize,
+      runs,
+    });
+  });
+
+  app.get("/runs/:id", async (request, reply) => {
+    const parsed = runParamsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    const run = getRun(parsed.data.id);
+    if (!run) {
+      return reply.code(404).send({ error: { message: "run not found" } });
+    }
+
+    return reply.code(200).send(run);
   });
 
   app.post("/runs", async (request, reply) => {

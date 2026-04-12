@@ -49,19 +49,27 @@ function applyRuntimeEdges(edges: Edge[], nodeRuntimes: Record<string, NodeRunti
   });
 }
 
-function applySelection(nodes: Node[], selectedId: string | undefined): Node[] {
-  if (!selectedId) return nodes;
-  return nodes.map((node) =>
-    node.id === selectedId
-      ? { ...node, className: `${node.className ?? ""} loom-node--selected`.trim() }
-      : node,
-  );
+function applySelection(
+  nodes: Node[],
+  selectedId: string | undefined,
+  replaySelectedId: string | undefined,
+): Node[] {
+  return nodes.map((node) => {
+    const selected = node.id === selectedId;
+    const replaySelected = node.id === replaySelectedId;
+    const classNames = [node.className ?? ""];
+    if (selected) classNames.push("loom-node--selected");
+    if (replaySelected) classNames.push("loom-node--replay-selected");
+    return { ...node, className: classNames.join(" ").trim() };
+  });
 }
 
 function EditorCanvas() {
   const flowDraft = useRunStore((state) => state.flowDraft);
   const nodeRuntimes = useRunStore((state) => state.nodeRuntimes);
   const selectedNodeId = useRunStore((state) => state.selectedNodeId);
+  const replaySelectedNodeId = useRunStore((state) => state.replaySelectedNodeId);
+  const selectedRunId = useRunStore((state) => state.selectedRunId);
   const positionOverrides = useRunStore((state) => state.nodePositionOverrides);
   const addNode = useRunStore((state) => state.addNode);
   const deleteNode = useRunStore((state) => state.deleteNode);
@@ -84,8 +92,8 @@ function EditorCanvas() {
       return override ? { ...node, position: override } : node;
     });
     const withRuntime = applyRuntimeState(withOverrides, nodeRuntimes);
-    return applySelection(withRuntime, selectedNodeId);
-  }, [baseGraph.nodes, positionOverrides, nodeRuntimes, selectedNodeId]);
+    return applySelection(withRuntime, selectedNodeId, selectedRunId ? replaySelectedNodeId : undefined);
+  }, [baseGraph.nodes, positionOverrides, nodeRuntimes, selectedNodeId, replaySelectedNodeId, selectedRunId]);
 
   const displayEdges = useMemo(
     () => applyRuntimeEdges(baseGraph.edges, nodeRuntimes),

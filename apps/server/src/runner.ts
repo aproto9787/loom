@@ -382,6 +382,7 @@ export async function* streamRunFlow(
         continue;
       }
 
+      const startedAt = new Date().toISOString();
       yield { kind: "node_start", nodeId: node.id, type: node.type };
 
       const resolvedInputs = Object.fromEntries(
@@ -418,8 +419,9 @@ export async function* streamRunFlow(
         throw nodeError;
       }
 
+      const finishedAt = new Date().toISOString();
       values.set(node.id, output);
-      nodeResults.push({ nodeId: node.id, output });
+      nodeResults.push({ nodeId: node.id, output, startedAt, finishedAt });
       yield { kind: "node_complete", nodeId: node.id, output, meta: buildNodeMeta(node, output) };
     }
 

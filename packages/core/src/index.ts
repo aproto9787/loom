@@ -111,6 +111,8 @@ export interface RunRequest {
 export interface RunNodeResult {
   nodeId: string;
   output: unknown;
+  startedAt?: string;
+  finishedAt?: string;
 }
 
 export interface RunResponse {

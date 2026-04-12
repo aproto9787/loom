@@ -377,7 +377,7 @@ Studio React Flow canvas rendering the loaded flow | shipped
 Studio RunPanel + SSE client + live token buffer | shipped
 CORS for the Vite dev server | shipped
 Graph editing (drag/connect/inspect) | shipped
-Run replay timeline | not yet
+Run replay timeline | shipped
 Real `@anthropic-ai/sdk` calls | shipped
 Real LiteLLM Python proxy bridge | shipped
 Real MCP `tools/call` from an agent node | shipped
@@ -453,10 +453,35 @@ f224752 feat(server): PUT /flows/save backend for phase 3a graph editing
 
 ---
 
-## Natural next slices
+## Phase 4 — Run replay timeline (closing the last v0.1 gap)
 
-1. **Phase 4 — Run replay.** Surface the SQLite trace rows in the
-   studio and add a timeline scrubber.
+Phase 4 surfaces the SQLite trace data already persisted by the
+runner and adds a replay timeline scrubber to the studio.
 
-This is the single remaining v0.1 coverage gap ("Run replay timeline")
-after Phase 3 landed graph editing end-to-end.
+**Backend** (already landed during Phase 2–3, verified here):
+
+- `GET /runs` returns paginated run summaries (runId, flowName,
+  nodeCount, createdAt) with `page`/`pageSize` query params
+- `GET /runs/:id` returns a full `PersistedRunDetail` with ordered
+  `nodeResults` including `startedAt`/`finishedAt` timing fields
+- `trace-store.ts` already records per-node timing via the runner's
+  `node_start`/`node_complete` events
+- Four new server tests cover list, pagination, detail, and 404
+  (total: 9/9 pass)
+
+**Frontend** (Phase 4 new work):
+
+- `EditorCanvas` (App.tsx) now reads `selectedRunId` from the store;
+  when in replay mode the `loom-node--replay-selected` CSS class
+  (blue border + box-shadow) highlights the active replay node on the
+  React Flow canvas without disturbing edit-mode selection styles
+- `Inspector.tsx` switches to a `ReplayNodeInspector` view when
+  `selectedRunId` is set: shows `startedAt → finishedAt (duration)`,
+  node output in a `<pre>` block, and optional `meta` as JSON
+- `RunPanel.tsx` already shipped `RunHistoryDrawer` (past-run list)
+  and `ReplayTimeline` (segment chips with timing bars) during
+  earlier phases; Phase 4 wired the remaining graph ↔ inspector
+  integration
+
+All v0.1 coverage rows are now **shipped**. `pnpm -r build` and
+`pnpm -r test` (9/9) pass.

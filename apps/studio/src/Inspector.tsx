@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FlowNode } from "@loom/core";
+import { formatJson } from "./replay.js";
 import { useRunStore } from "./store.js";
 
 function stringifyJson(value: unknown): string {
@@ -160,22 +161,86 @@ function NodeEditor({ node }: InspectorProps) {
   );
 }
 
+function formatDuration(ms: number | undefined): string {
+  if (ms === undefined) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
+function formatTimestamp(iso: string | undefined): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleTimeString();
+  } catch {
+    return iso;
+  }
+}
+
+function ReplayNodeInspector({ nodeId }: { nodeId: string }) {
+  const runtime = useRunStore((state) => state.nodeRuntimes[nodeId]);
+  if (!runtime) {
+    return <p className="inspector__empty">Replay node details are unavailable.</p>;
+  }
+
+  return (
+    <div className="inspector__body">
+      <div className="inspector__field inspector__field--readonly">
+        <span>Replay node</span>
+        <code>{nodeId}</code>
+      </div>
+      <div className="inspector__field inspector__field--readonly">
+        <span>State</span>
+        <code>{runtime.state}</code>
+      </div>
+      <div className="inspector__field inspector__field--readonly">
+        <span>Timing</span>
+        <code>
+          {formatTimestamp(runtime.startedAt)} → {formatTimestamp(runtime.finishedAt)}
+          {" "}({formatDuration(runtime.durationMs)})
+        </code>
+      </div>
+      <div className="inspector__field">
+        <span>Output</span>
+        <pre className="inspector__output-pre">{formatJson(runtime.output)}</pre>
+      </div>
+      {runtime.meta && Object.keys(runtime.meta).length > 0 ? (
+        <div className="inspector__field">
+          <span>Meta</span>
+          <pre className="inspector__output-pre">{JSON.stringify(runtime.meta, null, 2)}</pre>
+        </div>
+      ) : null}
+      {runtime.error ? <p className="inspector__error">{runtime.error}</p> : null}
+    </div>
+  );
+}
+
 export function Inspector() {
   const flowDraft = useRunStore((state) => state.flowDraft);
   const selectedNodeId = useRunStore((state) => state.selectedNodeId);
+  const selectedInspectorRunNodeId = useRunStore((state) => state.selectedInspectorRunNodeId);
+  const selectedRunId = useRunStore((state) => state.selectedRunId);
+  const isStreaming = useRunStore((state) => state.isStreaming);
 
   const selectedNode = useMemo(() => {
     if (!flowDraft || !selectedNodeId) return undefined;
     return flowDraft.nodes.find((node) => node.id === selectedNodeId);
   }, [flowDraft, selectedNodeId]);
 
+  const isReplayMode = Boolean(selectedRunId) && !isStreaming;
+  const showReplay = isReplayMode && selectedInspectorRunNodeId;
+  const showEditor = selectedNode && !isReplayMode;
+
   return (
     <section className="inspector">
       <p className="eyebrow">Inspector</p>
-      {selectedNode ? (
+      {showReplay ? (
+        <ReplayNodeInspector nodeId={selectedInspectorRunNodeId} key={selectedInspectorRunNodeId} />
+      ) : showEditor ? (
         <NodeEditor node={selectedNode} key={selectedNode.id} />
       ) : (
-        <p className="inspector__empty">Select a node to edit its configuration.</p>
+        <p className="inspector__empty">
+          {isReplayMode ? "Select a node in the graph to view its I/O." : "Select a node to edit its configuration."}
+        </p>
       )}
     </section>
   );

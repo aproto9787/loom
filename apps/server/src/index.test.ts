@@ -2,8 +2,10 @@ import { rm } from "node:fs/promises";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildServer } from "./index.js";
+import { resetTraceStore } from "./trace-store.js";
 
 void test("POST /runs returns MCP tool traces for agent.claude mock mode", async () => {
+  resetTraceStore();
   process.env.LOOM_MOCK = "1";
   process.env.LOOM_SERVER_AUTOSTART = "0";
   const app = buildServer();
@@ -33,6 +35,7 @@ void test("POST /runs returns MCP tool traces for agent.claude mock mode", async
 });
 
 void test("POST /runs\/stream keeps MCP tool metadata for mcp.server nodes", async () => {
+  resetTraceStore();
   process.env.LOOM_MOCK = "1";
   process.env.LOOM_SERVER_AUTOSTART = "0";
   const app = buildServer();
@@ -59,6 +62,7 @@ void test("POST /runs\/stream keeps MCP tool metadata for mcp.server nodes", asy
 });
 
 void test("PUT /flows/save round-trips a flow through YAML", async () => {
+  resetTraceStore();
   process.env.LOOM_MOCK = "1";
   process.env.LOOM_SERVER_AUTOSTART = "0";
   const app = buildServer();
@@ -104,6 +108,7 @@ void test("PUT /flows/save round-trips a flow through YAML", async () => {
 });
 
 void test("PUT /flows/save rejects invalid flow schema bodies", async () => {
+  resetTraceStore();
   process.env.LOOM_MOCK = "1";
   process.env.LOOM_SERVER_AUTOSTART = "0";
   const app = buildServer();
@@ -143,6 +148,7 @@ void test("PUT /flows/save rejects invalid flow schema bodies", async () => {
 });
 
 void test("PUT /flows/save rejects escaped and non-yaml paths", async () => {
+  resetTraceStore();
   process.env.LOOM_MOCK = "1";
   process.env.LOOM_SERVER_AUTOSTART = "0";
   const app = buildServer();
@@ -180,6 +186,154 @@ void test("PUT /flows/save rejects escaped and non-yaml paths", async () => {
 
     assert.equal(extensionResponse.statusCode, 400);
     assert.match(JSON.stringify(extensionResponse.json().error), /\.yaml/);
+  } finally {
+    delete process.env.LOOM_MOCK;
+    delete process.env.LOOM_SERVER_AUTOSTART;
+    await app.close();
+  }
+});
+
+void test("GET /runs lists persisted runs with pagination metadata", async () => {
+  resetTraceStore();
+  process.env.LOOM_MOCK = "1";
+  process.env.LOOM_SERVER_AUTOSTART = "0";
+  const app = buildServer();
+
+  try {
+    for (const prompt of ["first run", "second run"]) {
+      const runResponse = await app.inject({
+        method: "POST",
+        url: "/runs",
+        payload: {
+          flowPath: "examples/mcp-tool-use.yaml",
+          inputs: { prompt },
+        },
+      });
+      assert.equal(runResponse.statusCode, 200);
+    }
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/runs?page=1&pageSize=1",
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.page, 1);
+    assert.equal(body.pageSize, 1);
+    assert.equal(body.runs.length, 1);
+    assert.equal(typeof body.runs[0].runId, "string");
+    assert.equal(body.runs[0].flowName, "MCP Tool Use Demo");
+    assert.equal(body.runs[0].nodeCount, 3);
+    assert.equal(typeof body.runs[0].createdAt, "string");
+  } finally {
+    delete process.env.LOOM_MOCK;
+    delete process.env.LOOM_SERVER_AUTOSTART;
+    await app.close();
+  }
+});
+
+void test("GET /runs/:id returns ordered node results with timing fields", async () => {
+  resetTraceStore();
+  process.env.LOOM_MOCK = "1";
+  process.env.LOOM_SERVER_AUTOSTART = "0";
+  const app = buildServer();
+
+  try {
+    const runResponse = await app.inject({
+      method: "POST",
+      url: "/runs",
+      payload: {
+        flowPath: "examples/mcp-tool-use.yaml",
+        inputs: { prompt: "detail run" },
+      },
+    });
+
+    assert.equal(runResponse.statusCode, 200);
+    const runBody = runResponse.json();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/runs/${runBody.runId}`,
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.runId, runBody.runId);
+    assert.equal(body.flowName, "MCP Tool Use Demo");
+    assert.equal(body.flowPath, "examples/mcp-tool-use.yaml");
+    assert.deepEqual(body.requestedInputs, { prompt: "detail run" });
+    assert.equal(body.nodeResults.length, 3);
+    assert.deepEqual(
+      body.nodeResults.map((node: { nodeId: string }) => node.nodeId),
+      ["claude_with_tools", "output", "prompt_input"],
+    );
+    for (const nodeResult of body.nodeResults) {
+      assert.equal(typeof nodeResult.createdAt, "string");
+      assert.equal(typeof nodeResult.startedAt, "string");
+      assert.equal(typeof nodeResult.finishedAt, "string");
+    }
+  } finally {
+    delete process.env.LOOM_MOCK;
+    delete process.env.LOOM_SERVER_AUTOSTART;
+    await app.close();
+  }
+});
+
+void test("GET /runs/:id returns 404 for missing runs", async () => {
+  resetTraceStore();
+  process.env.LOOM_MOCK = "1";
+  process.env.LOOM_SERVER_AUTOSTART = "0";
+  const app = buildServer();
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/runs/missing-run-id",
+    });
+
+    assert.equal(response.statusCode, 404);
+    assert.deepEqual(response.json(), { error: { message: "run not found" } });
+  } finally {
+    delete process.env.LOOM_MOCK;
+    delete process.env.LOOM_SERVER_AUTOSTART;
+    await app.close();
+  }
+});
+
+void test("GET /runs returns runs array with default pagination", async () => {
+  resetTraceStore();
+  process.env.LOOM_MOCK = "1";
+  process.env.LOOM_SERVER_AUTOSTART = "0";
+  const app = buildServer();
+
+  try {
+    const runResponse = await app.inject({
+      method: "POST",
+      url: "/runs",
+      payload: {
+        flowPath: "examples/mcp-tool-use.yaml",
+        inputs: { prompt: "default list run" },
+      },
+    });
+
+    assert.equal(runResponse.statusCode, 200);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/runs",
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.page, 1);
+    assert.equal(body.pageSize, 20);
+    assert.ok(Array.isArray(body.runs));
+    assert.equal(body.runs.length, 1);
+    assert.equal(typeof body.runs[0].runId, "string");
+    assert.equal(body.runs[0].flowName, "MCP Tool Use Demo");
+    assert.equal(body.runs[0].nodeCount, 3);
+    assert.equal(typeof body.runs[0].createdAt, "string");
   } finally {
     delete process.env.LOOM_MOCK;
     delete process.env.LOOM_SERVER_AUTOSTART;

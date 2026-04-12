@@ -18,7 +18,7 @@ export type RunStreamEvent =
       runId: string;
       flowName: string;
       outputs: Record<string, unknown>;
-      nodeResults: Array<{ nodeId: string; output: unknown }>;
+      nodeResults: PersistedNodeResult[];
     }
   | { kind: "run_error"; runId?: string; message: string };
 
@@ -32,6 +32,26 @@ export interface NodeRuntime {
   output?: unknown;
   meta?: Record<string, unknown>;
   error?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+}
+
+export interface PersistedNodeResult {
+  nodeId: string;
+  output: unknown;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+export interface PersistedRunSummary {
+  runId: string;
+  flowName: string;
+  flowPath: string;
+  requestedInputs: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  createdAt: string;
+  nodeResults: PersistedNodeResult[];
 }
 
 export type EditableNodeType = FlowNode["type"];
@@ -72,6 +92,30 @@ function defaultConfigFor(type: EditableNodeType): Record<string, unknown> {
 
 function emptyNode(id: string): NodeRuntime {
   return { id, state: "pending", tokens: [] };
+}
+
+function durationBetween(startedAt?: string, finishedAt?: string): number | undefined {
+  if (!startedAt || !finishedAt) return undefined;
+  const startMs = Date.parse(startedAt);
+  const endMs = Date.parse(finishedAt);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return undefined;
+  return Math.max(endMs - startMs, 0);
+}
+
+function hydrateReplayNodes(nodeResults: PersistedNodeResult[]): Record<string, NodeRuntime> {
+  const replayNodes: Record<string, NodeRuntime> = {};
+  for (const node of nodeResults) {
+    replayNodes[node.nodeId] = {
+      id: node.nodeId,
+      state: "done",
+      tokens: [],
+      output: node.output,
+      startedAt: node.startedAt,
+      finishedAt: node.finishedAt,
+      durationMs: durationBetween(node.startedAt, node.finishedAt),
+    };
+  }
+  return replayNodes;
 }
 
 function createFlowNode(type: EditableNodeType, existing: FlowNode[]): FlowNode {
@@ -117,6 +161,8 @@ interface RunState {
   flowDraft?: LoomFlow;
   isDirty: boolean;
   selectedNodeId?: string;
+  selectedInspectorRunNodeId?: string;
+  replaySelectedNodeId?: string;
   isSaving: boolean;
   saveError?: string;
   nodePositionOverrides: Record<string, Position>;
@@ -128,11 +174,15 @@ interface RunState {
   finalOutputs?: Record<string, unknown>;
   runError?: string;
   loadError?: string;
+  runHistory: PersistedRunSummary[];
+  selectedRunId?: string;
   setFlowPath: (value: string) => void;
   setInputsJson: (value: string) => void;
   setAvailableFlows: (flows: string[]) => void;
   setLoadedFlow: (flow: LoomFlow | undefined) => void;
   setLoadError: (message: string | undefined) => void;
+  setRunHistory: (runs: PersistedRunSummary[]) => void;
+  selectRun: (runId: string | undefined) => void;
   selectNode: (nodeId: string | undefined) => void;
   addNode: (type: EditableNodeType, position?: Position) => void;
   deleteNode: (nodeId: string) => void;
@@ -144,6 +194,7 @@ interface RunState {
   beginSave: () => void;
   endSave: (savedFlow: LoomFlow) => void;
   setSaveError: (message: string | undefined) => void;
+  selectReplayNode: (nodeId: string | undefined) => void;
   beginStream: () => void;
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
@@ -154,6 +205,7 @@ export const useRunStore = create<RunState>((set) => ({
   inputsJson: '{\n  "topic": "loom studio"\n}',
   availableFlows: [],
   isDirty: false,
+  runHistory: [],
   isSaving: false,
   nodePositionOverrides: {},
   isStreaming: false,
@@ -165,23 +217,79 @@ export const useRunStore = create<RunState>((set) => ({
       flowDraft: undefined,
       isDirty: false,
       selectedNodeId: undefined,
+      selectedInspectorRunNodeId: undefined,
+      replaySelectedNodeId: undefined,
       saveError: undefined,
       nodePositionOverrides: {},
     }),
   setInputsJson: (value) => set({ inputsJson: value }),
   setAvailableFlows: (flows) => set({ availableFlows: flows }),
+  setRunHistory: (runs) =>
+    set((state) => {
+      const fallbackSelectedRunId = state.selectedRunId && runs.some((run) => run.runId === state.selectedRunId)
+        ? state.selectedRunId
+        : runs[0]?.runId;
+      const selectedRun = runs.find((run) => run.runId === fallbackSelectedRunId);
+      return {
+        runHistory: runs,
+        selectedRunId: fallbackSelectedRunId,
+        replaySelectedNodeId: undefined,
+        selectedInspectorRunNodeId: undefined,
+        nodeRuntimes:
+          !state.isStreaming && selectedRun
+            ? hydrateReplayNodes(selectedRun.nodeResults)
+            : state.nodeRuntimes,
+        finalOutputs: !state.isStreaming && selectedRun ? selectedRun.outputs : state.finalOutputs,
+        runId: !state.isStreaming && selectedRun ? selectedRun.runId : state.runId,
+        flowName: !state.isStreaming && selectedRun ? selectedRun.flowName : state.flowName,
+        inputsJson:
+          !state.isStreaming && selectedRun
+            ? JSON.stringify(selectedRun.requestedInputs, null, 2)
+            : state.inputsJson,
+      };
+    }),
+  selectRun: (runId) =>
+    set((state) => {
+      const selectedRun = state.runHistory.find((run) => run.runId === runId);
+      if (!selectedRun) {
+        return {
+          selectedRunId: runId,
+          replaySelectedNodeId: undefined,
+          selectedInspectorRunNodeId: undefined,
+        };
+      }
+      return {
+        selectedRunId: selectedRun.runId,
+        replaySelectedNodeId: undefined,
+        selectedInspectorRunNodeId: undefined,
+        nodeRuntimes: state.isStreaming ? state.nodeRuntimes : hydrateReplayNodes(selectedRun.nodeResults),
+        finalOutputs: state.isStreaming ? state.finalOutputs : selectedRun.outputs,
+        runId: state.isStreaming ? state.runId : selectedRun.runId,
+        flowName: state.isStreaming ? state.flowName : selectedRun.flowName,
+        inputsJson: state.isStreaming
+          ? state.inputsJson
+          : JSON.stringify(selectedRun.requestedInputs, null, 2),
+      };
+    }),
   setLoadedFlow: (flow) =>
     set({
       loadedFlow: flow,
       flowDraft: flow ? cloneFlow(flow) : undefined,
       isDirty: false,
       selectedNodeId: undefined,
+      selectedInspectorRunNodeId: undefined,
+      replaySelectedNodeId: undefined,
       saveError: undefined,
       nodePositionOverrides: {},
       loadError: undefined,
     }),
   setLoadError: (message) => set({ loadError: message }),
-  selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
+  selectNode: (nodeId) =>
+    set({
+      selectedNodeId: nodeId,
+      selectedInspectorRunNodeId: nodeId,
+      replaySelectedNodeId: nodeId,
+    }),
   addNode: (type, position) =>
     set((state) => {
       if (!state.flowDraft) return state;
@@ -334,6 +442,18 @@ export const useRunStore = create<RunState>((set) => ({
       },
     })),
   beginSave: () => set({ isSaving: true, saveError: undefined }),
+  selectReplayNode: (nodeId) =>
+    set((state) => {
+      const selected = nodeId ?? undefined;
+      const draftHasNode = selected
+        ? Boolean(state.flowDraft?.nodes.some((node) => node.id === selected))
+        : false;
+      return {
+        replaySelectedNodeId: selected,
+        selectedInspectorRunNodeId: selected,
+        selectedNodeId: draftHasNode ? selected : state.selectedNodeId,
+      };
+    }),
   endSave: (savedFlow) =>
     set({
       isSaving: false,
@@ -352,6 +472,8 @@ export const useRunStore = create<RunState>((set) => ({
       runError: undefined,
       runId: undefined,
       flowName: undefined,
+      replaySelectedNodeId: undefined,
+      selectedInspectorRunNodeId: undefined,
     }),
   endStream: () => set({ isStreaming: false }),
   ingest: (event) =>
@@ -374,6 +496,10 @@ export const useRunStore = create<RunState>((set) => ({
             ...current,
             state: "running",
             type: event.type,
+            startedAt: current.startedAt ?? new Date().toISOString(),
+            finishedAt: undefined,
+            durationMs: undefined,
+            error: undefined,
           };
           break;
         }
@@ -387,28 +513,39 @@ export const useRunStore = create<RunState>((set) => ({
         }
         case "node_complete": {
           const current = nextNodes[event.nodeId] ?? emptyNode(event.nodeId);
+          const finishedAt = new Date().toISOString();
           nextNodes[event.nodeId] = {
             ...current,
             state: "done",
             output: event.output,
             meta: event.meta ?? current.meta,
+            startedAt: current.startedAt,
+            finishedAt,
+            durationMs: durationBetween(current.startedAt, finishedAt),
+            error: undefined,
           };
           break;
         }
         case "node_skipped": {
           const current = nextNodes[event.nodeId] ?? emptyNode(event.nodeId);
+          const finishedAt = new Date().toISOString();
           nextNodes[event.nodeId] = {
             ...current,
             state: "skipped",
+            finishedAt,
+            durationMs: durationBetween(current.startedAt, finishedAt),
           };
           break;
         }
         case "node_error": {
           const current = nextNodes[event.nodeId] ?? emptyNode(event.nodeId);
+          const finishedAt = new Date().toISOString();
           nextNodes[event.nodeId] = {
             ...current,
             state: "error",
             error: event.message,
+            finishedAt,
+            durationMs: durationBetween(current.startedAt, finishedAt),
           };
           break;
         }
@@ -429,6 +566,7 @@ export const useRunStore = create<RunState>((set) => ({
         flowName: nextFlowName,
         finalOutputs: nextOutputs,
         runError: nextRunError,
+        selectedRunId: state.isStreaming ? state.selectedRunId : nextRunId ?? state.selectedRunId,
       };
     }),
 }));
