@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, RoleDefinition, RunEvent, SkillDefinition } from "@loom/core";
+import { duplicateFlow as duplicateFlowRequest } from "./api.js";
 
 // --- Agent path helpers ---
 
@@ -119,6 +120,16 @@ export interface AgentRuntime {
 
 // --- Store ---
 
+type RunStatus = "success" | "failed" | "aborted";
+
+export interface RunHistoryItem {
+  runId: string;
+  flowName: string;
+  status: RunStatus;
+  createdAt: string;
+  agentCount: number;
+}
+
 interface StudioState {
   flowPath: string;
   availableFlows: string[];
@@ -133,6 +144,11 @@ interface StudioState {
   chatRepo: string;
   chatInput: string;
   autoRunAfterSave: boolean;
+  duplicateName: string;
+  runHistory: RunHistoryItem[];
+  runHistoryKeyword: string;
+  runHistoryStatus: "all" | RunStatus;
+  runHistoryLoading: boolean;
 
   // Roles & custom resources
   roles: RoleDefinition[];
@@ -173,8 +189,13 @@ interface StudioState {
   setChatRepo: (path: string) => void;
   setChatInput: (value: string) => void;
   setAutoRunAfterSave: (value: boolean) => void;
+  setDuplicateName: (value: string) => void;
+  setRunHistoryKeyword: (value: string) => void;
+  setRunHistoryStatus: (value: "all" | RunStatus) => void;
 
   deleteFlow: (origin: string, flowPath: string) => Promise<void>;
+  duplicateFlow: (origin: string, sourcePath: string, name: string) => Promise<void>;
+  fetchRunHistory: (origin: string) => Promise<void>;
 
   fetchRoles: (origin: string) => Promise<void>;
   saveRole: (origin: string, role: RoleDefinition) => Promise<void>;
@@ -204,6 +225,11 @@ export const useRunStore = create<StudioState>((set) => ({
   chatRepo: '',
   chatInput: '',
   autoRunAfterSave: false,
+  duplicateName: "",
+  runHistory: [],
+  runHistoryKeyword: "",
+  runHistoryStatus: "all",
+  runHistoryLoading: false,
   roles: [],
   availableMcps: [],
   hooks: [],
@@ -434,6 +460,9 @@ export const useRunStore = create<StudioState>((set) => ({
   setChatRepo: (path) => set({ chatRepo: path }),
   setChatInput: (value) => set({ chatInput: value }),
   setAutoRunAfterSave: (value) => set({ autoRunAfterSave: value }),
+  setDuplicateName: (value) => set({ duplicateName: value }),
+  setRunHistoryKeyword: (value) => set({ runHistoryKeyword: value }),
+  setRunHistoryStatus: (value) => set({ runHistoryStatus: value }),
 
   deleteFlow: async (origin, flowPath) => {
     const fileName = flowPath.replace("examples/", "");
@@ -559,5 +588,31 @@ export const useRunStore = create<StudioState>((set) => ({
     const res = await fetch(`${origin}/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
     if (!res.ok) throw new Error("failed to delete skill");
     set((state) => ({ skills: state.skills.filter((s) => s.name !== name) }));
+  },
+
+  duplicateFlow: async (origin, sourcePath, name) => {
+    const { flowPath } = await duplicateFlowRequest(origin, sourcePath, name);
+    const listRes = await fetch(`${origin}/flows`);
+    if (listRes.ok) {
+      const data = (await listRes.json()) as { flows: string[] };
+      set({ availableFlows: data.flows, flowPath });
+    }
+  },
+
+  fetchRunHistory: async (origin) => {
+    set({ runHistoryLoading: true });
+    try {
+      const state = useRunStore.getState();
+      const params = new URLSearchParams();
+      if (state.runHistoryKeyword) params.set("keyword", state.runHistoryKeyword);
+      if (state.runHistoryStatus !== "all") params.set("status", state.runHistoryStatus);
+      const qs = params.toString();
+      const res = await fetch(`${origin}/runs${qs ? `?${qs}` : ""}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { runs: RunHistoryItem[] };
+      set({ runHistory: data.runs });
+    } catch { /* skip */ } finally {
+      set({ runHistoryLoading: false });
+    }
   },
 }));

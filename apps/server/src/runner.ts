@@ -1,7 +1,8 @@
-import { readFile, readdir, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, mkdir, rm, writeFile } from "node:fs/promises";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
+import os from "node:os";
 import { randomUUID } from "node:crypto";
 import YAML from "yaml";
 import {
@@ -29,6 +30,12 @@ interface LoadedFlow {
   absolutePath: string;
   flowDir: string;
   flow: FlowDefinition;
+}
+
+interface AgentResourceScope {
+  mcps: string[];
+  hooks: string[];
+  skills: string[];
 }
 
 interface RunResources {
@@ -152,8 +159,59 @@ function buildParallelChildPrompt(parentPrompt: string, siblingNames: string[]):
   ].join("\n");
 }
 
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+function resolveAgentResources(agent: AgentConfig, flow: FlowDefinition): AgentResourceScope {
+  return {
+    mcps: uniqueStrings([...(flow.resources?.mcps ?? []), ...(agent.mcps ?? [])]),
+    hooks: uniqueStrings([...(flow.resources?.hooks ?? []), ...(agent.hooks ?? [])]),
+    skills: uniqueStrings([...(flow.resources?.skills ?? []), ...(agent.skills ?? [])]),
+  };
+}
+
+async function createScopedMcpConfig(agent: AgentConfig, flow: FlowDefinition): Promise<string | undefined> {
+  const scopedMcps = resolveAgentResources(agent, flow).mcps;
+  if (scopedMcps.length === 0) {
+    return undefined;
+  }
+
+  const sources = [
+    path.join(os.homedir(), ".claude.json"),
+    path.join(workspaceRoot, ".mcp.json"),
+  ];
+  const mergedServers: Record<string, unknown> = {};
+
+  for (const source of sources) {
+    try {
+      const raw = await readFile(source, "utf8");
+      const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
+      Object.assign(mergedServers, parsed.mcpServers ?? {});
+    } catch {
+      // Skip missing or invalid configs.
+    }
+  }
+
+  const selectedServers = Object.fromEntries(
+    scopedMcps
+      .map((name) => [name, mergedServers[name]] as const)
+      .filter((entry): entry is [string, unknown] => entry[1] !== undefined),
+  );
+
+  if (Object.keys(selectedServers).length === 0) {
+    return undefined;
+  }
+
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-mcp-"));
+  const configPath = path.join(tempDir, ".mcp.json");
+  await writeFile(configPath, JSON.stringify({ mcpServers: selectedServers }, null, 2), "utf8");
+  return configPath;
+}
+
 function buildAgentPrompt(
   agent: AgentConfig,
+  flow: FlowDefinition,
   flowRepo: string,
   resources: RunResources,
 ): string {
@@ -164,8 +222,10 @@ function buildAgentPrompt(
   }
 
   // Inject skill prompts
-  if (agent.skills?.length) {
-    for (const skillName of agent.skills) {
+  const scopedResources = resolveAgentResources(agent, flow);
+
+  if (scopedResources.skills.length) {
+    for (const skillName of scopedResources.skills) {
       const skill = resources.skills.get(skillName);
       if (skill) {
         sections.push(`[Skill: ${skill.name}]${skill.description ? ` — ${skill.description}` : ""}\n${skill.prompt}`);
@@ -175,9 +235,12 @@ function buildAgentPrompt(
 
   sections.push(`Shared flow repo: ${flowRepo}`);
 
-  // MCP awareness (informational — actual MCPs are set globally)
-  if (agent.mcps?.length) {
-    sections.push(`MCP servers available to you: ${agent.mcps.join(", ")}`);
+  if (scopedResources.mcps.length) {
+    sections.push(`MCP servers available to you: ${scopedResources.mcps.join(", ")}`);
+  }
+
+  if (scopedResources.hooks.length) {
+    sections.push(`Hook resources available to you: ${scopedResources.hooks.join(", ")}`);
   }
 
   if (agent.agents?.length) {
@@ -230,6 +293,7 @@ export function abortRun(runId: string): boolean {
 
 async function* executeAgent(
   agent: AgentConfig,
+  flow: FlowDefinition,
   input: string,
   flowRepo: string,
   flowCwd: string,
@@ -239,12 +303,18 @@ async function* executeAgent(
   const configuredAgent: AgentConfig = {
     ...agent,
     system: agent.parallel && agent.agents?.length
-      ? buildParallelChildPrompt(buildAgentPrompt(agent, flowRepo, state.resources), agent.agents.map((child) => child.name))
-      : buildAgentPrompt(agent, flowRepo, state.resources),
+      ? buildParallelChildPrompt(buildAgentPrompt(agent, flow, flowRepo, state.resources), agent.agents.map((child) => child.name))
+      : buildAgentPrompt(agent, flow, flowRepo, state.resources),
   };
   const resultAgentName = nextResultAgentName(agent.name, state);
   const startedAt = new Date().toISOString();
-  const hookEnv = { LOOM_AGENT: agent.name, LOOM_AGENT_TYPE: agent.type };
+  const scopedResources = resolveAgentResources(agent, flow);
+  const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow);
+  const hookEnv = {
+    LOOM_AGENT: agent.name,
+    LOOM_AGENT_TYPE: agent.type,
+    ...(scopedMcpConfigPath ? { LOOM_MCP_CONFIG_PATH: scopedMcpConfigPath } : {}),
+  };
   const timeoutMs = agent.timeout ?? DEFAULT_AGENT_TIMEOUT_MS;
   const childAgents = agent.agents ?? [];
   let timedOut = false;
@@ -257,6 +327,7 @@ async function* executeAgent(
     for await (const event of adapter.spawn(configuredAgent, input, flowCwd, {
       signal: state.abortController.signal,
       timeoutMs,
+      env: scopedMcpConfigPath ? { LOOM_MCP_CONFIG_PATH: scopedMcpConfigPath } : undefined,
       onAbort: () => {
         aborted = true;
       },
@@ -300,7 +371,7 @@ async function* executeAgent(
           const childReason = delegatedChild.name === child.name
             ? event.reason
             : parallelDelegations?.find((entry: { childAgent: string; reason: string }) => entry.childAgent === delegatedChild.name)?.reason ?? event.reason;
-          const iterator = executeAgent(delegatedChild, childReason, flowRepo, flowCwd, state);
+          const iterator = executeAgent(delegatedChild, flow, childReason, flowRepo, flowCwd, state);
           const forwardedEvents: RunEvent[] = [];
           let step = await iterator.next();
           while (!step.done) {
@@ -404,6 +475,10 @@ async function* executeAgent(
     yield { type: "agent_error", agentName: agent.name, error: message, fatal: false };
     await runHooks(agent, "on_error", state.resources, { ...hookEnv, LOOM_ERROR: message });
     return { output: "", error: message };
+  } finally {
+    if (scopedMcpConfigPath) {
+      await rm(path.dirname(scopedMcpConfigPath), { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 }
 
@@ -430,7 +505,7 @@ export async function* streamRunFlow(
   yield { type: "run_start", runId, flowName: flow.name };
 
   try {
-    const result = yield* executeAgent(flow.orchestrator, userPrompt, flow.repo, flowCwd, state);
+    const result = yield* executeAgent(flow.orchestrator, flow, userPrompt, flow.repo, flowCwd, state);
     const output = result.output;
 
     persistRun({
@@ -439,17 +514,41 @@ export async function* streamRunFlow(
       flowPath,
       userPrompt,
       output,
+      status: result.error ? "failed" : "success",
       agentResults: state.agentResults,
     });
+
+    if (result.error) {
+      yield { type: "run_error", error: result.error };
+      return;
+    }
 
     yield { type: "run_complete", output };
   } catch (error) {
     if (abortController.signal.aborted) {
+      persistRun({
+        runId,
+        flowName: flow.name,
+        flowPath,
+        userPrompt,
+        output: "",
+        status: "aborted",
+        agentResults: state.agentResults,
+      });
       yield { type: "run_aborted", runId };
       return;
     }
 
     const message = error instanceof Error ? error.message : String(error);
+    persistRun({
+      runId,
+      flowName: flow.name,
+      flowPath,
+      userPrompt,
+      output: "",
+      status: "failed",
+      agentResults: state.agentResults,
+    });
     yield { type: "run_error", error: message };
     return;
   } finally {
@@ -478,7 +577,7 @@ export async function runFlow(
 
   try {
     const result = await (async () => {
-      const iterator = executeAgent(flow.orchestrator, userPrompt, flow.repo, flowCwd, state);
+      const iterator = executeAgent(flow.orchestrator, flow, userPrompt, flow.repo, flowCwd, state);
       let step = await iterator.next();
       while (!step.done) {
         step = await iterator.next();
@@ -493,8 +592,13 @@ export async function runFlow(
       flowPath,
       userPrompt,
       output,
+      status: result.error ? "failed" : "success",
       agentResults: state.agentResults,
     });
+
+    if (result.error) {
+      throw new Error(result.error);
+    }
 
     return {
       runId,

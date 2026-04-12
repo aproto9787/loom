@@ -93,7 +93,7 @@ class ClaudeCodeAdapter implements AgentAdapter {
     try {
       const proc = spawn("claude", buildArgs(config), {
         cwd,
-        env: process.env,
+        env: { ...process.env, ...(controller?.env ?? {}) },
         stdio: ["pipe", "pipe", "pipe"],
         signal: controller?.signal,
       });

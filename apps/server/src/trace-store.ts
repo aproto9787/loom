@@ -16,6 +16,7 @@ database.exec(`
     flow_path TEXT NOT NULL,
     requested_inputs TEXT NOT NULL,
     outputs TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'success',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -42,12 +43,22 @@ for (const columnName of ["started_at", "finished_at"]) {
   }
 }
 
+try {
+  database.exec("ALTER TABLE runs ADD COLUMN status TEXT NOT NULL DEFAULT 'success'");
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message.includes("duplicate column name: status")) {
+    throw error;
+  }
+}
+
 export interface PersistedRun {
   runId: string;
   flowName: string;
   flowPath: string;
   userPrompt: string;
   output: string;
+  status: "success" | "failed" | "aborted";
   agentResults: Array<{
     agentName: string;
     output: string;
@@ -59,6 +70,7 @@ export interface PersistedRun {
 export interface PersistedRunSummary {
   runId: string;
   flowName: string;
+  status: "success" | "failed" | "aborted";
   createdAt: string;
   agentCount: number;
 }
@@ -77,6 +89,7 @@ export interface PersistedRunDetail {
   flowPath: string;
   userPrompt: string;
   output: string;
+  status: "success" | "failed" | "aborted";
   createdAt: string;
   agentResults: PersistedAgentResult[];
 }
@@ -87,8 +100,8 @@ export function getTraceDbPath(): string {
 
 export function persistRun(run: PersistedRun): void {
   const insertRun = database.prepare(`
-    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs, status)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
   const insertAgentResult = database.prepare(`
     INSERT INTO node_results (run_id, node_id, output, started_at, finished_at)
@@ -104,6 +117,7 @@ export function persistRun(run: PersistedRun): void {
       run.flowPath,
       JSON.stringify(run.userPrompt),
       JSON.stringify(run.output),
+      run.status,
     );
 
     for (const agentResult of run.agentResults) {
@@ -123,22 +137,43 @@ export function persistRun(run: PersistedRun): void {
   }
 }
 
-export function listRuns(page: number, pageSize: number): PersistedRunSummary[] {
+export function listRuns(
+  page: number,
+  pageSize: number,
+  filters?: { keyword?: string; status?: "success" | "failed" | "aborted" },
+): PersistedRunSummary[] {
   const offset = (page - 1) * pageSize;
+  const conditions: string[] = [];
+  const values: Array<string | number> = [];
+
+  if (filters?.keyword?.trim()) {
+    const keyword = `%${filters.keyword.trim()}%`;
+    conditions.push("(runs.flow_name LIKE ? OR runs.flow_path LIKE ? OR runs.requested_inputs LIKE ? OR runs.outputs LIKE ?)");
+    values.push(keyword, keyword, keyword, keyword);
+  }
+
+  if (filters?.status) {
+    conditions.push("runs.status = ?");
+    values.push(filters.status);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const statement = database.prepare(`
-    SELECT runs.run_id, runs.flow_name, runs.created_at, COUNT(node_results.node_id) AS agent_count
+    SELECT runs.run_id, runs.flow_name, runs.status, runs.created_at, COUNT(node_results.node_id) AS agent_count
     FROM runs
     LEFT JOIN node_results ON node_results.run_id = runs.run_id
+    ${whereClause}
     GROUP BY runs.run_id
     ORDER BY runs.created_at DESC, runs.run_id DESC
     LIMIT ? OFFSET ?
   `);
 
-  return statement.all(pageSize, offset).map((row) => {
+  return statement.all(...values, pageSize, offset).map((row) => {
     const typedRow = row as Record<string, unknown>;
     return {
       runId: String(typedRow.run_id),
       flowName: String(typedRow.flow_name),
+      status: String(typedRow.status) as PersistedRunSummary["status"],
       createdAt: String(typedRow.created_at),
       agentCount: Number(typedRow.agent_count),
     };
@@ -147,7 +182,7 @@ export function listRuns(page: number, pageSize: number): PersistedRunSummary[] 
 
 export function getRun(runId: string): PersistedRunDetail | null {
   const runStatement = database.prepare(`
-    SELECT run_id, flow_name, flow_path, requested_inputs, outputs, created_at
+    SELECT run_id, flow_name, flow_path, requested_inputs, outputs, status, created_at
     FROM runs
     WHERE run_id = ?
   `);
@@ -180,6 +215,7 @@ export function getRun(runId: string): PersistedRunDetail | null {
     flowPath: String(runRow.flow_path),
     userPrompt: JSON.parse(String(runRow.requested_inputs)) as string,
     output: JSON.parse(String(runRow.outputs)) as string,
+    status: String(runRow.status) as PersistedRunDetail["status"],
     createdAt: String(runRow.created_at),
     agentResults,
   };

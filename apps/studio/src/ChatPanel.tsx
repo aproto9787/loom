@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentConfig, RoleDefinition } from "@loom/core";
-import { useRunStore, getAgentAtPath, type RunStreamEvent } from "./store.js";
+import { useRunStore, getAgentAtPath, type DiscoveredResource, type RunStreamEvent } from "./store.js";
 import { useSseRun } from "./useSseRun.js";
+
+const SERVER_ORIGIN =
+  (import.meta.env?.VITE_LOOM_SERVER as string | undefined) ?? "http://localhost:8787";
 
 /* ── Shared dark-mode input classes ───────────────────────────── */
 
@@ -9,6 +12,14 @@ const inputDark =
   "px-3 py-2 rounded-lg border border-slate-600 bg-slate-800 text-slate-100 text-sm font-mono placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition-colors";
 
 const selectDark = `${inputDark} appearance-auto`;
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function getDiscoveredNames(resources: DiscoveredResource[], type: DiscoveredResource["type"]): string[] {
+  return resources.filter((resource) => resource.type === type).map((resource) => resource.name);
+}
 
 /* ── Agent config header ──────────────────────────────────────── */
 
@@ -26,6 +37,10 @@ export function AgentSummary({
   const updateAgent = useRunStore((s) => s.updateAgent);
   const removeAgent = useRunStore((s) => s.removeAgent);
   const roles = useRunStore((s) => s.roles);
+  const availableMcps = useRunStore((s) => s.availableMcps);
+  const discoveredResources = useRunStore((s) => s.discoveredResources);
+  const fetchMcps = useRunStore((s) => s.fetchMcps);
+  const discoverResources = useRunStore((s) => s.discoverResources);
 
   const [name, setName] = useState(agent.name);
   const [type, setType] = useState(agent.type);
@@ -43,6 +58,35 @@ export function AgentSummary({
     type === "claude-code"
       ? ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
       : ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
+
+  useEffect(() => {
+    fetchMcps(SERVER_ORIGIN);
+    discoverResources(SERVER_ORIGIN);
+  }, [discoverResources, fetchMcps]);
+
+  const mcpOptions = useMemo(
+    () => uniqueSorted([...availableMcps, ...getDiscoveredNames(discoveredResources, "mcp")]),
+    [availableMcps, discoveredResources],
+  );
+  const hookOptions = useMemo(
+    () => uniqueSorted(getDiscoveredNames(discoveredResources, "hook")),
+    [discoveredResources],
+  );
+  const skillOptions = useMemo(
+    () => uniqueSorted(getDiscoveredNames(discoveredResources, "skill")),
+    [discoveredResources],
+  );
+
+  const toggleResource = useCallback(
+    (field: "mcps" | "hooks" | "skills", value: string) => {
+      const current = agent[field] ?? [];
+      const next = current.includes(value)
+        ? current.filter((entry) => entry !== value)
+        : [...current, value];
+      updateAgent(path, { [field]: next.length > 0 ? next : undefined });
+    },
+    [agent, path, updateAgent],
+  );
 
   const isRoot = path.length <= 1;
 
@@ -166,6 +210,39 @@ export function AgentSummary({
               <option value="high">high</option>
             </select>
           </label>
+          <div className="grid gap-3 md:grid-cols-3">
+            {[
+              { field: "mcps" as const, label: "MCPs", options: mcpOptions },
+              { field: "hooks" as const, label: "Hooks", options: hookOptions },
+              { field: "skills" as const, label: "Skills", options: skillOptions },
+            ].map((group) => (
+              <div key={group.field} className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  {group.label}
+                </span>
+                {group.options.length === 0 ? (
+                  <span className="text-xs text-slate-500">No discovered {group.label.toLowerCase()}.</span>
+                ) : (
+                  <div className="flex flex-col gap-2 max-h-40 overflow-y-auto pr-1 dark-scroll">
+                    {group.options.map((option) => {
+                      const checked = (agent[group.field] ?? []).includes(option);
+                      return (
+                        <label key={option} className="flex items-start gap-2 text-xs text-slate-200">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 h-3.5 w-3.5 rounded border-slate-600 bg-slate-800"
+                            checked={checked}
+                            onChange={() => toggleResource(group.field, option)}
+                          />
+                          <span className="break-all font-mono">{option}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
           {!isRoot && (
             <button
               type="button"

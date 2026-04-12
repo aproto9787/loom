@@ -354,6 +354,7 @@ function WorkflowView() {
   const addAgent = useRunStore((s) => s.addAgent);
   const loadError = useRunStore((s) => s.loadError);
   const deleteFlow = useRunStore((s) => s.deleteFlow);
+  const duplicateFlow = useRunStore((s) => s.duplicateFlow);
 
   const handleDeleteFlow = useCallback(
     async (e: React.MouseEvent, fp: string) => {
@@ -366,6 +367,22 @@ function WorkflowView() {
       }
     },
     [deleteFlow],
+  );
+
+  const handleDuplicateFlow = useCallback(
+    async (e: React.MouseEvent, sourcePath: string) => {
+      e.stopPropagation();
+      const baseName = sourcePath.replace(/^examples\//, "").replace(/\.ya?ml$/i, "");
+      const nextName = window.prompt("Duplicate flow as", `${baseName}-copy`);
+      const name = nextName?.trim();
+      if (!name) return;
+      try {
+        await duplicateFlow(SERVER_ORIGIN, sourcePath, name);
+      } catch {
+        // ignore
+      }
+    },
+    [duplicateFlow],
   );
 
   const selectedAgentName =
@@ -399,6 +416,18 @@ function WorkflowView() {
                   onClick={() => useRunStore.getState().setFlowPath(candidate)}
                 >
                   {candidate.replace("examples/", "")}
+                </button>
+                <button
+                  type="button"
+                  className={`px-2.5 border border-l-0 transition-colors ${
+                    candidate === flowPath
+                      ? "bg-slate-800 border-transparent text-slate-300 hover:text-blue-200"
+                      : "bg-white border-slate-300 text-slate-400 hover:bg-blue-50 hover:text-blue-600"
+                  }`}
+                  title="Duplicate flow"
+                  onClick={(e) => handleDuplicateFlow(e, candidate)}
+                >
+                  Copy
                 </button>
                 <button
                   type="button"
@@ -454,6 +483,17 @@ function ChatView() {
   const setChatRepo = useRunStore((s) => s.setChatRepo);
   const availableFlows = useRunStore((s) => s.availableFlows);
   const flowPath = useRunStore((s) => s.flowPath);
+  const runHistory = useRunStore((s) => s.runHistory);
+  const runHistoryKeyword = useRunStore((s) => s.runHistoryKeyword);
+  const runHistoryStatus = useRunStore((s) => s.runHistoryStatus);
+  const runHistoryLoading = useRunStore((s) => s.runHistoryLoading);
+  const setRunHistoryKeyword = useRunStore((s) => s.setRunHistoryKeyword);
+  const setRunHistoryStatus = useRunStore((s) => s.setRunHistoryStatus);
+  const fetchRunHistory = useRunStore((s) => s.fetchRunHistory);
+
+  useEffect(() => {
+    fetchRunHistory(SERVER_ORIGIN);
+  }, [fetchRunHistory, runHistoryKeyword, runHistoryStatus]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] flex-1 min-h-0">
@@ -495,6 +535,65 @@ function ChatView() {
               ))
             )}
           </ul>
+        </div>
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="m-0 text-xs font-semibold uppercase tracking-wider text-blue-600">
+                Run History
+              </p>
+              <p className="m-0 mt-1 text-xs text-slate-500">
+                Search prior executions from the API.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
+              onClick={() => fetchRunHistory(SERVER_ORIGIN)}
+              disabled={runHistoryLoading}
+            >
+              {runHistoryLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+          <input
+            type="search"
+            className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:border-blue-400 transition-colors"
+            placeholder="Search flow or run id"
+            value={runHistoryKeyword}
+            onChange={(e) => setRunHistoryKeyword(e.target.value)}
+          />
+          <select
+            className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:border-blue-400 transition-colors"
+            value={runHistoryStatus}
+            onChange={(e) => setRunHistoryStatus(e.target.value as "all" | "success" | "failed" | "aborted")}
+          >
+            <option value="all">All statuses</option>
+            <option value="success">success</option>
+            <option value="failed">failed</option>
+            <option value="aborted">aborted</option>
+          </select>
+          <div className="max-h-[320px] overflow-y-auto pr-1">
+            {runHistory.length === 0 ? (
+              <p className="m-0 rounded-lg border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-500">
+                {runHistoryLoading ? "Loading run history..." : "No runs matched the current filters."}
+              </p>
+            ) : (
+              <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                {runHistory.map((item) => (
+                  <li key={item.runId} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-900">{item.flowName}</span>
+                      <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+                        {item.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 font-mono text-xs text-slate-500">Run ID: {item.runId}</div>
+                    <div className="mt-1 text-xs text-slate-500">Created: {new Date(item.createdAt).toLocaleString()}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </aside>
       <main className="flex flex-col min-h-0 p-5">

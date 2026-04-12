@@ -70,6 +70,11 @@ export interface FlowDefinition {
   description?: string;
   repo: string;
   orchestrator: AgentConfig;
+  resources?: {
+    mcps?: string[];
+    hooks?: string[];
+    skills?: string[];
+  };
 }
 
 export const flowDefinitionSchema: z.ZodType<FlowDefinition> = z.object({
@@ -77,6 +82,11 @@ export const flowDefinitionSchema: z.ZodType<FlowDefinition> = z.object({
   description: z.string().min(1).optional(),
   repo: z.string().min(1),
   orchestrator: agentConfigSchema,
+  resources: z.object({
+    mcps: z.array(z.string().min(1)).optional(),
+    hooks: z.array(z.string().min(1)).optional(),
+    skills: z.array(z.string().min(1)).optional(),
+  }).optional(),
 });
 
 export const flowSchema = flowDefinitionSchema;

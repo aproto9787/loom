@@ -132,7 +132,7 @@ class CodexAdapter implements AgentAdapter {
       const outputPath = path.join(tempDir, "last-message.txt");
       const proc = spawn("codex", buildArgs(config, outputPath, cwd), {
         cwd,
-        env: process.env,
+        env: { ...process.env, ...(controller?.env ?? {}) },
         stdio: ["pipe", "pipe", "pipe"],
         signal: controller?.signal,
       });

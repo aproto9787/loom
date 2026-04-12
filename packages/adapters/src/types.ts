@@ -11,6 +11,7 @@ export interface SpawnController {
   timeoutMs?: number;
   onAbort?: () => void;
   onTimeout?: () => void;
+  env?: Record<string, string | undefined>;
 }
 
 export interface AgentAdapter {

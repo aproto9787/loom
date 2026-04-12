@@ -51,6 +51,13 @@ const runRequestSchema = z.object({
 const runsListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  keyword: z.string().trim().optional(),
+  status: z.enum(["success", "failed", "aborted"]).optional(),
+});
+
+const duplicateFlowSchema = z.object({
+  sourcePath: flowPathSchema,
+  name: z.string().trim().min(1),
 });
 
 const runParamsSchema = z.object({
@@ -140,6 +147,49 @@ export function buildServer() {
     return reply.code(200).send({ flowPath: parsed.data.flowPath });
   });
 
+  app.post("/flows/duplicate", async (request, reply) => {
+    const parsed = duplicateFlowSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    const sourcePath = path.resolve(workspaceRoot, parsed.data.sourcePath);
+    const raw = await readFile(sourcePath, "utf8");
+    const sourceFlow = flowSchema.safeParse(YAML.parse(raw));
+    if (!sourceFlow.success) {
+      return reply.code(400).send({ error: flattenValidationError(sourceFlow.error) });
+    }
+
+    const baseName = parsed.data.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "flow-copy";
+    let candidatePath = `examples/${baseName}.yaml`;
+    let suffix = 2;
+
+    while (true) {
+      const candidateAbsolute = path.resolve(workspaceRoot, candidatePath);
+      try {
+        await readFile(candidateAbsolute, "utf8");
+        candidatePath = `examples/${baseName}-${suffix}.yaml`;
+        suffix += 1;
+      } catch {
+        break;
+      }
+    }
+
+    const duplicatedFlow = {
+      ...sourceFlow.data,
+      name: parsed.data.name,
+    };
+    const tempPath = path.join(allowedFlowDir, `.${path.basename(candidatePath)}.tmp`);
+    const absolutePath = path.resolve(workspaceRoot, candidatePath);
+    await writeFile(tempPath, stringifyFlow(duplicatedFlow), "utf8");
+    await rename(tempPath, absolutePath);
+
+    return reply.code(201).send({ flowPath: candidatePath, flow: duplicatedFlow });
+  });
+
   app.delete("/flows/:path", async (request, reply) => {
     const { path: flowPath } = request.params as { path: string };
     const fullPath = `examples/${flowPath}`;
@@ -163,7 +213,10 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
 
-    const runs = listRuns(parsed.data.page, parsed.data.pageSize);
+    const runs = listRuns(parsed.data.page, parsed.data.pageSize, {
+      keyword: parsed.data.keyword,
+      status: parsed.data.status,
+    });
     return reply.code(200).send({
       page: parsed.data.page,
       pageSize: parsed.data.pageSize,
