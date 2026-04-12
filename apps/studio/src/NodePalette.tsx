@@ -1,5 +1,22 @@
 import { EDITABLE_NODE_TYPES, type EditableNodeType } from "./store.js";
 
+const NODE_DESCRIPTIONS: Partial<Record<EditableNodeType, string>> = {
+  "agent.claude": "Anthropic API 스트리밍",
+  "agent.litellm": "OpenAI/Gemini/Ollama 등 LiteLLM 프록시",
+  "agent.claude-code": "Claude Code CLI 세션",
+  "agent.codex": "Codex CLI 세션",
+  "router.code": "JS 표현식으로 분기",
+  "router.llm": "AI 분류기로 분기",
+  "control.loop": "반복 실행 (while/for-each)",
+  "control.parallel": "병렬 분기",
+  "control.join": "병렬 결과 수집",
+  "memory.memento": "장기 기억 (remember/recall)",
+  "mcp.server": "MCP 서버 도구 제공",
+  "io.input": "실행 시작 입력",
+  "io.output": "최종 결과 출력",
+  "io.file": "파일 읽기/쓰기",
+};
+
 interface NodePaletteProps {
   onAdd: (type: EditableNodeType) => void;
   disabled?: boolean;
@@ -43,6 +60,9 @@ export function NodePalette({ onAdd, disabled }: NodePaletteProps) {
                     disabled={disabled}
                   >
                     {type}
+                    {NODE_DESCRIPTIONS[type] ? (
+                      <span className="node-palette__desc">{NODE_DESCRIPTIONS[type]}</span>
+                    ) : null}
                   </button>
                 </li>
               ))}

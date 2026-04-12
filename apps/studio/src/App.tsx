@@ -80,6 +80,7 @@ function EditorCanvas() {
 
   const { screenToFlowPosition } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const selectedEdgeIdsRef = useRef<string[]>([]);
 
   const baseGraph = useMemo(
     () => (flowDraft ? flowToGraph(flowDraft) : { nodes: [], edges: [] }),
@@ -146,9 +147,27 @@ function EditorCanvas() {
     (params: OnSelectionChangeParams) => {
       const first = params.nodes[0];
       selectNode(first?.id);
+      selectedEdgeIdsRef.current = params.edges.map((e) => e.id);
     },
     [selectNode],
   );
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      const target = event.target as HTMLElement;
+      if (target.closest("input, textarea, select, [contenteditable]")) return;
+      const ids = selectedEdgeIdsRef.current;
+      if (ids.length === 0) return;
+      for (const id of ids) {
+        const edge = displayEdges.find((e) => e.id === id);
+        if (edge) disconnectEdge(edge.source, edge.target);
+      }
+      selectedEdgeIdsRef.current = [];
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [displayEdges, disconnectEdge]);
 
   const onDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();

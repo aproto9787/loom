@@ -179,6 +179,31 @@ function ControlLoopEditor({ node, onUpdate }: ConfigEditorProps) {
   );
 }
 
+function ControlParallelEditor({ node, onUpdate }: ConfigEditorProps) {
+  const config = node.config as Record<string, unknown>;
+  const [maxConcurrency, setMaxConcurrency] = useState((config.maxConcurrency as number) ?? 0);
+
+  useEffect(() => {
+    setMaxConcurrency((node.config.maxConcurrency as number) ?? 0);
+  }, [node.id]);
+
+  return (
+    <label className="inspector__field">
+      <span>max concurrency (0 = unlimited)</span>
+      <input
+        type="number"
+        min={0}
+        value={maxConcurrency}
+        onChange={(e) => {
+          const v = parseInt(e.target.value, 10) || 0;
+          setMaxConcurrency(v);
+          onUpdate({ config: { ...node.config, maxConcurrency: v || undefined } });
+        }}
+      />
+    </label>
+  );
+}
+
 function ControlJoinEditor({ node, onUpdate }: ConfigEditorProps) {
   const config = node.config as Record<string, unknown>;
   const [mode, setMode] = useState((config.mode as string) ?? "all");
@@ -236,6 +261,7 @@ const TYPE_SPECIFIC_EDITORS: Record<string, React.FC<ConfigEditorProps>> = {
   "agent.codex": AgentCodeEditor,
   "router.llm": RouterLlmEditor,
   "control.loop": ControlLoopEditor,
+  "control.parallel": ControlParallelEditor,
   "control.join": ControlJoinEditor,
   "memory.memento": MemoryMementoEditor,
 };
