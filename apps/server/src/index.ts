@@ -137,6 +137,23 @@ export function buildServer() {
     return reply.code(200).send({ flowPath: parsed.data.flowPath });
   });
 
+  app.delete("/flows/:path", async (request, reply) => {
+    const { path: flowPath } = request.params as { path: string };
+    const fullPath = `examples/${flowPath}`;
+    const parsed = flowPathSchema.safeParse(fullPath);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    const absolutePath = path.resolve(workspaceRoot, parsed.data);
+    try {
+      await unlink(absolutePath);
+      return reply.code(200).send({ ok: true });
+    } catch {
+      return reply.code(404).send({ error: { message: "flow not found" } });
+    }
+  });
+
   app.get("/runs", async (request, reply) => {
     const parsed = runsListQuerySchema.safeParse(request.query);
     if (!parsed.success) {

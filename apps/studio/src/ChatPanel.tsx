@@ -22,13 +22,19 @@ export function AgentSummary({
 
   const [name, setName] = useState(agent.name);
   const [type, setType] = useState(agent.type);
+  const [model, setModel] = useState(agent.model ?? "");
   const [system, setSystem] = useState(agent.system ?? "");
 
   useEffect(() => {
     setName(agent.name);
     setType(agent.type);
+    setModel(agent.model ?? "");
     setSystem(agent.system ?? "");
-  }, [agent.name, agent.type, agent.system]);
+  }, [agent.name, agent.type, agent.model, agent.system]);
+
+  const modelOptions = type === "claude-code"
+    ? ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
+    : ["o4-mini", "o3"];
 
   const isRoot = path.length <= 1;
 
@@ -74,6 +80,24 @@ export function AgentSummary({
               <option value="codex">codex</option>
             </select>
           </label>
+          <label className="chat-agent__field">
+            <span>Model</span>
+            <input
+              type="text"
+              list={`model-options-${path.join("/")}`}
+              value={model}
+              placeholder="Default"
+              onChange={(e) => {
+                setModel(e.target.value);
+                updateAgent(path, { model: e.target.value.trim() || undefined });
+              }}
+            />
+            <datalist id={`model-options-${path.join("/")}`}>
+              {modelOptions.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          </label>
           {roles.length > 0 && (
             <label className="chat-agent__field">
               <span>Import from Role</span>
@@ -84,8 +108,9 @@ export function AgentSummary({
                   if (!role) return;
                   setName(role.name);
                   setType(role.type);
+                  setModel(role.model ?? "");
                   setSystem(role.system);
-                  updateAgent(path, { name: role.name, type: role.type, system: role.system });
+                  updateAgent(path, { name: role.name, type: role.type, model: role.model, system: role.system });
                 }}
               >
                 <option value="" disabled>Select a role...</option>
@@ -95,17 +120,16 @@ export function AgentSummary({
               </select>
             </label>
           )}
-          <label className="chat-agent__field">
-            <span>System</span>
-            <textarea
-              rows={3}
-              value={system}
-              onChange={(e) => {
-                setSystem(e.target.value);
-                updateAgent(path, { system: e.target.value.trim() || undefined });
-              }}
-            />
-          </label>
+          <textarea
+            className="chat-agent__system-textarea"
+            rows={3}
+            value={system}
+            placeholder="System prompt..."
+            onChange={(e) => {
+              setSystem(e.target.value);
+              updateAgent(path, { system: e.target.value.trim() || undefined });
+            }}
+          />
           {!isRoot && (
             <button
               type="button"

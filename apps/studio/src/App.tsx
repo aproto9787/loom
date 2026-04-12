@@ -228,6 +228,18 @@ function WorkflowView() {
   const addAgent = useRunStore((s) => s.addAgent);
   const loadError = useRunStore((s) => s.loadError);
 
+  const deleteFlow = useRunStore((s) => s.deleteFlow);
+
+  const handleDeleteFlow = useCallback(async (e: React.MouseEvent, fp: string) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete "${fp.replace("examples/", "")}"?`)) return;
+    try {
+      await deleteFlow(SERVER_ORIGIN, fp);
+    } catch {
+      // ignore
+    }
+  }, [deleteFlow]);
+
   const selectedAgentName =
     selectedAgentPath.length > 0
       ? selectedAgentPath[selectedAgentPath.length - 1]
@@ -246,7 +258,7 @@ function WorkflowView() {
             <li className="flow-list__empty">Loading flows from server...</li>
           ) : (
             availableFlows.map((candidate) => (
-              <li key={candidate}>
+              <li key={candidate} className="flow-list__item">
                 <button
                   type="button"
                   className={
@@ -257,6 +269,14 @@ function WorkflowView() {
                   onClick={() => useRunStore.getState().setFlowPath(candidate)}
                 >
                   {candidate.replace("examples/", "")}
+                </button>
+                <button
+                  type="button"
+                  className="flow-list__delete"
+                  title="Delete flow"
+                  onClick={(e) => handleDeleteFlow(e, candidate)}
+                >
+                  &times;
                 </button>
               </li>
             ))

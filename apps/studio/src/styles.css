@@ -128,6 +128,36 @@ body {
   border-color: transparent;
 }
 
+.flow-list__item {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  position: relative;
+}
+
+.flow-list__item .flow-list__button {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.flow-list__delete {
+  padding: 0 10px;
+  border-radius: 0 14px 14px 0;
+  border: 1px solid rgba(32, 26, 22, 0.12);
+  border-left: 0;
+  background: rgba(255, 255, 255, 0.55);
+  color: rgba(32, 26, 22, 0.35);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+  line-height: 1;
+}
+
+.flow-list__delete:hover {
+  background: rgba(178, 45, 33, 0.1);
+  color: #8b1e14;
+}
+
 .canvas-frame {
   display: flex;
   flex: 1 1 auto;
@@ -454,6 +484,21 @@ body {
 
 .chat-agent__field select {
   appearance: auto;
+}
+
+.chat-agent__system-textarea {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8e0d4;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+.chat-agent__system-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.25);
 }
 
 .chat-agent__delete {

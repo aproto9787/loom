@@ -151,6 +151,8 @@ interface StudioState {
   setActiveTab: (tab: 'workflow' | 'chat' | 'roles') => void;
   setChatRepo: (path: string) => void;
 
+  deleteFlow: (origin: string, flowPath: string) => Promise<void>;
+
   fetchRoles: (origin: string) => Promise<void>;
   saveRole: (origin: string, role: RoleDefinition) => Promise<void>;
   deleteRole: (origin: string, name: string) => Promise<void>;
@@ -366,6 +368,30 @@ export const useRunStore = create<StudioState>((set) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setChatRepo: (path) => set({ chatRepo: path }),
+
+  deleteFlow: async (origin, flowPath) => {
+    const fileName = flowPath.replace("examples/", "");
+    const res = await fetch(`${origin}/flows/${encodeURIComponent(fileName)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("failed to delete flow");
+    set((state) => {
+      const nextFlows = state.availableFlows.filter((f) => f !== flowPath);
+      const needSwitch = state.flowPath === flowPath;
+      return {
+        availableFlows: nextFlows,
+        ...(needSwitch
+          ? {
+              flowPath: nextFlows[0] ?? "examples/simple.yaml",
+              flowDraft: undefined,
+              loadedFlow: undefined,
+              isDirty: false,
+              selectedAgentPath: [],
+            }
+          : {}),
+      };
+    });
+  },
 
   fetchRoles: async (origin) => {
     const res = await fetch(`${origin}/roles`);
