@@ -8,6 +8,7 @@ export interface AgentConfig {
   type: AgentType;
   model?: string;
   system?: string;
+  effort?: 'low' | 'medium' | 'high';
   agents?: AgentConfig[];
 }
 
@@ -16,6 +17,7 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   type: agentTypeSchema,
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
+  effort: z.enum(['low', 'medium', 'high']).optional(),
   agents: z.array(agentConfigSchema).optional(),
 }));
 
@@ -40,6 +42,7 @@ export interface RoleDefinition {
   type: 'claude-code' | 'codex';
   model?: string;
   system: string;
+  effort?: 'low' | 'medium' | 'high';
   description?: string;
 }
 
@@ -48,6 +51,7 @@ export const roleDefinitionSchema: z.ZodType<RoleDefinition> = z.object({
   type: agentTypeSchema,
   model: z.string().min(1).optional(),
   system: z.string().min(1),
+  effort: z.enum(['low', 'medium', 'high']).optional(),
   description: z.string().min(1).optional(),
 });
 

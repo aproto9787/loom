@@ -486,21 +486,6 @@ body {
   appearance: auto;
 }
 
-.chat-agent__system-textarea {
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.06);
-  color: #e8e0d4;
-  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  resize: vertical;
-}
-
-.chat-agent__system-textarea::placeholder {
-  color: rgba(255, 255, 255, 0.25);
-}
-
 .chat-agent__delete {
   align-self: flex-start;
   padding: 5px 12px;

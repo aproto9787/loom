@@ -23,18 +23,18 @@ export function AgentSummary({
   const [name, setName] = useState(agent.name);
   const [type, setType] = useState(agent.type);
   const [model, setModel] = useState(agent.model ?? "");
-  const [system, setSystem] = useState(agent.system ?? "");
+  const [effort, setEffort] = useState(agent.effort ?? "");
 
   useEffect(() => {
     setName(agent.name);
     setType(agent.type);
     setModel(agent.model ?? "");
-    setSystem(agent.system ?? "");
-  }, [agent.name, agent.type, agent.model, agent.system]);
+    setEffort(agent.effort ?? "");
+  }, [agent.name, agent.type, agent.model, agent.effort]);
 
   const modelOptions = type === "claude-code"
     ? ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
-    : ["o4-mini", "o3"];
+    : ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
 
   const isRoot = path.length <= 1;
 
@@ -109,8 +109,8 @@ export function AgentSummary({
                   setName(role.name);
                   setType(role.type);
                   setModel(role.model ?? "");
-                  setSystem(role.system);
-                  updateAgent(path, { name: role.name, type: role.type, model: role.model, system: role.system });
+                  setEffort(role.effort ?? "");
+                  updateAgent(path, { name: role.name, type: role.type, model: role.model, system: role.system, effort: role.effort });
                 }}
               >
                 <option value="" disabled>Select a role...</option>
@@ -120,16 +120,22 @@ export function AgentSummary({
               </select>
             </label>
           )}
-          <textarea
-            className="chat-agent__system-textarea"
-            rows={3}
-            value={system}
-            placeholder="System prompt..."
-            onChange={(e) => {
-              setSystem(e.target.value);
-              updateAgent(path, { system: e.target.value.trim() || undefined });
-            }}
-          />
+          <label className="chat-agent__field">
+            <span>Effort</span>
+            <select
+              value={effort}
+              onChange={(e) => {
+                const val = e.target.value;
+                setEffort(val);
+                updateAgent(path, { effort: (val || undefined) as AgentConfig["effort"] });
+              }}
+            >
+              <option value="">Default</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </label>
           {!isRoot && (
             <button
               type="button"

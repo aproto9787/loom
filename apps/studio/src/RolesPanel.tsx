@@ -37,14 +37,14 @@ export function RolesPanel() {
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!draft.name.trim() || !draft.system.trim()) {
-      setError("Name and system prompt are required.");
+    if (!draft.name.trim()) {
+      setError("Name is required.");
       return;
     }
     setSaving(true);
     setError(undefined);
     try {
-      await saveRole(SERVER_ORIGIN, { ...draft, name: draft.name.trim(), system: draft.system.trim(), description: draft.description?.trim() || undefined });
+      await saveRole(SERVER_ORIGIN, { ...draft, name: draft.name.trim(), system: draft.system.trim(), description: draft.description?.trim() || undefined, effort: draft.effort || undefined });
       setSelected({ ...draft });
     } catch (e) {
       setError(e instanceof Error ? e.message : "save failed");
@@ -130,13 +130,16 @@ export function RolesPanel() {
             />
           </label>
           <label className="roles-editor__field">
-            <span>System Prompt</span>
-            <textarea
-              rows={12}
-              value={draft.system}
-              onChange={(e) => setDraft((d) => ({ ...d, system: e.target.value }))}
-              placeholder="System prompt for the agent..."
-            />
+            <span>Effort</span>
+            <select
+              value={draft.effort ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, effort: (e.target.value || undefined) as RoleDefinition["effort"] }))}
+            >
+              <option value="">Default</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
           </label>
           {error && <p className="roles-editor__error">{error}</p>}
           <div className="roles-editor__actions">
