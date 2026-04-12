@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
-    "test": "node --test dist/**/*.test.js"
+    "test": "LOOM_SERVER_AUTOSTART=0 LOOM_MOCK=1 node --test dist/**/*.test.js"
   },
   "dependencies": {
     "@loom/adapters": "workspace:^",

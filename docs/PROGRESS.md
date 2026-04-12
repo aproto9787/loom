@@ -412,18 +412,11 @@ Real MCP `tools/call` from an agent node | shipped
 
 ## Natural next slices
 
-1. **Phase 2G — Studio MCP surfacing.** Render `mcp.server` nodes'
-   tool list inside the run panel so the demo is visible in the UI.
-2. **Phase 2H — Real `@anthropic-ai/sdk` wiring.** Replace the
-   `claude-api` mock branch with a real streaming call gated on
-   `ANTHROPIC_API_KEY`. Keep the mock path as a fallback.
-3. **Phase 2I — LiteLLM subprocess bridge.** Spawn a local LiteLLM
-   proxy the first time an `agent.litellm` node runs in non-mock
-   mode, and reuse it for subsequent calls.
-4. **Phase 3 — Graph editing.** Node palette + drag-and-drop +
+1. **Phase 3 — Graph editing.** Node palette + drag-and-drop +
    inspector panel; write edits back to the underlying YAML file.
-5. **Phase 4 — Run replay.** Surface the SQLite trace rows in the
+2. **Phase 4 — Run replay.** Surface the SQLite trace rows in the
    studio and add a timeline scrubber.
 
-These map roughly onto the README's v0.2 → v1.0 roadmap and are
-the obvious next steps after the current v0.1 MVP+ is in place.
+These map onto the README's v0.2 → v1.0 roadmap and are the two
+remaining v0.1 coverage gaps ("Graph editing" and "Run replay
+timeline") after the current v0.1 MVP+ is in place.

@@ -15,6 +15,8 @@ import {
 import { MCPStdioClient, runtimeAdapters, type McpClientOptions } from "@loom/adapters";
 import { persistRun } from "./trace-store.js";
 
+const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
+
 function resolveReference(reference: string, inputs: Record<string, unknown>, values: Map<string, unknown>): unknown {
   if (reference.startsWith("$inputs.")) {
     return inputs[reference.slice("$inputs.".length)];
@@ -132,7 +134,7 @@ function getMcpClientOptions(node: Pick<FlowNode, "config"> | McpClientOptions):
       command: node.command,
       args: node.args,
       env: node.env,
-      cwd: node.cwd,
+      cwd: node.cwd ?? workspaceRoot,
     };
   }
 
@@ -151,7 +153,6 @@ function getMcpClientOptions(node: Pick<FlowNode, "config"> | McpClientOptions):
       }
     }
   }
-  const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
   return { command, args, env, cwd: workspaceRoot };
 }
 
