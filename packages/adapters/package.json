@@ -15,7 +15,5 @@
     "typecheck": "tsc -b --pretty false",
     "test": "node --test dist/**/*.test.js"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.62.0"
-  }
+  "dependencies": {}
 }

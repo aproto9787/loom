@@ -1,4 +1,4 @@
-import type { LoomFlow } from "@loom/core";
+import type { FlowDefinition } from "@loom/core";
 
 export interface SaveFlowResult {
   flowPath: string;
@@ -7,7 +7,7 @@ export interface SaveFlowResult {
 export async function saveFlow(
   origin: string,
   flowPath: string,
-  flow: LoomFlow,
+  flow: FlowDefinition,
 ): Promise<SaveFlowResult> {
   const response = await fetch(`${origin}/flows/save`, {
     method: "PUT",

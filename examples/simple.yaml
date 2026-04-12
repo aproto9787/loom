@@ -1,0 +1,15 @@
+name: Simple Agent Orchestration
+description: One orchestrator with two child agents for a basic delegation setup.
+orchestrator:
+  name: lead
+  type: claude-code
+  system: You are the project lead. Delegate work only when needed and otherwise answer directly.
+  agents:
+    - name: backend
+      type: codex
+      repo: ../apps/server
+      system: You implement backend changes in the server workspace.
+    - name: frontend
+      type: claude-code
+      repo: ../apps/studio
+      system: You implement frontend changes in the studio workspace.

@@ -46,11 +46,11 @@ export interface PersistedRun {
   runId: string;
   flowName: string;
   flowPath: string;
-  requestedInputs: Record<string, unknown>;
-  outputs: Record<string, unknown>;
-  nodeResults: Array<{
-    nodeId: string;
-    output: unknown;
+  userPrompt: string;
+  output: string;
+  agentResults: Array<{
+    agentName: string;
+    output: string;
     startedAt?: string;
     finishedAt?: string;
   }>;
@@ -60,12 +60,12 @@ export interface PersistedRunSummary {
   runId: string;
   flowName: string;
   createdAt: string;
-  nodeCount: number;
+  agentCount: number;
 }
 
-export interface PersistedNodeResult {
-  nodeId: string;
-  output: unknown;
+export interface PersistedAgentResult {
+  agentName: string;
+  output: string;
   startedAt: string | null;
   finishedAt: string | null;
   createdAt: string;
@@ -75,10 +75,10 @@ export interface PersistedRunDetail {
   runId: string;
   flowName: string;
   flowPath: string;
-  requestedInputs: Record<string, unknown>;
-  outputs: Record<string, unknown>;
+  userPrompt: string;
+  output: string;
   createdAt: string;
-  nodeResults: PersistedNodeResult[];
+  agentResults: PersistedAgentResult[];
 }
 
 export function getTraceDbPath(): string {
@@ -90,7 +90,7 @@ export function persistRun(run: PersistedRun): void {
     INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs)
     VALUES (?, ?, ?, ?, ?)
   `);
-  const insertNodeResult = database.prepare(`
+  const insertAgentResult = database.prepare(`
     INSERT INTO node_results (run_id, node_id, output, started_at, finished_at)
     VALUES (?, ?, ?, ?, ?)
   `);
@@ -102,17 +102,17 @@ export function persistRun(run: PersistedRun): void {
       run.runId,
       run.flowName,
       run.flowPath,
-      JSON.stringify(run.requestedInputs),
-      JSON.stringify(run.outputs),
+      JSON.stringify(run.userPrompt),
+      JSON.stringify(run.output),
     );
 
-    for (const nodeResult of run.nodeResults) {
-      insertNodeResult.run(
+    for (const agentResult of run.agentResults) {
+      insertAgentResult.run(
         run.runId,
-        nodeResult.nodeId,
-        JSON.stringify(nodeResult.output),
-        nodeResult.startedAt ?? null,
-        nodeResult.finishedAt ?? null,
+        agentResult.agentName,
+        JSON.stringify(agentResult.output),
+        agentResult.startedAt ?? null,
+        agentResult.finishedAt ?? null,
       );
     }
 
@@ -126,7 +126,7 @@ export function persistRun(run: PersistedRun): void {
 export function listRuns(page: number, pageSize: number): PersistedRunSummary[] {
   const offset = (page - 1) * pageSize;
   const statement = database.prepare(`
-    SELECT runs.run_id, runs.flow_name, runs.created_at, COUNT(node_results.node_id) AS node_count
+    SELECT runs.run_id, runs.flow_name, runs.created_at, COUNT(node_results.node_id) AS agent_count
     FROM runs
     LEFT JOIN node_results ON node_results.run_id = runs.run_id
     GROUP BY runs.run_id
@@ -140,7 +140,7 @@ export function listRuns(page: number, pageSize: number): PersistedRunSummary[] 
       runId: String(typedRow.run_id),
       flowName: String(typedRow.flow_name),
       createdAt: String(typedRow.created_at),
-      nodeCount: Number(typedRow.node_count),
+      agentCount: Number(typedRow.agent_count),
     };
   });
 }
@@ -157,17 +157,17 @@ export function getRun(runId: string): PersistedRunDetail | null {
     return null;
   }
 
-  const nodeResultsStatement = database.prepare(`
+  const agentResultsStatement = database.prepare(`
     SELECT node_id, output, started_at, finished_at, created_at
     FROM node_results
     WHERE run_id = ?
     ORDER BY created_at ASC, node_id ASC
   `);
-  const nodeResults = nodeResultsStatement.all(runId).map((row) => {
+  const agentResults = agentResultsStatement.all(runId).map((row) => {
     const typedRow = row as Record<string, unknown>;
     return {
-      nodeId: String(typedRow.node_id),
-      output: JSON.parse(String(typedRow.output)),
+      agentName: String(typedRow.node_id),
+      output: JSON.parse(String(typedRow.output)) as string,
       startedAt: typedRow.started_at == null ? null : String(typedRow.started_at),
       finishedAt: typedRow.finished_at == null ? null : String(typedRow.finished_at),
       createdAt: String(typedRow.created_at),
@@ -178,10 +178,10 @@ export function getRun(runId: string): PersistedRunDetail | null {
     runId: String(runRow.run_id),
     flowName: String(runRow.flow_name),
     flowPath: String(runRow.flow_path),
-    requestedInputs: JSON.parse(String(runRow.requested_inputs)) as Record<string, unknown>,
-    outputs: JSON.parse(String(runRow.outputs)) as Record<string, unknown>,
+    userPrompt: JSON.parse(String(runRow.requested_inputs)) as string,
+    output: JSON.parse(String(runRow.outputs)) as string,
     createdAt: String(runRow.created_at),
-    nodeResults,
+    agentResults,
   };
 }
 

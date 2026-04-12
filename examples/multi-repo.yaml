@@ -1,0 +1,19 @@
+name: Multi Repo Agent Orchestration
+description: Agents work across separate repo roots from one orchestrator.
+orchestrator:
+  name: coordinator
+  type: claude-code
+  system: You coordinate implementation across multiple repositories.
+  agents:
+    - name: api
+      type: codex
+      repo: ../apps/server
+      system: You own the API service repository.
+    - name: ui
+      type: claude-code
+      repo: ../apps/studio
+      system: You own the UI repository.
+    - name: shared
+      type: codex
+      repo: ../packages/core
+      system: You maintain shared types and contracts.

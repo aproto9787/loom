@@ -1,6 +1,6 @@
 import YAML from "yaml";
-import type { LoomFlow } from "@loom/core";
+import type { FlowDefinition } from "@loom/core";
 
-export function stringifyFlow(flow: LoomFlow): string {
+export function stringifyFlow(flow: FlowDefinition): string {
   return YAML.stringify(flow);
 }

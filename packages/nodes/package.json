@@ -14,7 +14,5 @@
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false"
   },
-  "dependencies": {
-    "@loom/adapters": "workspace:^"
-  }
+  "dependencies": {}
 }

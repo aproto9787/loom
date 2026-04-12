@@ -43,7 +43,7 @@ const runRequestSchema = z.object({
   flowPath: z.string().min(1).refine(isAllowedFlowPath, {
     message: "flowPath must stay within examples/",
   }),
-  inputs: z.record(z.string(), z.unknown()).default({}),
+  userPrompt: z.string().min(1),
 });
 
 const runsListQuerySchema = z.object({
@@ -55,10 +55,18 @@ const runParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+const flowQuerySchema = z.object({
+  path: flowPathSchema,
+});
+
+const saveFlowSchema = z.object({
+  flowPath: flowPathSchema,
+  flow: flowSchema,
+});
+
 export function buildServer() {
   const app = Fastify({ logger: true });
 
-  // CORS for studio dev server (http://localhost:5173 → http://localhost:8787)
   app.addHook("onSend", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Headers", "content-type");
@@ -76,15 +84,6 @@ export function buildServer() {
       .map((entry) => `examples/${entry.name}`)
       .sort();
     return { flows: files };
-  });
-
-  const flowQuerySchema = z.object({
-    path: flowPathSchema,
-  });
-
-  const saveFlowSchema = z.object({
-    flowPath: flowPathSchema,
-    flow: flowSchema,
   });
 
   app.get("/flows/get", async (request, reply) => {
@@ -173,7 +172,7 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
 
-    const result = await runFlow(parsed.data.flowPath, parsed.data.inputs);
+    const result = await runFlow(parsed.data.flowPath, parsed.data.userPrompt);
     return reply.code(200).send(result);
   });
 
@@ -190,19 +189,19 @@ export function buildServer() {
       "X-Accel-Buffering": "no",
     });
 
-    const write = (kind: string, data: unknown) => {
-      reply.raw.write(`event: ${kind}\n`);
+    const write = (eventType: string, data: unknown) => {
+      reply.raw.write(`event: ${eventType}\n`);
       reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
     try {
-      for await (const event of streamRunFlow(parsed.data.flowPath, parsed.data.inputs)) {
-        const { kind, ...payload } = event;
-        write(kind, payload);
+      for await (const event of streamRunFlow(parsed.data.flowPath, parsed.data.userPrompt)) {
+        const { type, ...payload } = event;
+        write(type, payload);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      write("run_error", { message });
+      write("run_error", { error: message });
     } finally {
       reply.raw.end();
     }

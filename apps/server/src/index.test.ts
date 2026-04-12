@@ -1,342 +1,346 @@
 import { rm } from "node:fs/promises";
-import { test } from "node:test";
 import assert from "node:assert/strict";
+import { test, type TestContext } from "node:test";
+import type { FlowDefinition } from "@loom/core";
 import { buildServer } from "./index.js";
 import { resetTraceStore } from "./trace-store.js";
 
-void test("POST /runs returns MCP tool traces for agent.claude mock mode", async () => {
+function loomTest(
+  name: string,
+  fn: (t: TestContext) => Promise<void> | void,
+): void {
+  void test(name, { concurrency: false }, fn);
+}
+
+function createTestApp(t: TestContext) {
   resetTraceStore();
   process.env.LOOM_MOCK = "1";
   process.env.LOOM_SERVER_AUTOSTART = "0";
+
   const app = buildServer();
 
-  try {
-    const response = await app.inject({
-      method: "POST",
-      url: "/runs",
-      payload: {
-        flowPath: "examples/mcp-tool-use.yaml",
-        inputs: { prompt: "echo this from test" },
-      },
-    });
-
-    assert.equal(response.statusCode, 200);
-    const body = response.json();
-    const agentNode = body.nodeResults.find((node: { nodeId: string }) => node.nodeId === "claude_with_tools");
-    assert.ok(agentNode);
-    const output = String(agentNode.output.output);
-    assert.match(output, /\[tool_call\] \{"name":"echo","arguments":\{"text":"mock tool input: echo this from test"\}\}/);
-    assert.match(output, /\[tool_result\] \{"content":\[\{"type":"text","text":"mock tool input: echo this from test"\}\]\}/);
-  } finally {
+  t.after(async () => {
     delete process.env.LOOM_MOCK;
     delete process.env.LOOM_SERVER_AUTOSTART;
     await app.close();
-  }
+  });
+
+  return app;
+}
+
+function parseSseBody(body: string): Array<{ event: string; data: unknown }> {
+  return body
+    .trim()
+    .split("\n\n")
+    .filter((chunk) => chunk.trim().length > 0)
+    .map((chunk) => {
+      const lines = chunk.split("\n");
+      const event = lines
+        .find((line) => line.startsWith("event: "))
+        ?.slice("event: ".length);
+      const data = lines
+        .filter((line) => line.startsWith("data: "))
+        .map((line) => line.slice("data: ".length))
+        .join("\n");
+
+      assert.ok(event);
+      return {
+        event,
+        data: JSON.parse(data) as unknown,
+      };
+    });
+}
+
+loomTest("GET /flows lists only recursive orchestration examples", async (t) => {
+  const app = createTestApp(t);
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/flows",
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json(), {
+    flows: [
+      "examples/multi-repo.yaml",
+      "examples/nested.yaml",
+      "examples/simple.yaml",
+    ],
+  });
 });
 
-void test("POST /runs\/stream keeps MCP tool metadata for mcp.server nodes", async () => {
-  resetTraceStore();
-  process.env.LOOM_MOCK = "1";
-  process.env.LOOM_SERVER_AUTOSTART = "0";
-  const app = buildServer();
+loomTest("GET /flows/get parses a nested recursive flow definition", async (t) => {
+  const app = createTestApp(t);
 
-  try {
-    const response = await app.inject({
-      method: "POST",
-      url: "/runs/stream",
-      payload: {
-        flowPath: "examples/mcp-demo.yaml",
-        inputs: {},
-      },
-    });
+  const response = await app.inject({
+    method: "GET",
+    url: "/flows/get",
+    query: { path: "examples/nested.yaml" },
+  });
 
-    assert.equal(response.statusCode, 200);
-    const payload = response.body;
-    assert.match(payload, /event: node_complete\ndata: .*"nodeId":"tools_server".*"meta":\{"mcp":\{"tools":\[/s);
-    assert.match(payload, /"toolNames":\["echo","upper"\]/);
-  } finally {
-    delete process.env.LOOM_MOCK;
-    delete process.env.LOOM_SERVER_AUTOSTART;
-    await app.close();
-  }
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.flowPath, "examples/nested.yaml");
+  assert.equal(body.flow.name, "Nested Agent Orchestration");
+  assert.equal(body.flow.orchestrator.name, "lead");
+  assert.equal(body.flow.orchestrator.agents[0].name, "backend-lead");
+  assert.equal(body.flow.orchestrator.agents[0].agents[0].name, "database-specialist");
+  assert.equal(body.flow.orchestrator.agents[1].name, "qa");
 });
 
-void test("PUT /flows/save round-trips a flow through YAML", async () => {
-  resetTraceStore();
-  process.env.LOOM_MOCK = "1";
-  process.env.LOOM_SERVER_AUTOSTART = "0";
-  const app = buildServer();
-  const flowPath = "examples/_roundtrip.yaml";
+loomTest("POST /runs returns a mock RunResponse for the new flow format", async (t) => {
+  const app = createTestApp(t);
 
-  try {
-    const originalResponse = await app.inject({
-      method: "GET",
-      url: "/flows/get",
-      query: { path: "examples/hello.yaml" },
-    });
+  const response = await app.inject({
+    method: "POST",
+    url: "/runs",
+    payload: {
+      flowPath: "examples/simple.yaml",
+      userPrompt: "Plan the recursive orchestration refactor",
+    },
+  });
 
-    assert.equal(originalResponse.statusCode, 200);
-    const originalBody = originalResponse.json();
-
-    const saveResponse = await app.inject({
-      method: "PUT",
-      url: "/flows/save",
-      payload: {
-        flowPath,
-        flow: originalBody.flow,
-      },
-    });
-
-    assert.equal(saveResponse.statusCode, 200);
-    assert.deepEqual(saveResponse.json(), { flowPath });
-
-    const loadedResponse = await app.inject({
-      method: "GET",
-      url: "/flows/get",
-      query: { path: flowPath },
-    });
-
-    assert.equal(loadedResponse.statusCode, 200);
-    const loadedBody = loadedResponse.json();
-    assert.deepEqual(loadedBody.flow, originalBody.flow);
-  } finally {
-    await rm(new URL("../../../examples/_roundtrip.yaml", import.meta.url), { force: true });
-    delete process.env.LOOM_MOCK;
-    delete process.env.LOOM_SERVER_AUTOSTART;
-    await app.close();
-  }
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.flowName, "Simple Agent Orchestration");
+  assert.equal(typeof body.runId, "string");
+  assert.equal(
+    body.output,
+    "Mock Claude Code response from lead: Plan the recursive orchestration refactor",
+  );
+  assert.deepEqual(body.agentResults, [
+    {
+      agentName: "lead",
+      output: "Mock Claude Code response from lead: Plan the recursive orchestration refactor",
+      startedAt: body.agentResults[0].startedAt,
+      finishedAt: body.agentResults[0].finishedAt,
+    },
+  ]);
+  assert.equal(typeof body.agentResults[0].startedAt, "string");
+  assert.equal(typeof body.agentResults[0].finishedAt, "string");
 });
 
-void test("PUT /flows/save rejects invalid flow schema bodies", async () => {
-  resetTraceStore();
-  process.env.LOOM_MOCK = "1";
-  process.env.LOOM_SERVER_AUTOSTART = "0";
-  const app = buildServer();
+loomTest("POST /runs/stream emits SSE lifecycle events for the orchestrator", async (t) => {
+  const app = createTestApp(t);
 
-  try {
-    const response = await app.inject({
-      method: "PUT",
-      url: "/flows/save",
-      payload: {
-        flowPath: "examples/invalid.yaml",
-        flow: {
-          version: "loom/v1",
-          name: "Invalid",
-          nodes: [
-            {
-              id: "broken",
-              type: "not-a-real-node",
-            },
-          ],
-          outputs: [],
-        },
-      },
-    });
+  const response = await app.inject({
+    method: "POST",
+    url: "/runs/stream",
+    payload: {
+      flowPath: "examples/simple.yaml",
+      userPrompt: "Stream the lead agent response",
+    },
+  });
 
-    assert.equal(response.statusCode, 400);
-    const body = response.json();
-    assert.ok(body.error);
-    assert.equal(typeof body.error, "object");
-    assert.ok(Array.isArray(body.error.formErrors));
-    assert.ok(body.error.fieldErrors);
-    assert.ok(Array.isArray(body.error.fieldErrors.flow));
-  } finally {
-    delete process.env.LOOM_MOCK;
-    delete process.env.LOOM_SERVER_AUTOSTART;
-    await app.close();
-  }
+  assert.equal(response.statusCode, 200);
+  assert.match(String(response.headers["content-type"]), /^text\/event-stream/);
+
+  const events = parseSseBody(response.body);
+  const eventTypes = events.map((event) => event.event);
+
+  assert.deepEqual(eventTypes[0], "run_start");
+  assert.ok(eventTypes.includes("agent_start"));
+  assert.ok(eventTypes.includes("agent_token"));
+  assert.ok(eventTypes.includes("agent_complete"));
+  assert.deepEqual(eventTypes.at(-1), "run_complete");
+
+  const runStart = events[0]?.data as { runId: string; flowName: string };
+  assert.equal(runStart.flowName, "Simple Agent Orchestration");
+  assert.equal(typeof runStart.runId, "string");
+
+  const agentStart = events.find((event) => event.event === "agent_start")?.data as {
+    agentName: string;
+    agentType: string;
+  };
+  assert.deepEqual(agentStart, {
+    agentName: "lead",
+    agentType: "claude-code",
+  });
+
+  const agentComplete = events.find((event) => event.event === "agent_complete")?.data as {
+    agentName: string;
+    output: string;
+  };
+  assert.deepEqual(agentComplete, {
+    agentName: "lead",
+    output: "Mock Claude Code response from lead: Stream the lead agent response",
+  });
+
+  const runComplete = events.at(-1)?.data as { output: string };
+  assert.equal(runComplete.output, "Mock Claude Code response from lead: Stream the lead agent response");
 });
 
-void test("PUT /flows/save rejects escaped and non-yaml paths", async () => {
-  resetTraceStore();
-  process.env.LOOM_MOCK = "1";
-  process.env.LOOM_SERVER_AUTOSTART = "0";
-  const app = buildServer();
+loomTest("GET /runs and GET /runs/:id return persisted runs from streamed executions", async (t) => {
+  const app = createTestApp(t);
 
-  const validFlow = {
-    version: "loom/v1",
-    name: "Valid",
-    inputs: [],
-    mcps: [],
-    nodes: [],
-    outputs: [],
+  const streamResponse = await app.inject({
+    method: "POST",
+    url: "/runs/stream",
+    payload: {
+      flowPath: "examples/multi-repo.yaml",
+      userPrompt: "Coordinate work across repos",
+    },
+  });
+
+  assert.equal(streamResponse.statusCode, 200);
+  const streamEvents = parseSseBody(streamResponse.body);
+  const runStart = streamEvents.find((event) => event.event === "run_start")?.data as {
+    runId: string;
+    flowName: string;
   };
 
-  try {
-    const escapedResponse = await app.inject({
-      method: "PUT",
-      url: "/flows/save",
-      payload: {
-        flowPath: "../../etc/passwd",
-        flow: validFlow,
-      },
-    });
+  const listResponse = await app.inject({
+    method: "GET",
+    url: "/runs?page=1&pageSize=10",
+  });
 
-    assert.equal(escapedResponse.statusCode, 400);
-    assert.match(JSON.stringify(escapedResponse.json().error), /examples\//);
+  assert.equal(listResponse.statusCode, 200);
+  const listBody = listResponse.json();
+  assert.equal(listBody.page, 1);
+  assert.equal(listBody.pageSize, 10);
+  assert.equal(listBody.runs.length, 1);
+  assert.deepEqual(listBody.runs[0], {
+    runId: runStart.runId,
+    flowName: "Multi Repo Agent Orchestration",
+    createdAt: listBody.runs[0].createdAt,
+    agentCount: 1,
+  });
+  assert.equal(typeof listBody.runs[0].createdAt, "string");
 
-    const extensionResponse = await app.inject({
-      method: "PUT",
-      url: "/flows/save",
-      payload: {
-        flowPath: "examples/foo.txt",
-        flow: validFlow,
-      },
-    });
+  const detailResponse = await app.inject({
+    method: "GET",
+    url: `/runs/${runStart.runId}`,
+  });
 
-    assert.equal(extensionResponse.statusCode, 400);
-    assert.match(JSON.stringify(extensionResponse.json().error), /\.yaml/);
-  } finally {
-    delete process.env.LOOM_MOCK;
-    delete process.env.LOOM_SERVER_AUTOSTART;
-    await app.close();
-  }
+  assert.equal(detailResponse.statusCode, 200);
+  const detailBody = detailResponse.json();
+  assert.equal(detailBody.runId, runStart.runId);
+  assert.equal(detailBody.flowName, "Multi Repo Agent Orchestration");
+  assert.equal(detailBody.flowPath, "examples/multi-repo.yaml");
+  assert.equal(detailBody.userPrompt, "Coordinate work across repos");
+  assert.equal(
+    detailBody.output,
+    "Mock Claude Code response from coordinator: Coordinate work across repos",
+  );
+  assert.equal(detailBody.agentResults.length, 1);
+  assert.deepEqual(detailBody.agentResults[0], {
+    agentName: "coordinator",
+    output: "Mock Claude Code response from coordinator: Coordinate work across repos",
+    startedAt: detailBody.agentResults[0].startedAt,
+    finishedAt: detailBody.agentResults[0].finishedAt,
+    createdAt: detailBody.agentResults[0].createdAt,
+  });
+  assert.equal(typeof detailBody.agentResults[0].startedAt, "string");
+  assert.equal(typeof detailBody.agentResults[0].finishedAt, "string");
+  assert.equal(typeof detailBody.agentResults[0].createdAt, "string");
 });
 
-void test("GET /runs lists persisted runs with pagination metadata", async () => {
-  resetTraceStore();
-  process.env.LOOM_MOCK = "1";
-  process.env.LOOM_SERVER_AUTOSTART = "0";
-  const app = buildServer();
+loomTest("GET /runs/:id returns 404 for a missing run", async (t) => {
+  const app = createTestApp(t);
 
-  try {
-    for (const prompt of ["first run", "second run"]) {
-      const runResponse = await app.inject({
-        method: "POST",
-        url: "/runs",
-        payload: {
-          flowPath: "examples/mcp-tool-use.yaml",
-          inputs: { prompt },
+  const response = await app.inject({
+    method: "GET",
+    url: "/runs/missing-run-id",
+  });
+
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.json(), { error: { message: "run not found" } });
+});
+
+loomTest("PUT /flows/save round-trips a recursive flow through YAML", async (t) => {
+  const app = createTestApp(t);
+  const flowPath = "examples/_roundtrip.yaml";
+
+  t.after(async () => {
+    await rm(new URL("../../../examples/_roundtrip.yaml", import.meta.url), { force: true });
+  });
+
+  const originalResponse = await app.inject({
+    method: "GET",
+    url: "/flows/get",
+    query: { path: "examples/simple.yaml" },
+  });
+
+  assert.equal(originalResponse.statusCode, 200);
+  const originalBody = originalResponse.json();
+
+  const saveResponse = await app.inject({
+    method: "PUT",
+    url: "/flows/save",
+    payload: {
+      flowPath,
+      flow: originalBody.flow,
+    },
+  });
+
+  assert.equal(saveResponse.statusCode, 200);
+  assert.deepEqual(saveResponse.json(), { flowPath });
+
+  const loadedResponse = await app.inject({
+    method: "GET",
+    url: "/flows/get",
+    query: { path: flowPath },
+  });
+
+  assert.equal(loadedResponse.statusCode, 200);
+  assert.deepEqual(loadedResponse.json(), {
+    flowPath,
+    flow: originalBody.flow,
+  });
+});
+
+loomTest("PUT /flows/save rejects invalid recursive flow bodies and bad paths", async (t) => {
+  const app = createTestApp(t);
+
+  const invalidSchemaResponse = await app.inject({
+    method: "PUT",
+    url: "/flows/save",
+    payload: {
+      flowPath: "examples/invalid.yaml",
+      flow: {
+        name: "Broken Flow",
+        orchestrator: {
+          name: "",
+          type: "claude-code",
         },
-      });
-      assert.equal(runResponse.statusCode, 200);
-    }
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/runs?page=1&pageSize=1",
-    });
-
-    assert.equal(response.statusCode, 200);
-    const body = response.json();
-    assert.equal(body.page, 1);
-    assert.equal(body.pageSize, 1);
-    assert.equal(body.runs.length, 1);
-    assert.equal(typeof body.runs[0].runId, "string");
-    assert.equal(body.runs[0].flowName, "MCP Tool Use Demo");
-    assert.equal(body.runs[0].nodeCount, 3);
-    assert.equal(typeof body.runs[0].createdAt, "string");
-  } finally {
-    delete process.env.LOOM_MOCK;
-    delete process.env.LOOM_SERVER_AUTOSTART;
-    await app.close();
-  }
-});
-
-void test("GET /runs/:id returns ordered node results with timing fields", async () => {
-  resetTraceStore();
-  process.env.LOOM_MOCK = "1";
-  process.env.LOOM_SERVER_AUTOSTART = "0";
-  const app = buildServer();
-
-  try {
-    const runResponse = await app.inject({
-      method: "POST",
-      url: "/runs",
-      payload: {
-        flowPath: "examples/mcp-tool-use.yaml",
-        inputs: { prompt: "detail run" },
       },
-    });
+    },
+  });
 
-    assert.equal(runResponse.statusCode, 200);
-    const runBody = runResponse.json();
+  assert.equal(invalidSchemaResponse.statusCode, 400);
+  const invalidSchemaBody = invalidSchemaResponse.json();
+  assert.ok(Array.isArray(invalidSchemaBody.error.formErrors));
+  assert.ok(invalidSchemaBody.error.fieldErrors);
 
-    const response = await app.inject({
-      method: "GET",
-      url: `/runs/${runBody.runId}`,
-    });
+  const validFlow: FlowDefinition = {
+    name: "Valid Saved Flow",
+    orchestrator: {
+      name: "lead",
+      type: "claude-code",
+    },
+  };
 
-    assert.equal(response.statusCode, 200);
-    const body = response.json();
-    assert.equal(body.runId, runBody.runId);
-    assert.equal(body.flowName, "MCP Tool Use Demo");
-    assert.equal(body.flowPath, "examples/mcp-tool-use.yaml");
-    assert.deepEqual(body.requestedInputs, { prompt: "detail run" });
-    assert.equal(body.nodeResults.length, 3);
-    assert.deepEqual(
-      body.nodeResults.map((node: { nodeId: string }) => node.nodeId),
-      ["claude_with_tools", "output", "prompt_input"],
-    );
-    for (const nodeResult of body.nodeResults) {
-      assert.equal(typeof nodeResult.createdAt, "string");
-      assert.equal(typeof nodeResult.startedAt, "string");
-      assert.equal(typeof nodeResult.finishedAt, "string");
-    }
-  } finally {
-    delete process.env.LOOM_MOCK;
-    delete process.env.LOOM_SERVER_AUTOSTART;
-    await app.close();
-  }
-});
+  const escapedPathResponse = await app.inject({
+    method: "PUT",
+    url: "/flows/save",
+    payload: {
+      flowPath: "../../etc/passwd",
+      flow: validFlow,
+    },
+  });
 
-void test("GET /runs/:id returns 404 for missing runs", async () => {
-  resetTraceStore();
-  process.env.LOOM_MOCK = "1";
-  process.env.LOOM_SERVER_AUTOSTART = "0";
-  const app = buildServer();
+  assert.equal(escapedPathResponse.statusCode, 400);
+  assert.match(JSON.stringify(escapedPathResponse.json().error), /examples\//);
 
-  try {
-    const response = await app.inject({
-      method: "GET",
-      url: "/runs/missing-run-id",
-    });
+  const nonYamlResponse = await app.inject({
+    method: "PUT",
+    url: "/flows/save",
+    payload: {
+      flowPath: "examples/not-yaml.txt",
+      flow: validFlow,
+    },
+  });
 
-    assert.equal(response.statusCode, 404);
-    assert.deepEqual(response.json(), { error: { message: "run not found" } });
-  } finally {
-    delete process.env.LOOM_MOCK;
-    delete process.env.LOOM_SERVER_AUTOSTART;
-    await app.close();
-  }
-});
-
-void test("GET /runs returns runs array with default pagination", async () => {
-  resetTraceStore();
-  process.env.LOOM_MOCK = "1";
-  process.env.LOOM_SERVER_AUTOSTART = "0";
-  const app = buildServer();
-
-  try {
-    const runResponse = await app.inject({
-      method: "POST",
-      url: "/runs",
-      payload: {
-        flowPath: "examples/mcp-tool-use.yaml",
-        inputs: { prompt: "default list run" },
-      },
-    });
-
-    assert.equal(runResponse.statusCode, 200);
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/runs",
-    });
-
-    assert.equal(response.statusCode, 200);
-    const body = response.json();
-    assert.equal(body.page, 1);
-    assert.equal(body.pageSize, 20);
-    assert.ok(Array.isArray(body.runs));
-    assert.equal(body.runs.length, 1);
-    assert.equal(typeof body.runs[0].runId, "string");
-    assert.equal(body.runs[0].flowName, "MCP Tool Use Demo");
-    assert.equal(body.runs[0].nodeCount, 3);
-    assert.equal(typeof body.runs[0].createdAt, "string");
-  } finally {
-    delete process.env.LOOM_MOCK;
-    delete process.env.LOOM_SERVER_AUTOSTART;
-    await app.close();
-  }
+  assert.equal(nonYamlResponse.statusCode, 400);
+  assert.match(JSON.stringify(nonYamlResponse.json().error), /\.yaml/);
 });

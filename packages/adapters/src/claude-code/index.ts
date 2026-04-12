@@ -1,38 +1,11 @@
 import { spawn } from "node:child_process";
-import path from "node:path";
-import type { InvokeContext, InvokeEvent, RuntimeAdapter } from "@loom/core";
+import type { AgentConfig } from "@loom/core";
+import { emitMockEvents, parseDelegationDirective } from "../protocol.js";
+import type { AgentAdapter, AgentEvent } from "../types.js";
 
 export const claudeCodeAdapterId = "claude-code";
 
-const DEFAULT_PROMPT = "Continue.";
-
-function getPrompt(ctx: InvokeContext): string {
-  if (typeof ctx.resolvedInputs.prompt === "string" && ctx.resolvedInputs.prompt.trim().length > 0) {
-    return ctx.resolvedInputs.prompt;
-  }
-
-  if (typeof ctx.resolvedInputs.topic === "string" && ctx.resolvedInputs.topic.trim().length > 0) {
-    return ctx.resolvedInputs.topic;
-  }
-
-  const entries = Object.entries(ctx.resolvedInputs);
-  if (entries.length === 1 && typeof entries[0]?.[1] === "string" && entries[0][1].trim().length > 0) {
-    return entries[0][1];
-  }
-
-  if (entries.length > 0) {
-    return JSON.stringify(ctx.resolvedInputs, null, 2);
-  }
-
-  return DEFAULT_PROMPT;
-}
-
-function getWorkingDirectory(ctx: InvokeContext): string {
-  const cwd = typeof ctx.node.config.cwd === "string" ? ctx.node.config.cwd : process.cwd();
-  return path.isAbsolute(cwd) ? cwd : path.resolve(process.cwd(), cwd);
-}
-
-function buildArgs(ctx: InvokeContext): string[] {
+function buildArgs(config: AgentConfig): string[] {
   const args = [
     "-p",
     "--output-format",
@@ -44,26 +17,11 @@ function buildArgs(ctx: InvokeContext): string[] {
     "bypassPermissions",
   ];
 
-  if (typeof ctx.node.config.model === "string" && ctx.node.config.model.length > 0) {
-    args.push("--model", ctx.node.config.model);
-  }
-
-  if (typeof ctx.node.config.system === "string" && ctx.node.config.system.length > 0) {
-    args.push("--system-prompt", ctx.node.config.system);
+  if (config.system) {
+    args.push("--system-prompt", config.system);
   }
 
   return args;
-}
-
-function emitMockReply(reply: string): InvokeEvent[] {
-  const events: InvokeEvent[] = [];
-  const words = reply.split(" ");
-  for (let index = 0; index < words.length; index += 1) {
-    const chunk = index === 0 ? words[index] : ` ${words[index]}`;
-    events.push({ kind: "token", text: chunk });
-  }
-  events.push({ kind: "final", output: reply });
-  return events;
 }
 
 function extractClaudeText(payload: unknown): string {
@@ -73,14 +31,9 @@ function extractClaudeText(payload: unknown): string {
 
   const record = payload as Record<string, unknown>;
   const segments: string[] = [];
-  const contentCandidates = [
-    record.message,
-    record.partial_message,
-    record.content,
-    record.delta,
-  ];
+  const candidates = [record.message, record.partial_message, record.content, record.delta];
 
-  for (const candidate of contentCandidates) {
+  for (const candidate of candidates) {
     if (!candidate || typeof candidate !== "object") {
       continue;
     }
@@ -101,7 +54,7 @@ function extractClaudeText(payload: unknown): string {
   return segments.join("");
 }
 
-function extractClaudeDelta(candidate: string, emittedText: string): string {
+function extractDelta(candidate: string, emittedText: string): string {
   if (candidate.length === 0) {
     return "";
   }
@@ -117,29 +70,23 @@ function extractClaudeDelta(candidate: string, emittedText: string): string {
   return candidate;
 }
 
-class ClaudeCodeAdapter implements RuntimeAdapter {
-  readonly id = claudeCodeAdapterId;
+class ClaudeCodeAdapter implements AgentAdapter {
+  readonly type = "claude-code" as const;
 
-  supports(nodeType: string): boolean {
-    return nodeType === "agent.claude-code";
-  }
-
-  async *invoke(ctx: InvokeContext): AsyncIterable<InvokeEvent> {
-    const prompt = getPrompt(ctx);
-
+  async *spawn(config: AgentConfig, input: string, cwd: string): AsyncGenerator<AgentEvent, void, undefined> {
     if (process.env.LOOM_MOCK === "1") {
-      yield* emitMockReply(`Mock Claude Code response about: ${prompt}`);
+      yield* emitMockEvents(`Mock Claude Code response from ${config.name}: ${input}`);
       return;
     }
 
     try {
-      const proc = spawn("claude", buildArgs(ctx), {
-        cwd: getWorkingDirectory(ctx),
+      const proc = spawn("claude", buildArgs(config), {
+        cwd,
         env: process.env,
         stdio: ["pipe", "pipe", "pipe"],
       });
 
-      if (!proc.stdout || !proc.stderr || !proc.stdin) {
+      if (!proc.stdin || !proc.stdout || !proc.stderr) {
         throw new Error("claude CLI spawn did not provide stdio pipes");
       }
 
@@ -155,13 +102,13 @@ class ClaudeCodeAdapter implements RuntimeAdapter {
         type: "user",
         message: {
           role: "user",
-          content: [{ type: "text", text: prompt }],
+          content: [{ type: "text", text: input }],
         },
       })}\n`);
 
       let buffer = "";
       let emittedText = "";
-      let finalOutput: string | undefined;
+      let finalOutput = "";
 
       for await (const chunk of proc.stdout) {
         buffer += chunk;
@@ -174,33 +121,34 @@ class ClaudeCodeAdapter implements RuntimeAdapter {
             continue;
           }
 
-          let parsed: Record<string, unknown>;
           try {
-            parsed = JSON.parse(line) as Record<string, unknown>;
-          } catch {
-            yield { kind: "token", text: line };
-            emittedText += line;
-            continue;
-          }
+            const parsed = JSON.parse(line) as Record<string, unknown>;
+            if (parsed.type === "error") {
+              const message = typeof parsed.error === "string"
+                ? parsed.error
+                : typeof (parsed.error as { message?: unknown } | undefined)?.message === "string"
+                  ? (parsed.error as { message: string }).message
+                  : stderr.trim() || "claude CLI returned an error";
+              throw new Error(message);
+            }
 
-          if (parsed.type === "error") {
-            const message = typeof parsed.error === "string"
-              ? parsed.error
-              : typeof (parsed.error as { message?: unknown } | undefined)?.message === "string"
-                ? (parsed.error as { message: string }).message
-                : stderr.trim() || "claude CLI returned an error";
-            throw new Error(message);
-          }
+            const candidate = extractClaudeText(parsed);
+            const delta = extractDelta(candidate, emittedText);
+            if (delta.length > 0) {
+              emittedText += delta;
+              yield { type: "token", content: delta };
+            }
 
-          const candidate = extractClaudeText(parsed);
-          const delta = extractClaudeDelta(candidate, emittedText);
-          if (delta.length > 0) {
-            emittedText += delta;
-            yield { kind: "token", text: delta };
-          }
-
-          if (typeof parsed.result === "string" && parsed.result.length > 0) {
-            finalOutput = parsed.result;
+            if (typeof parsed.result === "string" && parsed.result.length > 0) {
+              finalOutput = parsed.result;
+            }
+          } catch (error) {
+            if (error instanceof SyntaxError) {
+              emittedText += line;
+              yield { type: "token", content: line };
+              continue;
+            }
+            throw error;
           }
         }
       }
@@ -212,15 +160,15 @@ class ClaudeCodeAdapter implements RuntimeAdapter {
             finalOutput = parsed.result;
           } else {
             const candidate = extractClaudeText(parsed);
-            const delta = extractClaudeDelta(candidate, emittedText);
+            const delta = extractDelta(candidate, emittedText);
             if (delta.length > 0) {
               emittedText += delta;
-              yield { kind: "token", text: delta };
+              yield { type: "token", content: delta };
             }
           }
         } catch {
           emittedText += buffer;
-          yield { kind: "token", text: buffer };
+          yield { type: "token", content: buffer };
         }
       }
 
@@ -233,11 +181,18 @@ class ClaudeCodeAdapter implements RuntimeAdapter {
         throw new Error(stderr.trim() || `claude CLI exited with code ${exitCode}`);
       }
 
-      yield { kind: "final", output: finalOutput ?? emittedText.trim() };
+      const output = (finalOutput || emittedText).trim();
+      const delegation = parseDelegationDirective(output);
+      if (delegation) {
+        yield { type: "delegate", ...delegation };
+        return;
+      }
+
+      yield { type: "complete", output };
     } catch (error) {
       yield {
-        kind: "error",
-        error: error instanceof Error ? error : new Error(String(error)),
+        type: "error",
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }

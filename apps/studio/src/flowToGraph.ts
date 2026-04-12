@@ -1,106 +1,99 @@
 import type { Edge, Node } from "reactflow";
-import type { LoomFlow } from "@loom/core";
+import type { AgentConfig } from "@loom/core";
 
-// Layout a flow's nodes in a simple layered layout based on dependencies.
-// This is intentionally minimal — the point is to get a readable graph
-// drawn from the YAML without pulling in a full layout engine.
 export interface GraphPayload {
   nodes: Node[];
   edges: Edge[];
 }
 
-interface LayoutNode {
-  id: string;
-  column: number;
-  row: number;
+const H_SPACING = 260;
+const V_SPACING = 120;
+
+interface TreeLayoutResult {
+  nodes: Node[];
+  edges: Edge[];
+  width: number;
 }
 
-const COLUMN_WIDTH = 240;
-const ROW_HEIGHT = 140;
+function layoutAgent(
+  agent: AgentConfig,
+  path: string[],
+  x: number,
+  y: number,
+): TreeLayoutResult {
+  const nodeId = path.join("/");
+  const typeLabel = agent.type === "claude-code" ? "CC" : "CX";
+  const nodes: Node[] = [];
+  const edges: Edge[] = [];
 
-function dependenciesOf(node: LoomFlow["nodes"][number]): string[] {
-  const refs = Object.values(node.inputs)
-    .map((input) => input.from)
-    .filter((from) => !from.startsWith("$inputs."));
-  const whenRef = node.when?.split(/\s*==\s*/)[0]?.split(".")[0];
-  if (whenRef) {
-    refs.push(whenRef);
-  }
-  return Array.from(new Set(refs.map((ref) => ref.split(".")[0])));
-}
+  const children = agent.agents ?? [];
 
-function computeLayout(flow: LoomFlow): Map<string, LayoutNode> {
-  const depsMap = new Map<string, Set<string>>();
-  for (const node of flow.nodes) {
-    depsMap.set(node.id, new Set(dependenciesOf(node).filter((id) => flow.nodes.some((n) => n.id === id))));
-  }
-
-  const columns = new Map<string, number>();
-  const remaining = new Set(flow.nodes.map((n) => n.id));
-  let safety = flow.nodes.length * 4;
-
-  while (remaining.size > 0 && safety > 0) {
-    safety -= 1;
-    for (const id of Array.from(remaining)) {
-      const deps = depsMap.get(id) ?? new Set();
-      const allResolved = Array.from(deps).every((d) => columns.has(d));
-      if (allResolved) {
-        const column = deps.size === 0
-          ? 0
-          : Math.max(...Array.from(deps).map((d) => (columns.get(d) ?? 0) + 1));
-        columns.set(id, column);
-        remaining.delete(id);
-      }
-    }
-  }
-  // Fallback for any nodes stuck in a cycle.
-  for (const id of remaining) {
-    columns.set(id, 0);
-  }
-
-  const rowsByColumn = new Map<number, number>();
-  const layout = new Map<string, LayoutNode>();
-  for (const node of flow.nodes) {
-    const column = columns.get(node.id) ?? 0;
-    const row = rowsByColumn.get(column) ?? 0;
-    layout.set(node.id, { id: node.id, column, row });
-    rowsByColumn.set(column, row + 1);
-  }
-  return layout;
-}
-
-export function flowToGraph(flow: LoomFlow): GraphPayload {
-  const layout = computeLayout(flow);
-
-  const nodes: Node[] = flow.nodes.map((node) => {
-    const pos = layout.get(node.id);
-    return {
-      id: node.id,
+  if (children.length === 0) {
+    nodes.push({
+      id: nodeId,
       type: "default",
-      position: {
-        x: (pos?.column ?? 0) * COLUMN_WIDTH + 40,
-        y: (pos?.row ?? 0) * ROW_HEIGHT + 40,
-      },
-      data: { label: `${node.id}\n${node.type}` },
-      className: `loom-node loom-node--${node.type.replace(/\./g, "-")}`,
+      position: { x, y },
+      data: { label: `${agent.name}\n[${typeLabel}]`, agentPath: path },
+      className: `loom-agent loom-agent--${agent.type}`,
       style: { whiteSpace: "pre-line", lineHeight: 1.25 },
-    };
+    });
+    return { nodes, edges, width: 1 };
+  }
+
+  // Recursively layout children
+  const childResults: TreeLayoutResult[] = [];
+  let totalChildWidth = 0;
+  for (const child of children) {
+    const childPath = [...path, child.name];
+    const result = layoutAgent(child, childPath, 0, 0);
+    childResults.push(result);
+    totalChildWidth += result.width;
+  }
+
+  // Position children side by side
+  const totalPixelWidth = totalChildWidth * H_SPACING;
+  let childX = x - totalPixelWidth / 2 + H_SPACING / 2;
+  const childY = y + V_SPACING;
+
+  for (let i = 0; i < children.length; i++) {
+    const result = childResults[i];
+    const childCenter = childX + (result.width - 1) * H_SPACING / 2;
+    const offsetX = childCenter;
+    const offsetY = childY;
+
+    // Re-layout with correct positions
+    const childPath = [...path, children[i].name];
+    const positioned = layoutAgent(children[i], childPath, offsetX, offsetY);
+    nodes.push(...positioned.nodes);
+    edges.push(...positioned.edges);
+
+    // Edge from parent to child
+    edges.push({
+      id: `${nodeId}->${childPath.join("/")}`,
+      source: nodeId,
+      target: childPath.join("/"),
+      animated: false,
+      style: { stroke: "#8f5d34", strokeWidth: 1.5 },
+    });
+
+    childX += result.width * H_SPACING;
+  }
+
+  // Add parent node centered above children
+  nodes.push({
+    id: nodeId,
+    type: "default",
+    position: { x, y },
+    data: { label: `${agent.name}\n[${typeLabel}]`, agentPath: path },
+    className: `loom-agent loom-agent--${agent.type}`,
+    style: { whiteSpace: "pre-line", lineHeight: 1.25 },
   });
 
-  const edges: Edge[] = [];
-  for (const node of flow.nodes) {
-    for (const dep of dependenciesOf(node)) {
-      if (!flow.nodes.some((candidate) => candidate.id === dep)) {
-        continue;
-      }
-      edges.push({
-        id: `${dep}->${node.id}`,
-        source: dep,
-        target: node.id,
-        animated: false,
-      });
-    }
-  }
+  return { nodes, edges, width: Math.max(totalChildWidth, 1) };
+}
 
-  return { nodes, edges };
+export function agentTreeToGraph(orchestrator: AgentConfig): GraphPayload {
+  const rootPath = [orchestrator.name];
+  const result = layoutAgent(orchestrator, rootPath, 400, 40);
+  return { nodes: result.nodes, edges: result.edges };
 }

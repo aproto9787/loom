@@ -1,0 +1,20 @@
+name: Nested Agent Orchestration
+description: A recursive agent tree where a specialist owns a deeper specialist.
+orchestrator:
+  name: lead
+  type: claude-code
+  system: You coordinate the team and hand off specialized work when needed.
+  agents:
+    - name: backend-lead
+      type: codex
+      repo: ../apps/server
+      system: You own backend architecture and can delegate database work.
+      agents:
+        - name: database-specialist
+          type: codex
+          repo: ../packages/core
+          system: You focus on schema and persistence details.
+    - name: qa
+      type: claude-code
+      repo: ../apps/server
+      system: You review behavior and validate the final result.

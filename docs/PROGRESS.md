@@ -533,3 +533,48 @@ router, flow-control primitives, and a memory node.
 - `pnpm -r build` passes (all 5 workspace projects)
 - `pnpm -r test` passes (9/9 server tests)
 - All v0.1 functionality preserved
+
+---
+
+## Phase 6 — Architecture pivot: DAG → recursive agent orchestration
+
+**Goal.** Replace Loom's DAG workflow model with a recursive
+orchestrator-plus-agent tree, then realign examples, server tests,
+and progress tracking around the new runtime contract.
+
+**Commits.**
+
+```
+# + the commits produced by the DAG → recursive orchestration pivot
+```
+
+**What changed.**
+
+- The flow schema is now `{ name, description?, orchestrator }`,
+  where every `AgentConfig` can recursively own child `agents[]`
+- The old DAG node families (`io`, `router`, `control`, `memory`,
+  `mcp`) are no longer the authoring model for new flows
+- The bundled examples were reset to three recursive agent-tree
+  flows: `simple.yaml`, `nested.yaml`, and `multi-repo.yaml`
+- Server run semantics now center on `userPrompt`, `output`, and
+  `agentResults`, with SSE events emitted as
+  `agent_start/token/delegate/complete/error`
+
+**Acceptance verified.**
+
+- `GET /flows` returns only the new recursive examples
+- `GET /flows/get?path=examples/nested.yaml` parses a recursive
+  orchestrator → agent → sub-agent hierarchy successfully
+- `POST /runs` in `LOOM_MOCK=1` returns a `RunResponse` shaped
+  around `runId`, `flowName`, `output`, and `agentResults`
+- `POST /runs/stream` in `LOOM_MOCK=1` emits SSE lifecycle events
+  for the orchestrator run and persists the completed run
+- `GET /runs` and `GET /runs/:id` return persisted run summaries and
+  details in agent-centric terminology (`agentCount`, `agentResults`,
+  `userPrompt`, `output`)
+- `PUT /flows/save` still round-trips valid recursive flows and still
+  rejects invalid schema bodies, workspace escapes, and non-`.yaml`
+  targets
+- The studio default flow now points at `examples/simple.yaml`, so
+  deleting the legacy DAG examples does not leave the UI booting into
+  a missing file

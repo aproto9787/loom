@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 import { useRunStore, type RunStreamEvent } from "./store.js";
 
-const SERVER_ORIGIN = (import.meta.env?.VITE_LOOM_SERVER as string | undefined) ?? "http://localhost:8787";
+const SERVER_ORIGIN =
+  (import.meta.env?.VITE_LOOM_SERVER as string | undefined) ?? "http://localhost:8787";
 
 interface SseBlock {
   event: string;
@@ -14,9 +15,7 @@ function parseSseChunk(buffer: string): { blocks: SseBlock[]; rest: string } {
 
   while (cursor < buffer.length) {
     const delimiter = buffer.indexOf("\n\n", cursor);
-    if (delimiter === -1) {
-      break;
-    }
+    if (delimiter === -1) break;
     const rawBlock = buffer.slice(cursor, delimiter);
     cursor = delimiter + 2;
     let event = "message";
@@ -49,7 +48,7 @@ export function useSseRun() {
   const endStream = useRunStore((state) => state.endStream);
 
   const runFlow = useCallback(
-    async (flowPath: string, inputs: Record<string, unknown>) => {
+    async (flowPath: string, userPrompt: string) => {
       beginStream();
 
       let response: Response;
@@ -57,7 +56,7 @@ export function useSseRun() {
         response = await fetch(`${SERVER_ORIGIN}/runs/stream`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ flowPath, inputs }),
+          body: JSON.stringify({ flowPath, userPrompt }),
         });
       } catch (error) {
         ingest({
@@ -85,17 +84,13 @@ export function useSseRun() {
       try {
         while (true) {
           const { value, done } = await reader.read();
-          if (done) {
-            break;
-          }
+          if (done) break;
           buffer += decoder.decode(value, { stream: true });
           const { blocks, rest } = parseSseChunk(buffer);
           buffer = rest;
           for (const block of blocks) {
             const event = toRunStreamEvent(block);
-            if (event) {
-              ingest(event);
-            }
+            if (event) ingest(event);
           }
         }
       } catch (error) {
