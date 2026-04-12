@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, AgentType, FlowDefinition, RoleDefinition, RunEvent } from "@loom/core";
+import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, RoleDefinition, RunEvent, SkillDefinition } from "@loom/core";
 
 // --- Agent path helpers ---
 
@@ -65,7 +65,7 @@ function nextAgentName(parent: AgentConfig, type: AgentType): string {
 }
 
 function cloneFlow(flow: FlowDefinition): FlowDefinition {
-  return JSON.parse(JSON.stringify(flow)) as FlowDefinition;
+  return structuredClone(flow);
 }
 
 function flowsAreEqual(
@@ -75,6 +75,18 @@ function flowsAreEqual(
   if (a === b) return true;
   if (!a || !b) return false;
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// --- Discovered resources ---
+
+export interface DiscoveredResource {
+  type: "mcp" | "hook" | "skill";
+  name: string;
+  source: string;
+  platform: "claude" | "codex";
+  event?: string;
+  command?: string;
+  prompt?: string;
 }
 
 // --- Run event types ---
@@ -114,11 +126,15 @@ interface StudioState {
   isSaving: boolean;
   saveError?: string;
   loadError?: string;
-  activeTab: 'workflow' | 'chat' | 'roles';
+  activeTab: 'workflow' | 'chat' | 'roles' | 'custom';
   chatRepo: string;
 
-  // Roles
+  // Roles & custom resources
   roles: RoleDefinition[];
+  availableMcps: string[];
+  hooks: HookDefinition[];
+  skills: SkillDefinition[];
+  discoveredResources: DiscoveredResource[];
 
   // Run state
   isStreaming: boolean;
@@ -148,7 +164,7 @@ interface StudioState {
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
 
-  setActiveTab: (tab: 'workflow' | 'chat' | 'roles') => void;
+  setActiveTab: (tab: 'workflow' | 'chat' | 'roles' | 'custom') => void;
   setChatRepo: (path: string) => void;
 
   deleteFlow: (origin: string, flowPath: string) => Promise<void>;
@@ -156,6 +172,16 @@ interface StudioState {
   fetchRoles: (origin: string) => Promise<void>;
   saveRole: (origin: string, role: RoleDefinition) => Promise<void>;
   deleteRole: (origin: string, name: string) => Promise<void>;
+  fetchMcps: (origin: string) => Promise<void>;
+
+  discoverResources: (origin: string) => Promise<void>;
+  fetchHooks: (origin: string) => Promise<void>;
+  saveHook: (origin: string, hook: HookDefinition) => Promise<void>;
+  deleteHook: (origin: string, name: string) => Promise<void>;
+
+  fetchSkills: (origin: string) => Promise<void>;
+  saveSkill: (origin: string, skill: SkillDefinition) => Promise<void>;
+  deleteSkill: (origin: string, name: string) => Promise<void>;
 }
 
 export const useRunStore = create<StudioState>((set) => ({
@@ -170,6 +196,10 @@ export const useRunStore = create<StudioState>((set) => ({
   activeTab: 'workflow' as const,
   chatRepo: '',
   roles: [],
+  availableMcps: [],
+  hooks: [],
+  skills: [],
+  discoveredResources: [],
 
   setFlowPath: (value) =>
     set({
@@ -421,5 +451,77 @@ export const useRunStore = create<StudioState>((set) => ({
     });
     if (!res.ok) throw new Error("failed to delete role");
     set((state) => ({ roles: state.roles.filter((r) => r.name !== name) }));
+  },
+
+  discoverResources: async (origin) => {
+    try {
+      const res = await fetch(`${origin}/discover`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { resources: DiscoveredResource[] };
+      set({ discoveredResources: data.resources });
+    } catch { /* skip */ }
+  },
+
+  fetchMcps: async (origin) => {
+    try {
+      const res = await fetch(`${origin}/mcps`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { mcps: string[] };
+      set({ availableMcps: data.mcps });
+    } catch { /* skip */ }
+  },
+
+  fetchHooks: async (origin) => {
+    try {
+      const res = await fetch(`${origin}/hooks`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { hooks: HookDefinition[] };
+      set({ hooks: data.hooks });
+    } catch { /* skip */ }
+  },
+  saveHook: async (origin, hook) => {
+    const res = await fetch(`${origin}/hooks/save`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(hook),
+    });
+    if (!res.ok) throw new Error("failed to save hook");
+    const listRes = await fetch(`${origin}/hooks`);
+    if (listRes.ok) {
+      const data = (await listRes.json()) as { hooks: HookDefinition[] };
+      set({ hooks: data.hooks });
+    }
+  },
+  deleteHook: async (origin, name) => {
+    const res = await fetch(`${origin}/hooks/${encodeURIComponent(name)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("failed to delete hook");
+    set((state) => ({ hooks: state.hooks.filter((h) => h.name !== name) }));
+  },
+
+  fetchSkills: async (origin) => {
+    try {
+      const res = await fetch(`${origin}/skills`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { skills: SkillDefinition[] };
+      set({ skills: data.skills });
+    } catch { /* skip */ }
+  },
+  saveSkill: async (origin, skill) => {
+    const res = await fetch(`${origin}/skills/save`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(skill),
+    });
+    if (!res.ok) throw new Error("failed to save skill");
+    const listRes = await fetch(`${origin}/skills`);
+    if (listRes.ok) {
+      const data = (await listRes.json()) as { skills: SkillDefinition[] };
+      set({ skills: data.skills });
+    }
+  },
+  deleteSkill: async (origin, name) => {
+    const res = await fetch(`${origin}/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("failed to delete skill");
+    set((state) => ({ skills: state.skills.filter((s) => s.name !== name) }));
   },
 }));

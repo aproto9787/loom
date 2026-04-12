@@ -3,12 +3,49 @@ import { z } from "zod";
 export const agentTypeSchema = z.enum(["claude-code", "codex"]);
 export type AgentType = z.infer<typeof agentTypeSchema>;
 
+// ── Hook / Skill definitions ─────────────────────────────────────
+
+export type HookEvent = 'on_start' | 'on_complete' | 'on_error' | 'on_delegate';
+
+export interface HookDefinition {
+  name: string;
+  event: HookEvent;
+  command: string;
+  description?: string;
+}
+
+export const hookEventSchema = z.enum(['on_start', 'on_complete', 'on_error', 'on_delegate']);
+
+export const hookDefinitionSchema: z.ZodType<HookDefinition> = z.object({
+  name: z.string().min(1),
+  event: hookEventSchema,
+  command: z.string().min(1),
+  description: z.string().min(1).optional(),
+});
+
+export interface SkillDefinition {
+  name: string;
+  prompt: string;
+  description?: string;
+}
+
+export const skillDefinitionSchema: z.ZodType<SkillDefinition> = z.object({
+  name: z.string().min(1),
+  prompt: z.string().min(1),
+  description: z.string().min(1).optional(),
+});
+
+// ── Agent config ─────────────────────────────────────────────────
+
 export interface AgentConfig {
   name: string;
   type: AgentType;
   model?: string;
   system?: string;
   effort?: 'low' | 'medium' | 'high';
+  mcps?: string[];
+  hooks?: string[];
+  skills?: string[];
   agents?: AgentConfig[];
 }
 
@@ -18,6 +55,9 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
   effort: z.enum(['low', 'medium', 'high']).optional(),
+  mcps: z.array(z.string().min(1)).optional(),
+  hooks: z.array(z.string().min(1)).optional(),
+  skills: z.array(z.string().min(1)).optional(),
   agents: z.array(agentConfigSchema).optional(),
 }));
 
@@ -44,6 +84,7 @@ export interface RoleDefinition {
   system: string;
   effort?: 'low' | 'medium' | 'high';
   description?: string;
+  mcps?: string[];
 }
 
 export const roleDefinitionSchema: z.ZodType<RoleDefinition> = z.object({
@@ -53,6 +94,7 @@ export const roleDefinitionSchema: z.ZodType<RoleDefinition> = z.object({
   system: z.string().min(1),
   effort: z.enum(['low', 'medium', 'high']).optional(),
   description: z.string().min(1).optional(),
+  mcps: z.array(z.string().min(1)).optional(),
 });
 
 export interface RunAgentResult {

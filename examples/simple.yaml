@@ -4,11 +4,23 @@ repo: ..
 orchestrator:
   name: lead
   type: claude-code
-  system: You are the project lead. Delegate work only when needed and otherwise answer directly.
+  model: claude-opus-4-6
+  system: You are the project lead. Delegate work only when needed and otherwise
+    answer directly.
+  effort: high
   agents:
-    - name: backend
+    - name: foreman
       type: codex
+      model: gpt-5.4
       system: You implement backend changes in the server workspace.
-    - name: frontend
-      type: claude-code
-      system: You implement frontend changes in the studio workspace.
+      effort: high
+      agents:
+        - name: agent-1
+          type: claude-code
+          agents: []
+        - name: codex-agent-1
+          type: codex
+        - name: agent-2
+          type: claude-code
+        - name: codex-agent-2
+          type: codex

@@ -1,9 +1,10 @@
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import Fastify from "fastify";
 import { z } from "zod";
 import YAML from "yaml";
-import { flowSchema, roleDefinitionSchema } from "@loom/core";
+import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@loom/core";
 import { validateFlow } from "@loom/nodes";
 import { runFlow, streamRunFlow } from "./runner.js";
 import { stringifyFlow } from "./flow-writer.js";
@@ -12,6 +13,8 @@ import { getRun, listRuns } from "./trace-store.js";
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
 const allowedFlowDir = path.join(workspaceRoot, "examples");
 const rolesDir = path.join(workspaceRoot, "roles");
+const hooksDir = path.join(workspaceRoot, "hooks");
+const skillsDir = path.join(workspaceRoot, "skills");
 
 function isAllowedFlowPath(flowPath: string): boolean {
   if (path.isAbsolute(flowPath)) {
@@ -225,6 +228,137 @@ export function buildServer() {
     return reply;
   });
 
+  // ── Resource discovery ──────────────────────────────────────────
+
+  app.get("/mcps", async () => {
+    const sources = [
+      path.join(homedir(), ".claude.json"),
+      path.join(workspaceRoot, ".mcp.json"),
+    ];
+    const names = new Set<string>();
+    for (const src of sources) {
+      try {
+        const raw = await readFile(src, "utf8");
+        const cfg = JSON.parse(raw);
+        const servers = cfg.mcpServers;
+        if (servers && typeof servers === "object") {
+          for (const k of Object.keys(servers)) names.add(k);
+        }
+      } catch { /* skip missing files */ }
+    }
+    return { mcps: [...names].sort() };
+  });
+
+  app.get("/discover", async () => {
+    interface DiscoveredResource {
+      type: "mcp" | "hook" | "skill";
+      name: string;
+      source: string;
+      platform: "claude" | "codex";
+      event?: string;
+      command?: string;
+      prompt?: string;
+    }
+    const resources: DiscoveredResource[] = [];
+
+    // ── Claude resources ────────────────────────────────────────
+
+    // MCPs
+    const mcpSources = [
+      path.join(homedir(), ".claude.json"),
+      path.join(workspaceRoot, ".mcp.json"),
+    ];
+    for (const src of mcpSources) {
+      try {
+        const raw = await readFile(src, "utf8");
+        const cfg = JSON.parse(raw);
+        if (cfg.mcpServers && typeof cfg.mcpServers === "object") {
+          for (const name of Object.keys(cfg.mcpServers)) {
+            resources.push({ type: "mcp", name, source: src, platform: "claude" });
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    // Hooks
+    const hookSources = [
+      path.join(homedir(), ".claude", "settings.json"),
+      path.join(workspaceRoot, ".claude", "settings.json"),
+    ];
+    for (const src of hookSources) {
+      try {
+        const raw = await readFile(src, "utf8");
+        const cfg = JSON.parse(raw);
+        if (cfg.hooks && typeof cfg.hooks === "object") {
+          for (const [event, rules] of Object.entries(cfg.hooks)) {
+            if (!Array.isArray(rules)) continue;
+            for (const rule of rules as Array<{ matcher?: string; hooks?: Array<{ command?: string }> }>) {
+              const cmds = (rule.hooks ?? []).map((h) => h.command).filter(Boolean);
+              if (cmds.length > 0) {
+                const label = rule.matcher ? `${event}:${rule.matcher}` : event;
+                resources.push({ type: "hook", name: label, source: src, platform: "claude", event, command: cmds.join(" && ") });
+              }
+            }
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    // Claude skills — ~/.claude/skills/*/SKILL.md
+    const claudeSkillsDir = path.join(homedir(), ".claude", "skills");
+    try {
+      const skillEntries = await readdir(claudeSkillsDir, { withFileTypes: true });
+      for (const entry of skillEntries) {
+        if (!entry.isDirectory()) continue;
+        const skillFile = path.join(claudeSkillsDir, entry.name, "SKILL.md");
+        const prompt = await readFile(skillFile, "utf8").catch(() => "");
+        if (prompt) {
+          resources.push({ type: "skill", name: entry.name, source: claudeSkillsDir, platform: "claude", prompt: prompt.slice(0, 300) });
+        }
+      }
+    } catch { /* skip */ }
+
+    // Project-level claude skills
+    const projSkillsDir = path.join(workspaceRoot, ".claude", "skills");
+    try {
+      const skillEntries = await readdir(projSkillsDir, { withFileTypes: true });
+      for (const entry of skillEntries) {
+        if (!entry.isDirectory()) continue;
+        const skillFile = path.join(projSkillsDir, entry.name, "SKILL.md");
+        const prompt = await readFile(skillFile, "utf8").catch(() => "");
+        if (prompt) {
+          resources.push({ type: "skill", name: entry.name, source: projSkillsDir, platform: "claude", prompt: prompt.slice(0, 300) });
+        }
+      }
+    } catch { /* skip */ }
+
+    // ── Codex resources ─────────────────────────────────────────
+
+    // Codex skills — ~/.codex/skills/*.toml
+    const codexSkillsDir = path.join(homedir(), ".codex", "skills");
+    try {
+      const entries = await readdir(codexSkillsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        const name = entry.name.replace(/\.(toml|md|yaml)$/, "");
+        resources.push({ type: "skill", name, source: codexSkillsDir, platform: "codex" });
+      }
+    } catch { /* skip */ }
+
+    // Codex agents — ~/.codex/agents/*.toml
+    const codexAgentsDir = path.join(homedir(), ".codex", "agents");
+    try {
+      const entries = await readdir(codexAgentsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        const name = entry.name.replace(/\.(toml|md|yaml)$/, "");
+        resources.push({ type: "skill", name: `agent:${name}`, source: codexAgentsDir, platform: "codex" });
+      }
+    } catch { /* skip */ }
+
+    return { resources };
+  });
+
   // ── Role endpoints ──────────────────────────────────────────────
 
   app.get("/roles", async () => {
@@ -275,6 +409,82 @@ export function buildServer() {
       return reply.code(200).send({ ok: true });
     } catch {
       return reply.code(404).send({ error: { message: "role not found" } });
+    }
+  });
+
+  // ── Hook endpoints ─────────────────────────────────────────────
+
+  app.get("/hooks", async () => {
+    await mkdir(hooksDir, { recursive: true });
+    const entries = await readdir(hooksDir, { withFileTypes: true });
+    const hooks = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
+      const raw = await readFile(path.join(hooksDir, entry.name), "utf8");
+      const parsed = hookDefinitionSchema.safeParse(YAML.parse(raw));
+      if (parsed.success) hooks.push(parsed.data);
+    }
+    return { hooks };
+  });
+
+  app.put("/hooks/save", async (request, reply) => {
+    const parsed = hookDefinitionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+    await mkdir(hooksDir, { recursive: true });
+    const fileName = parsed.data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const filePath = path.join(hooksDir, `${fileName}.yaml`);
+    await writeFile(filePath, YAML.stringify(parsed.data), "utf8");
+    return reply.code(200).send({ hook: parsed.data });
+  });
+
+  app.delete("/hooks/:name", async (request, reply) => {
+    const { name } = request.params as { name: string };
+    const filePath = path.join(hooksDir, `${name}.yaml`);
+    try {
+      await unlink(filePath);
+      return reply.code(200).send({ ok: true });
+    } catch {
+      return reply.code(404).send({ error: { message: "hook not found" } });
+    }
+  });
+
+  // ── Skill endpoints ───────────────────────────────────────────
+
+  app.get("/skills", async () => {
+    await mkdir(skillsDir, { recursive: true });
+    const entries = await readdir(skillsDir, { withFileTypes: true });
+    const skills = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
+      const raw = await readFile(path.join(skillsDir, entry.name), "utf8");
+      const parsed = skillDefinitionSchema.safeParse(YAML.parse(raw));
+      if (parsed.success) skills.push(parsed.data);
+    }
+    return { skills };
+  });
+
+  app.put("/skills/save", async (request, reply) => {
+    const parsed = skillDefinitionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+    await mkdir(skillsDir, { recursive: true });
+    const fileName = parsed.data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const filePath = path.join(skillsDir, `${fileName}.yaml`);
+    await writeFile(filePath, YAML.stringify(parsed.data), "utf8");
+    return reply.code(200).send({ skill: parsed.data });
+  });
+
+  app.delete("/skills/:name", async (request, reply) => {
+    const { name } = request.params as { name: string };
+    const filePath = path.join(skillsDir, `${name}.yaml`);
+    try {
+      await unlink(filePath);
+      return reply.code(200).send({ ok: true });
+    } catch {
+      return reply.code(404).send({ error: { message: "skill not found" } });
     }
   });
 

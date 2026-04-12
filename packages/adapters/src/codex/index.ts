@@ -22,8 +22,8 @@ function buildPrompt(config: AgentConfig, input: string): string {
   ].join("\n");
 }
 
-function buildArgs(outputPath: string, cwd: string): string[] {
-  return [
+function buildArgs(config: AgentConfig, outputPath: string, cwd: string): string[] {
+  const args = [
     "exec",
     "--json",
     "--color",
@@ -35,8 +35,14 @@ function buildArgs(outputPath: string, cwd: string): string[] {
     cwd,
     "-o",
     outputPath,
-    "-",
   ];
+
+  if (config.model) {
+    args.push("-m", config.model);
+  }
+
+  args.push("-");
+  return args;
 }
 
 function extractSessionId(value: unknown): string | undefined {
@@ -118,7 +124,7 @@ class CodexAdapter implements AgentAdapter {
     try {
       tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-codex-"));
       const outputPath = path.join(tempDir, "last-message.txt");
-      const proc = spawn("codex", buildArgs(outputPath, cwd), {
+      const proc = spawn("codex", buildArgs(config, outputPath, cwd), {
         cwd,
         env: process.env,
         stdio: ["pipe", "pipe", "pipe"],

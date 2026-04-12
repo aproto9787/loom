@@ -73,7 +73,7 @@ function layoutAgent(
       source: nodeId,
       target: childPath.join("/"),
       animated: false,
-      style: { stroke: "#8f5d34", strokeWidth: 1.5 },
+      style: { stroke: "#94a3b8", strokeWidth: 1.5 },
     });
 
     childX += result.width * H_SPACING;

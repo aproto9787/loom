@@ -3,7 +3,14 @@ import type { AgentConfig, RoleDefinition } from "@loom/core";
 import { useRunStore, getAgentAtPath, type RunStreamEvent } from "./store.js";
 import { useSseRun } from "./useSseRun.js";
 
-/* ── Agent config header ────────────────────────────────────── */
+/* ── Shared dark-mode input classes ───────────────────────────── */
+
+const inputDark =
+  "px-3 py-2 rounded-lg border border-slate-600 bg-slate-800 text-slate-100 text-sm font-mono placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition-colors";
+
+const selectDark = `${inputDark} appearance-auto`;
+
+/* ── Agent config header ──────────────────────────────────────── */
 
 export function AgentSummary({
   agent,
@@ -32,25 +39,35 @@ export function AgentSummary({
     setEffort(agent.effort ?? "");
   }, [agent.name, agent.type, agent.model, agent.effort]);
 
-  const modelOptions = type === "claude-code"
-    ? ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
-    : ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
+  const modelOptions =
+    type === "claude-code"
+      ? ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
+      : ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
 
   const isRoot = path.length <= 1;
 
   return (
-    <div className="chat-agent">
-      <button type="button" className="chat-agent__summary" onClick={onToggle}>
-        <span className="chat-agent__name">{agent.name}</span>
-        <span className="chat-agent__type">{agent.type}</span>
-        <span className="chat-agent__chevron">{expanded ? "\u25be" : "\u25b8"}</span>
+    <div className="border-b border-slate-800">
+      <button
+        type="button"
+        className="w-full flex items-center gap-2 px-4 py-3 bg-transparent text-slate-100 text-sm text-left hover:bg-white/[0.04] transition-colors border-0"
+        onClick={onToggle}
+      >
+        <span className="font-semibold font-mono">{agent.name}</span>
+        <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">
+          {agent.type}
+        </span>
+        <span className="ml-auto text-xs text-slate-400">
+          {expanded ? "\u25be" : "\u25b8"}
+        </span>
       </button>
       {expanded && (
-        <div className="chat-agent__config">
-          <label className="chat-agent__field">
+        <div className="px-4 pb-3 flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
             <span>Name</span>
             <input
               type="text"
+              className={inputDark}
               value={name}
               onChange={(e) => setName(e.target.value)}
               onBlur={() => {
@@ -66,9 +83,10 @@ export function AgentSummary({
               }}
             />
           </label>
-          <label className="chat-agent__field">
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
             <span>Type</span>
             <select
+              className={selectDark}
               value={type}
               onChange={(e) => {
                 const next = e.target.value as AgentConfig["type"];
@@ -80,28 +98,28 @@ export function AgentSummary({
               <option value="codex">codex</option>
             </select>
           </label>
-          <label className="chat-agent__field">
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
             <span>Model</span>
-            <input
-              type="text"
-              list={`model-options-${path.join("/")}`}
+            <select
+              className={selectDark}
               value={model}
-              placeholder="Default"
               onChange={(e) => {
-                setModel(e.target.value);
-                updateAgent(path, { model: e.target.value.trim() || undefined });
+                const val = e.target.value;
+                setModel(val);
+                updateAgent(path, { model: val || undefined });
               }}
-            />
-            <datalist id={`model-options-${path.join("/")}`}>
+            >
+              <option value="">Default</option>
               {modelOptions.map((m) => (
-                <option key={m} value={m} />
+                <option key={m} value={m}>{m}</option>
               ))}
-            </datalist>
+            </select>
           </label>
           {roles.length > 0 && (
-            <label className="chat-agent__field">
+            <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
               <span>Import from Role</span>
               <select
+                className={selectDark}
                 value=""
                 onChange={(e) => {
                   const role = roles.find((r) => r.name === e.target.value);
@@ -110,19 +128,31 @@ export function AgentSummary({
                   setType(role.type);
                   setModel(role.model ?? "");
                   setEffort(role.effort ?? "");
-                  updateAgent(path, { name: role.name, type: role.type, model: role.model, system: role.system, effort: role.effort });
+                  updateAgent(path, {
+                    name: role.name,
+                    type: role.type,
+                    model: role.model,
+                    system: role.system,
+                    effort: role.effort,
+                  });
                 }}
               >
-                <option value="" disabled>Select a role...</option>
+                <option value="" disabled>
+                  Select a role...
+                </option>
                 {roles.map((r) => (
-                  <option key={r.name} value={r.name}>{r.name}{r.description ? ` — ${r.description}` : ""}</option>
+                  <option key={r.name} value={r.name}>
+                    {r.name}
+                    {r.description ? ` — ${r.description}` : ""}
+                  </option>
                 ))}
               </select>
             </label>
           )}
-          <label className="chat-agent__field">
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
             <span>Effort</span>
             <select
+              className={selectDark}
               value={effort}
               onChange={(e) => {
                 const val = e.target.value;
@@ -139,7 +169,7 @@ export function AgentSummary({
           {!isRoot && (
             <button
               type="button"
-              className="chat-agent__delete"
+              className="self-start px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-xs font-semibold hover:bg-red-500/20 transition-colors"
               onClick={() => removeAgent(path)}
             >
               Delete agent
@@ -151,30 +181,32 @@ export function AgentSummary({
   );
 }
 
-/* ── Chat bubble ────────────────────────────────────────────── */
+/* ── Chat bubble ──────────────────────────────────────────────── */
 
 type ChatEntry = { kind: "user"; content: string } | RunStreamEvent;
 
 function ChatBubble({ entry }: { entry: ChatEntry }) {
   if (entry.kind === "user") {
     return (
-      <div className="chat-bubble chat-bubble--user">
-        <pre>{entry.content}</pre>
+      <div className="self-end max-w-[88%] px-3 py-2 rounded-xl rounded-br-sm bg-blue-500/20 text-blue-100 text-sm font-mono">
+        <pre className="m-0 whitespace-pre-wrap break-words font-[inherit] text-[inherit]">
+          {entry.content}
+        </pre>
       </div>
     );
   }
   switch (entry.kind) {
     case "agent_delegate":
       return (
-        <div className="chat-bubble chat-bubble--delegate">
-          <span className="chat-bubble__icon">&rarr;</span>
+        <div className="px-3 py-1 text-xs text-slate-400">
+          <span className="mr-1 text-blue-400">&rarr;</span>
           Delegated to <strong>{entry.childAgent}</strong>
         </div>
       );
     case "agent_start":
       return (
-        <div className="chat-bubble chat-bubble--system">
-          <span className="chat-bubble__badge">
+        <div className="flex items-center gap-2 px-3 py-1 text-xs text-slate-400">
+          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-white/[0.08] text-[10px] font-bold tracking-wide">
             {entry.agentType === "claude-code" ? "CC" : "CX"}
           </span>
           {entry.agentName} started
@@ -182,30 +214,38 @@ function ChatBubble({ entry }: { entry: ChatEntry }) {
       );
     case "agent_complete":
       return (
-        <div className="chat-bubble chat-bubble--complete">
-          <div className="chat-bubble__head">
-            <span className="chat-bubble__badge chat-bubble__badge--done">&check;</span>
+        <div className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700">
+          <div className="flex items-center gap-2 mb-1.5 text-xs text-slate-300">
+            <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+              &check;
+            </span>
             {entry.agentName}
           </div>
-          <pre className="chat-bubble__output">{entry.output}</pre>
+          <pre className="m-0 px-2 py-1.5 rounded-lg bg-black/30 text-sm text-slate-200 whitespace-pre-wrap break-words font-mono max-h-48 overflow-auto">
+            {entry.output}
+          </pre>
         </div>
       );
     case "agent_error":
       return (
-        <div className="chat-bubble chat-bubble--error">
+        <div className="px-3 py-2 rounded-lg bg-red-500/15 text-red-400 text-sm">
           {entry.agentName}: {entry.error}
         </div>
       );
     case "run_complete":
       return (
-        <div className="chat-bubble chat-bubble--final">
-          <div className="chat-bubble__label">Final Output</div>
-          <pre className="chat-bubble__output">{entry.output}</pre>
+        <div className="px-3 py-2 rounded-xl bg-white/[0.04] border border-slate-700">
+          <p className="m-0 mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Final Output
+          </p>
+          <pre className="m-0 px-2 py-1.5 rounded-lg bg-black/30 text-sm text-slate-200 whitespace-pre-wrap break-words font-mono max-h-48 overflow-auto">
+            {entry.output}
+          </pre>
         </div>
       );
     case "run_error":
       return (
-        <div className="chat-bubble chat-bubble--error">
+        <div className="px-3 py-2 rounded-lg bg-red-500/15 text-red-400 text-sm">
           Error: {entry.message}
         </div>
       );
@@ -214,21 +254,25 @@ function ChatBubble({ entry }: { entry: ChatEntry }) {
   }
 }
 
-/* ── Streaming block ────────────────────────────────────────── */
+/* ── Streaming block ──────────────────────────────────────────── */
 
 function StreamingBlock({ name, tokens }: { name: string; tokens: string[] }) {
   return (
-    <div className="chat-bubble chat-bubble--streaming">
-      <div className="chat-bubble__head">
-        <span className="chat-bubble__badge chat-bubble__badge--running">&loz;</span>
+    <div className="px-3 py-2 rounded-xl bg-white/[0.02] border border-blue-500/20">
+      <div className="flex items-center gap-2 mb-1.5 text-xs text-slate-300">
+        <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold animate-spin-slow">
+          &loz;
+        </span>
         {name}
       </div>
-      <pre className="chat-bubble__tokens">{tokens.join("")}</pre>
+      <pre className="m-0 px-2 py-1.5 rounded-lg bg-black/30 text-sm text-slate-200 whitespace-pre-wrap break-words font-mono max-h-48 overflow-auto">
+        {tokens.join("")}
+      </pre>
     </div>
   );
 }
 
-/* ── Main panel ─────────────────────────────────────────────── */
+/* ── Main panel ───────────────────────────────────────────────── */
 
 export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {}) {
   const flowPath = useRunStore((s) => s.flowPath);
@@ -250,7 +294,6 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
       ? getAgentAtPath(flowDraft.orchestrator, selectedAgentPath)
       : undefined;
 
-  // Sync store events into local chatLog (skip token & run_start events)
   useEffect(() => {
     if (events.length < processedRef.current) {
       processedRef.current = 0;
@@ -259,8 +302,7 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
       const fresh = events.slice(processedRef.current);
       processedRef.current = events.length;
       const entries = fresh.filter(
-        (e): e is RunStreamEvent =>
-          e.kind !== "agent_token" && e.kind !== "run_start",
+        (e): e is RunStreamEvent => e.kind !== "agent_token" && e.kind !== "run_start",
       );
       if (entries.length > 0) {
         setChatLog((prev) => [...prev, ...entries]);
@@ -268,7 +310,6 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
     }
   }, [events]);
 
-  // Auto-scroll on new content
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -294,24 +335,30 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
   };
 
   return (
-    <section className="chat-panel">
-      {!hideAgentConfig && (selectedAgent ? (
-        <AgentSummary
-          agent={selectedAgent}
-          path={selectedAgentPath}
-          expanded={configExpanded}
-          onToggle={() => setConfigExpanded((v) => !v)}
-          key={selectedAgentPath.join("/")}
-        />
-      ) : (
-        <div className="chat-agent">
-          <p className="chat-agent__empty">Select an agent in the tree</p>
-        </div>
-      ))}
+    <section className="flex flex-col rounded-xl border border-slate-700 bg-slate-900 overflow-hidden min-h-0">
+      {!hideAgentConfig &&
+        (selectedAgent ? (
+          <AgentSummary
+            agent={selectedAgent}
+            path={selectedAgentPath}
+            expanded={configExpanded}
+            onToggle={() => setConfigExpanded((v) => !v)}
+            key={selectedAgentPath.join("/")}
+          />
+        ) : (
+          <div className="border-b border-slate-800">
+            <p className="m-0 px-4 py-3 text-sm text-slate-400 italic">
+              Select an agent in the tree
+            </p>
+          </div>
+        ))}
 
-      <div className="chat-panel__messages" ref={scrollRef}>
+      <div
+        className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5 min-h-0 dark-scroll"
+        ref={scrollRef}
+      >
         {chatLog.length === 0 && streamingAgents.length === 0 && (
-          <p className="chat-panel__empty">Send a prompt to start a run.</p>
+          <p className="m-auto text-sm text-slate-400 italic">Send a prompt to start a run.</p>
         )}
         {chatLog.map((entry, i) => (
           <ChatBubble key={i} entry={entry} />
@@ -321,8 +368,9 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
         ))}
       </div>
 
-      <div className="chat-panel__input">
+      <div className="flex items-end gap-2 p-3 border-t border-slate-800 bg-black/20 shrink-0">
         <textarea
+          className="flex-1 px-3 py-2 rounded-lg border border-slate-600 bg-slate-800 text-slate-100 text-sm font-mono resize-none placeholder:text-slate-500 focus:outline-none focus:border-blue-500 disabled:opacity-40 transition-colors"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -332,6 +380,7 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
         />
         <button
           type="button"
+          className="w-8 h-8 rounded-lg bg-blue-500 text-white font-bold border-0 shrink-0 hover:bg-blue-600 disabled:opacity-40 transition-colors"
           onClick={handleSend}
           disabled={isStreaming || !input.trim()}
         >

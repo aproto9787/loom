@@ -1,0 +1,4 @@
+name: log-start
+event: on_start
+command: echo "[HOOK] Agent $LOOM_AGENT ($LOOM_AGENT_TYPE) started" >> /tmp/loom-hooks.log
+description: Logs agent start to /tmp/loom-hooks.log

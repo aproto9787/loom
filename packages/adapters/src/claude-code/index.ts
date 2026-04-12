@@ -8,14 +8,18 @@ export const claudeCodeAdapterId = "claude-code";
 function buildArgs(config: AgentConfig): string[] {
   const args = [
     "-p",
+    "--verbose",
     "--output-format",
     "stream-json",
     "--input-format",
     "stream-json",
-    "--include-partial-messages",
     "--permission-mode",
     "bypassPermissions",
   ];
+
+  if (config.model) {
+    args.push("--model", config.model);
+  }
 
   if (config.system) {
     args.push("--system-prompt", config.system);
