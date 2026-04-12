@@ -14,10 +14,48 @@ import { RolesPanel } from "./RolesPanel.js";
 import { CustomPanel } from "./CustomPanel.js";
 import { agentTreeToGraph } from "./flowToGraph.js";
 import { saveFlow } from "./api.js";
-import { useRunStore, getAgentAtPath, type AgentRuntime } from "./store.js";
+import { useRunStore, getAgentAtPath, type AgentRuntime, type RunStreamEvent } from "./store.js";
 
 const SERVER_ORIGIN =
   (import.meta.env?.VITE_LOOM_SERVER as string | undefined) ?? "http://localhost:8787";
+
+interface SseBlock {
+  event: string;
+  data: string;
+}
+
+function parseSseChunk(buffer: string): { blocks: SseBlock[]; rest: string } {
+  const blocks: SseBlock[] = [];
+  let cursor = 0;
+
+  while (cursor < buffer.length) {
+    const delimiter = buffer.indexOf("\n\n", cursor);
+    if (delimiter === -1) break;
+    const rawBlock = buffer.slice(cursor, delimiter);
+    cursor = delimiter + 2;
+    let event = "message";
+    let data = "";
+    for (const line of rawBlock.split("\n")) {
+      if (line.startsWith("event: ")) {
+        event = line.slice("event: ".length).trim();
+      } else if (line.startsWith("data: ")) {
+        data += (data ? "\n" : "") + line.slice("data: ".length);
+      }
+    }
+    blocks.push({ event, data });
+  }
+
+  return { blocks, rest: buffer.slice(cursor) };
+}
+
+function toRunStreamEvent(block: SseBlock): RunStreamEvent | undefined {
+  try {
+    const payload = JSON.parse(block.data);
+    return { kind: block.event, ...payload } as RunStreamEvent;
+  } catch {
+    return undefined;
+  }
+}
 
 function applyAgentRuntimeState(
   nodes: Node[],
@@ -124,20 +162,98 @@ function SaveControls() {
   const isDirty = useRunStore((s) => s.isDirty);
   const isSaving = useRunStore((s) => s.isSaving);
   const saveError = useRunStore((s) => s.saveError);
+  const chatInput = useRunStore((s) => s.chatInput);
+  const autoRunAfterSave = useRunStore((s) => s.autoRunAfterSave);
   const beginSave = useRunStore((s) => s.beginSave);
   const endSave = useRunStore((s) => s.endSave);
   const setSaveError = useRunStore((s) => s.setSaveError);
+  const setActiveTab = useRunStore((s) => s.setActiveTab);
+  const setAutoRunAfterSave = useRunStore((s) => s.setAutoRunAfterSave);
+  const beginStream = useRunStore((s) => s.beginStream);
+  const ingest = useRunStore((s) => s.ingest);
+  const endStreamAction = useRunStore((s) => s.endStream);
+
+  const runSavedFlow = useCallback(async () => {
+    const prompt = chatInput.trim();
+    if (!flowDraft || !prompt) return;
+
+    setActiveTab("chat");
+    beginStream();
+
+    let response: Response;
+    try {
+      response = await fetch(`${SERVER_ORIGIN}/runs/stream`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ flowPath, userPrompt: prompt }),
+      });
+    } catch (error) {
+      ingest({
+        kind: "run_error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      endStreamAction();
+      return;
+    }
+
+    if (!response.ok || !response.body) {
+      const text = await response.text().catch(() => "");
+      ingest({
+        kind: "run_error",
+        message: `HTTP ${response.status}${text ? `: ${text}` : ""}`,
+      });
+      endStreamAction();
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const { blocks, rest } = parseSseChunk(buffer);
+        buffer = rest;
+        for (const block of blocks) {
+          const event = toRunStreamEvent(block);
+          if (event) ingest(event);
+        }
+      }
+    } catch (error) {
+      ingest({
+        kind: "run_error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      endStreamAction();
+      setAutoRunAfterSave(false);
+    }
+  }, [beginStream, chatInput, endStreamAction, flowDraft, flowPath, ingest, setActiveTab, setAutoRunAfterSave]);
 
   const handleSave = useCallback(async () => {
-    if (!flowDraft || !isDirty || isSaving) return;
+    if (!flowDraft || isSaving || (!isDirty && !autoRunAfterSave)) return;
     beginSave();
     try {
       await saveFlow(SERVER_ORIGIN, flowPath, flowDraft);
       endSave(flowDraft);
+      if (autoRunAfterSave) {
+        await runSavedFlow();
+      }
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "save failed");
+      setAutoRunAfterSave(false);
     }
-  }, [flowDraft, isDirty, isSaving, flowPath, beginSave, endSave, setSaveError]);
+  }, [autoRunAfterSave, beginSave, endSave, flowDraft, flowPath, isDirty, isSaving, runSavedFlow, setAutoRunAfterSave, setSaveError]);
+
+  const handleSaveAndRunToggle = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setAutoRunAfterSave(event.target.checked);
+  }, [setAutoRunAfterSave]);
+
+  const canSave = Boolean(flowDraft) && !isSaving && (isDirty || autoRunAfterSave);
+  const canSaveAndRun = Boolean(flowDraft) && !isSaving && chatInput.trim().length > 0;
 
   return (
     <div className="flex items-center gap-3">
@@ -145,10 +261,20 @@ function SaveControls() {
         type="button"
         className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40 transition-colors"
         onClick={handleSave}
-        disabled={!flowDraft || !isDirty || isSaving}
+        disabled={!canSave}
       >
-        {isSaving ? "Saving..." : isDirty ? "Save flow" : "Saved"}
+        {isSaving ? "Saving..." : isDirty ? "Save flow" : autoRunAfterSave ? "Save & run" : "Saved"}
       </button>
+      <label className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${canSaveAndRun ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-slate-50 text-slate-400"}`}>
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5"
+          checked={autoRunAfterSave}
+          onChange={handleSaveAndRunToggle}
+          disabled={!canSaveAndRun}
+        />
+        Save then run from Chat prompt
+      </label>
       {saveError ? (
         <p className="m-0 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs">{saveError}</p>
       ) : null}

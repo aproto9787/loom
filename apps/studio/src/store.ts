@@ -131,6 +131,8 @@ interface StudioState {
   loadError?: string;
   activeTab: 'workflow' | 'chat' | 'roles' | 'custom';
   chatRepo: string;
+  chatInput: string;
+  autoRunAfterSave: boolean;
 
   // Roles & custom resources
   roles: RoleDefinition[];
@@ -169,6 +171,8 @@ interface StudioState {
 
   setActiveTab: (tab: 'workflow' | 'chat' | 'roles' | 'custom') => void;
   setChatRepo: (path: string) => void;
+  setChatInput: (value: string) => void;
+  setAutoRunAfterSave: (value: boolean) => void;
 
   deleteFlow: (origin: string, flowPath: string) => Promise<void>;
 
@@ -198,6 +202,8 @@ export const useRunStore = create<StudioState>((set) => ({
   agentRuntimes: {},
   activeTab: 'workflow' as const,
   chatRepo: '',
+  chatInput: '',
+  autoRunAfterSave: false,
   roles: [],
   availableMcps: [],
   hooks: [],
@@ -426,6 +432,8 @@ export const useRunStore = create<StudioState>((set) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setChatRepo: (path) => set({ chatRepo: path }),
+  setChatInput: (value) => set({ chatInput: value }),
+  setAutoRunAfterSave: (value) => set({ autoRunAfterSave: value }),
 
   deleteFlow: async (origin, flowPath) => {
     const fileName = flowPath.replace("examples/", "");

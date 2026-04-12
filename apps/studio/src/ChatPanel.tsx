@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentConfig, RoleDefinition } from "@loom/core";
 import { useRunStore, getAgentAtPath, type RunStreamEvent } from "./store.js";
 import { useSseRun } from "./useSseRun.js";
@@ -185,6 +185,10 @@ export function AgentSummary({
 
 type ChatEntry = { kind: "user"; content: string } | RunStreamEvent;
 
+function isAgentFailure(entry: RunStreamEvent): entry is Extract<RunStreamEvent, { kind: "agent_error" | "agent_timeout" }> {
+  return entry.kind === "agent_error" || entry.kind === "agent_timeout";
+}
+
 function ChatBubble({ entry }: { entry: ChatEntry }) {
   if (entry.kind === "user") {
     return (
@@ -228,8 +232,13 @@ function ChatBubble({ entry }: { entry: ChatEntry }) {
       );
     case "agent_error":
       return (
-        <div className="px-3 py-2 rounded-lg bg-red-500/15 text-red-400 text-sm">
-          {entry.agentName}: {entry.error}
+        <div className="px-3 py-2 rounded-xl border border-red-500/30 bg-red-500/15 text-red-200 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+          <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-red-300">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/20 text-xs">!</span>
+            Agent Error
+          </div>
+          <div className="font-mono text-xs text-red-100/80">Worker {entry.agentName}</div>
+          <div className="mt-1 whitespace-pre-wrap break-words font-mono text-sm">{entry.error}</div>
         </div>
       );
     case "agent_abort":
@@ -240,8 +249,15 @@ function ChatBubble({ entry }: { entry: ChatEntry }) {
       );
     case "agent_timeout":
       return (
-        <div className="px-3 py-2 rounded-lg bg-amber-500/15 text-amber-300 text-sm">
-          {entry.agentName}: timed out after {entry.timeoutMs}ms
+        <div className="px-3 py-2 rounded-xl border border-red-500/30 bg-red-500/15 text-red-200 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+          <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-red-300">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/20 text-xs">!</span>
+            Agent Timeout
+          </div>
+          <div className="font-mono text-xs text-red-100/80">Worker {entry.agentName}</div>
+          <div className="mt-1 whitespace-pre-wrap break-words font-mono text-sm">
+            Timed out after {entry.timeoutMs}ms
+          </div>
         </div>
       );
     case "run_complete":
@@ -274,7 +290,7 @@ function ChatBubble({ entry }: { entry: ChatEntry }) {
 
 /* ── Streaming block ──────────────────────────────────────────── */
 
-function StreamingBlock({ name, tokens }: { name: string; tokens: string[] }) {
+function StreamingBlock({ name, content }: { name: string; content: string }) {
   return (
     <div className="px-3 py-2 rounded-xl bg-white/[0.02] border border-blue-500/20">
       <div className="flex items-center gap-2 mb-1.5 text-xs text-slate-300">
@@ -284,7 +300,7 @@ function StreamingBlock({ name, tokens }: { name: string; tokens: string[] }) {
         {name}
       </div>
       <pre className="m-0 px-2 py-1.5 rounded-lg bg-black/30 text-sm text-slate-200 whitespace-pre-wrap break-words font-mono max-h-48 overflow-auto">
-        {tokens.join("")}
+        {content}
       </pre>
     </div>
   );
@@ -301,14 +317,19 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
   const runError = useRunStore((s) => s.runError);
   const events = useRunStore((s) => s.events);
   const agentRuntimes = useRunStore((s) => s.agentRuntimes);
+  const input = useRunStore((s) => s.chatInput);
+  const setInput = useRunStore((s) => s.setChatInput);
+  const autoRunAfterSave = useRunStore((s) => s.autoRunAfterSave);
+  const setAutoRunAfterSave = useRunStore((s) => s.setAutoRunAfterSave);
 
   const { runFlow, abortFlow } = useSseRun();
-  const [input, setInput] = useState("");
   const [configExpanded, setConfigExpanded] = useState(false);
   const [abortError, setAbortError] = useState<string>();
   const [chatLog, setChatLog] = useState<ChatEntry[]>([]);
   const processedRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+  const frameRef = useRef<number | null>(null);
 
   const selectedAgent =
     flowDraft && selectedAgentPath.length > 0
@@ -331,23 +352,56 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
     }
   }, [events]);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  });
+  const streamingAgents = useMemo(
+    () =>
+      Object.values(agentRuntimes)
+        .filter((a) => a.state === "running" && a.tokens.length > 0)
+        .map((agent) => ({
+          name: agent.name,
+          content: agent.tokens.join(""),
+        })),
+    [agentRuntimes],
+  );
 
-  const streamingAgents = Object.values(agentRuntimes).filter(
-    (a) => a.state === "running" && a.tokens.length > 0,
+  const failureCount = useMemo(
+    () => chatLog.filter((entry): entry is Extract<RunStreamEvent, { kind: "agent_error" | "agent_timeout" }> => entry.kind !== "user" && isAgentFailure(entry)).length,
+    [chatLog],
+  );
+
+  const syncScroll = useCallback(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+    }
+    frameRef.current = requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el && stickToBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    syncScroll();
+  }, [chatLog, streamingAgents, syncScroll]);
+
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    },
+    [],
   );
 
   const handleSend = useCallback(async () => {
     const prompt = input.trim();
     if (!prompt || isStreaming) return;
     setAbortError(undefined);
+    setAutoRunAfterSave(false);
     setChatLog((prev) => [...prev, { kind: "user" as const, content: prompt }]);
     setInput("");
     await runFlow(flowPath, prompt);
-  }, [input, isStreaming, flowPath, runFlow]);
+  }, [input, isStreaming, flowPath, runFlow, setAutoRunAfterSave, setInput]);
 
   const handleAbort = useCallback(async () => {
     if (!runId || !isStreaming) return;
@@ -388,6 +442,10 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
       <div
         className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5 min-h-0 dark-scroll"
         ref={scrollRef}
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+        }}
       >
         {chatLog.length === 0 && streamingAgents.length === 0 && (
           <p className="m-auto text-sm text-slate-400 italic">Send a prompt to start a run.</p>
@@ -396,15 +454,29 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
           <ChatBubble key={i} entry={entry} />
         ))}
         {streamingAgents.map((a) => (
-          <StreamingBlock key={`s-${a.name}`} name={a.name} tokens={a.tokens} />
+          <StreamingBlock key={`s-${a.name}`} name={a.name} content={a.content} />
         ))}
       </div>
 
       <div className="flex items-end gap-2 p-3 border-t border-slate-800 bg-black/20 shrink-0">
         <div className="flex-1 flex flex-col gap-2">
           {(abortError || runError) && (
-            <div className="px-3 py-2 rounded-lg bg-red-500/15 text-red-400 text-sm">
-              {abortError ?? runError}
+            <div className="px-3 py-2 rounded-xl border border-red-500/30 bg-red-500/15 text-red-200 text-sm">
+              <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-red-300">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500/20 text-xs">!</span>
+                Run Error
+              </div>
+              <div className="whitespace-pre-wrap break-words font-mono">{abortError ?? runError}</div>
+            </div>
+          )}
+          {autoRunAfterSave && !isStreaming && (
+            <div className="px-3 py-2 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-100 text-sm">
+              Save the flow to start this prompt immediately.
+            </div>
+          )}
+          {failureCount > 0 && !runError && (
+            <div className="px-3 py-2 rounded-xl border border-red-500/20 bg-red-500/10 text-red-100 text-xs">
+              {failureCount} worker issue{failureCount > 1 ? "s" : ""} captured in the transcript.
             </div>
           )}
           <textarea
