@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentConfig } from "@loom/core";
+import type { AgentConfig, RoleDefinition } from "@loom/core";
 import { useRunStore, getAgentAtPath, type RunStreamEvent } from "./store.js";
 import { useSseRun } from "./useSseRun.js";
 
@@ -18,6 +18,7 @@ export function AgentSummary({
 }) {
   const updateAgent = useRunStore((s) => s.updateAgent);
   const removeAgent = useRunStore((s) => s.removeAgent);
+  const roles = useRunStore((s) => s.roles);
 
   const [name, setName] = useState(agent.name);
   const [type, setType] = useState(agent.type);
@@ -73,6 +74,27 @@ export function AgentSummary({
               <option value="codex">codex</option>
             </select>
           </label>
+          {roles.length > 0 && (
+            <label className="chat-agent__field">
+              <span>Import from Role</span>
+              <select
+                value=""
+                onChange={(e) => {
+                  const role = roles.find((r) => r.name === e.target.value);
+                  if (!role) return;
+                  setName(role.name);
+                  setType(role.type);
+                  setSystem(role.system);
+                  updateAgent(path, { name: role.name, type: role.type, system: role.system });
+                }}
+              >
+                <option value="" disabled>Select a role...</option>
+                {roles.map((r) => (
+                  <option key={r.name} value={r.name}>{r.name}{r.description ? ` — ${r.description}` : ""}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="chat-agent__field">
             <span>System</span>
             <textarea

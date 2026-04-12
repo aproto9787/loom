@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, AgentType, FlowDefinition, RunEvent } from "@loom/core";
+import type { AgentConfig, AgentType, FlowDefinition, RoleDefinition, RunEvent } from "@loom/core";
 
 // --- Agent path helpers ---
 
@@ -114,8 +114,11 @@ interface StudioState {
   isSaving: boolean;
   saveError?: string;
   loadError?: string;
-  activeTab: 'workflow' | 'chat';
+  activeTab: 'workflow' | 'chat' | 'roles';
   chatRepo: string;
+
+  // Roles
+  roles: RoleDefinition[];
 
   // Run state
   isStreaming: boolean;
@@ -145,8 +148,12 @@ interface StudioState {
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
 
-  setActiveTab: (tab: 'workflow' | 'chat') => void;
+  setActiveTab: (tab: 'workflow' | 'chat' | 'roles') => void;
   setChatRepo: (path: string) => void;
+
+  fetchRoles: (origin: string) => Promise<void>;
+  saveRole: (origin: string, role: RoleDefinition) => Promise<void>;
+  deleteRole: (origin: string, name: string) => Promise<void>;
 }
 
 export const useRunStore = create<StudioState>((set) => ({
@@ -160,6 +167,7 @@ export const useRunStore = create<StudioState>((set) => ({
   agentRuntimes: {},
   activeTab: 'workflow' as const,
   chatRepo: '',
+  roles: [],
 
   setFlowPath: (value) =>
     set({
@@ -358,4 +366,34 @@ export const useRunStore = create<StudioState>((set) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setChatRepo: (path) => set({ chatRepo: path }),
+
+  fetchRoles: async (origin) => {
+    const res = await fetch(`${origin}/roles`);
+    if (!res.ok) return;
+    const data = (await res.json()) as { roles: RoleDefinition[] };
+    set({ roles: data.roles });
+  },
+
+  saveRole: async (origin, role) => {
+    const res = await fetch(`${origin}/roles/save`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(role),
+    });
+    if (!res.ok) throw new Error("failed to save role");
+    // Refresh list
+    const listRes = await fetch(`${origin}/roles`);
+    if (listRes.ok) {
+      const data = (await listRes.json()) as { roles: RoleDefinition[] };
+      set({ roles: data.roles });
+    }
+  },
+
+  deleteRole: async (origin, name) => {
+    const res = await fetch(`${origin}/roles/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("failed to delete role");
+    set((state) => ({ roles: state.roles.filter((r) => r.name !== name) }));
+  },
 }));

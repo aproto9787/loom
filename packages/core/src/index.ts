@@ -33,6 +33,20 @@ export const flowDefinitionSchema: z.ZodType<FlowDefinition> = z.object({
 
 export const flowSchema = flowDefinitionSchema;
 
+export interface RoleDefinition {
+  name: string;
+  type: 'claude-code' | 'codex';
+  system: string;
+  description?: string;
+}
+
+export const roleDefinitionSchema: z.ZodType<RoleDefinition> = z.object({
+  name: z.string().min(1),
+  type: agentTypeSchema,
+  system: z.string().min(1),
+  description: z.string().min(1).optional(),
+});
+
 export interface RunAgentResult {
   agentName: string;
   output: string;

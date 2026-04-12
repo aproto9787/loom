@@ -1,9 +1,9 @@
-import { readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import Fastify from "fastify";
 import { z } from "zod";
 import YAML from "yaml";
-import { flowSchema } from "@loom/core";
+import { flowSchema, roleDefinitionSchema } from "@loom/core";
 import { validateFlow } from "@loom/nodes";
 import { runFlow, streamRunFlow } from "./runner.js";
 import { stringifyFlow } from "./flow-writer.js";
@@ -11,6 +11,7 @@ import { getRun, listRuns } from "./trace-store.js";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
 const allowedFlowDir = path.join(workspaceRoot, "examples");
+const rolesDir = path.join(workspaceRoot, "roles");
 
 function isAllowedFlowPath(flowPath: string): boolean {
   if (path.isAbsolute(flowPath)) {
@@ -68,7 +69,7 @@ export function buildServer() {
   app.addHook("onSend", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Headers", "content-type");
-    reply.header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
+    reply.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   });
 
   app.options("/*", async (_request, reply) => reply.code(204).send());
@@ -205,6 +206,59 @@ export function buildServer() {
     }
 
     return reply;
+  });
+
+  // ── Role endpoints ──────────────────────────────────────────────
+
+  app.get("/roles", async () => {
+    await mkdir(rolesDir, { recursive: true });
+    const entries = await readdir(rolesDir, { withFileTypes: true });
+    const roles = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
+      const raw = await readFile(path.join(rolesDir, entry.name), "utf8");
+      const parsed = roleDefinitionSchema.safeParse(YAML.parse(raw));
+      if (parsed.success) roles.push(parsed.data);
+    }
+    return { roles };
+  });
+
+  app.get("/roles/:name", async (request, reply) => {
+    const { name } = request.params as { name: string };
+    const filePath = path.join(rolesDir, `${name}.yaml`);
+    try {
+      const raw = await readFile(filePath, "utf8");
+      const parsed = roleDefinitionSchema.safeParse(YAML.parse(raw));
+      if (!parsed.success) {
+        return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+      }
+      return { role: parsed.data };
+    } catch {
+      return reply.code(404).send({ error: { message: "role not found" } });
+    }
+  });
+
+  app.put("/roles/save", async (request, reply) => {
+    const parsed = roleDefinitionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+    await mkdir(rolesDir, { recursive: true });
+    const fileName = parsed.data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const filePath = path.join(rolesDir, `${fileName}.yaml`);
+    await writeFile(filePath, YAML.stringify(parsed.data), "utf8");
+    return reply.code(200).send({ role: parsed.data });
+  });
+
+  app.delete("/roles/:name", async (request, reply) => {
+    const { name } = request.params as { name: string };
+    const filePath = path.join(rolesDir, `${name}.yaml`);
+    try {
+      await unlink(filePath);
+      return reply.code(200).send({ ok: true });
+    } catch {
+      return reply.code(404).send({ error: { message: "role not found" } });
+    }
   });
 
   return app;

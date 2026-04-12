@@ -10,6 +10,7 @@ import {
 } from "reactflow";
 import { ChatPanel, AgentSummary } from "./ChatPanel.js";
 import { NodePalette } from "./NodePalette.js";
+import { RolesPanel } from "./RolesPanel.js";
 import { agentTreeToGraph } from "./flowToGraph.js";
 import { saveFlow } from "./api.js";
 import { useRunStore, getAgentAtPath, type AgentRuntime } from "./store.js";
@@ -173,6 +174,13 @@ function TabBar() {
         onClick={() => setActiveTab("chat")}
       >
         Chat
+      </button>
+      <button
+        type="button"
+        className={`tab-bar__tab${activeTab === "roles" ? " tab-bar__tab--active" : ""}`}
+        onClick={() => setActiveTab("roles")}
+      >
+        Roles
       </button>
     </nav>
   );
@@ -340,6 +348,12 @@ export default function App() {
   const setAvailableFlows = useRunStore((s) => s.setAvailableFlows);
   const setLoadedFlow = useRunStore((s) => s.setLoadedFlow);
   const setLoadError = useRunStore((s) => s.setLoadError);
+  const fetchRoles = useRunStore((s) => s.fetchRoles);
+
+  // Fetch roles on mount
+  useEffect(() => {
+    fetchRoles(SERVER_ORIGIN);
+  }, [fetchRoles]);
 
   // Fetch available flows on mount
   useEffect(() => {
@@ -383,7 +397,9 @@ export default function App() {
   return (
     <div className="app-root">
       <TabBar />
-      {activeTab === "workflow" ? <WorkflowView /> : <ChatView />}
+      {activeTab === "workflow" && <WorkflowView />}
+      {activeTab === "chat" && <ChatView />}
+      {activeTab === "roles" && <RolesPanel />}
     </div>
   );
 }
