@@ -3,14 +3,17 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
+    "types": ["node"],
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@loom/core": ["../core/src/index.ts"]
+      "@loom/core": ["../core/src/index.ts"],
+      "@loom/adapters": ["../adapters/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"],
   "references": [
-    { "path": "../core" }
+    { "path": "../core" },
+    { "path": "../adapters" }
   ]
 }

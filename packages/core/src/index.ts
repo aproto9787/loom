@@ -28,12 +28,17 @@ export const supportedNodeTypesV01 = [
   "io.output",
   "io.file",
   "router.code",
+  "router.llm",
   "agent.claude",
   "agent.litellm",
+  "agent.claude-code",
+  "agent.codex",
   "mcp.server",
+  "control.loop",
+  "control.parallel",
+  "control.join",
+  "memory.memento",
 ] as const;
-
-// NOTE: v0.1 slice. v0.2+ types (router.llm, control.*, memory.*, agent.claude-code, agent.codex) will join this schema in the next milestone.
 export const flowNodeSchema = z.object({
   id: z.string().min(1),
   type: z.enum(supportedNodeTypesV01),
@@ -131,6 +136,9 @@ export type RunEvent =
   | { kind: "node_start"; nodeId: string; type: string }
   | { kind: "node_token"; nodeId: string; text: string }
   | { kind: "node_complete"; nodeId: string; output: unknown; meta?: Record<string, unknown> }
+  | { kind: "node_warning"; nodeId: string; message: string }
+  | { kind: "loop_iteration_start"; nodeId: string; iteration: number; item?: unknown }
+  | { kind: "loop_iteration_complete"; nodeId: string; iteration: number; output: unknown }
   | { kind: "node_skipped"; nodeId: string }
   | { kind: "node_error"; nodeId: string; message: string }
   | {

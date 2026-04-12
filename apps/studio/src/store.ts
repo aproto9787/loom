@@ -83,6 +83,20 @@ function defaultConfigFor(type: EditableNodeType): Record<string, unknown> {
       return { model: "claude-opus-4-6", system: "" };
     case "agent.litellm":
       return { model: "gpt-4o-mini", system: "" };
+    case "agent.claude-code":
+      return { model: "claude-opus-4-6", system: "" };
+    case "agent.codex":
+      return { model: "o4-mini", system: "" };
+    case "router.llm":
+      return { model: "claude-sonnet-4-6", system: "" };
+    case "control.loop":
+      return { mode: "for-each", max: 10 };
+    case "control.parallel":
+      return {};
+    case "control.join":
+      return { mode: "all" };
+    case "memory.memento":
+      return { operation: "recall" };
     case "mcp.server":
       return { command: "node", args: [] };
     default:
@@ -576,7 +590,14 @@ export const EDITABLE_NODE_TYPES: EditableNodeType[] = [
   "io.output",
   "io.file",
   "router.code",
+  "router.llm",
   "agent.claude",
   "agent.litellm",
+  "agent.claude-code",
+  "agent.codex",
   "mcp.server",
+  "control.loop",
+  "control.parallel",
+  "control.join",
+  "memory.memento",
 ];

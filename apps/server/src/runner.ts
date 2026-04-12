@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import YAML from "yaml";
+import type { InvokeEvent } from "@loom/core";
 import {
   flowSchema,
   type FlowNode,
@@ -12,17 +13,38 @@ import {
   type RunNodeResult,
   type RunResponse,
 } from "@loom/core";
+import {
+  buildControlJoinOutput,
+  buildControlLoopIterationValue,
+  buildControlLoopOutput,
+  buildControlParallelOutput,
+  buildNodeGraph,
+  executeNode as executeExtendedNode,
+  getControlLoopConfig,
+  validateFlow,
+  type ControlBranchResult,
+  type ControlJoinEntry,
+} from "@loom/nodes";
 import { MCPStdioClient, runtimeAdapters, type McpClientOptions } from "@loom/adapters";
 import { persistRun } from "./trace-store.js";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
+
+function getReferenceNodeIds(reference: string): string[] {
+  return reference
+    .split(" || ")
+    .map((candidate) => candidate.trim())
+    .filter((candidate) => candidate.length > 0 && !candidate.startsWith("$inputs."))
+    .map((candidate) => candidate.split(".")[0]!)
+    .filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
+}
 
 function resolveReference(reference: string, inputs: Record<string, unknown>, values: Map<string, unknown>): unknown {
   if (reference.startsWith("$inputs.")) {
     return inputs[reference.slice("$inputs.".length)];
   }
 
-  if (reference.includes(" || ") ) {
+  if (reference.includes(" || ")) {
     for (const candidate of reference.split(" || ")) {
       const resolved = resolveReference(candidate.trim(), inputs, values);
       if (resolved !== undefined) {
@@ -35,7 +57,7 @@ function resolveReference(reference: string, inputs: Record<string, unknown>, va
   const [nodeId, outputName] = reference.split(".");
   const result = values.get(nodeId);
 
-  if (result && typeof result === "object" && outputName in (result as Record<string, unknown>)) {
+  if (outputName && result && typeof result === "object" && outputName in (result as Record<string, unknown>)) {
     return (result as Record<string, unknown>)[outputName];
   }
 
@@ -43,25 +65,15 @@ function resolveReference(reference: string, inputs: Record<string, unknown>, va
 }
 
 function buildDependencies(node: FlowNode): string[] {
-  return Object.values(node.inputs)
-    .map((input) => input.from)
-    .filter((from) => !from.startsWith("$inputs."))
-    .map((from) => from.split(".")[0]);
+  return [...new Set(Object.values(node.inputs).flatMap((input) => getReferenceNodeIds(input.from)))];
 }
 
 function topologicalSort(nodes: FlowNode[]): FlowNode[] {
-  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const graph = buildNodeGraph(nodes);
   const pending = new Map<string, Set<string>>();
-  const dependents = new Map<string, string[]>();
 
   for (const node of nodes) {
-    const deps = new Set(buildDependencies(node));
-    pending.set(node.id, deps);
-    for (const dependency of deps) {
-      const group = dependents.get(dependency) ?? [];
-      group.push(node.id);
-      dependents.set(dependency, group);
-    }
+    pending.set(node.id, new Set(graph.dependencies.get(node.id) ?? []));
   }
 
   const ready = nodes.filter((node) => pending.get(node.id)?.size === 0).map((node) => node.id);
@@ -69,13 +81,13 @@ function topologicalSort(nodes: FlowNode[]): FlowNode[] {
 
   while (ready.length > 0) {
     const nextId = ready.shift()!;
-    const node = nodeMap.get(nextId);
+    const node = graph.nodeMap.get(nextId);
     if (!node) {
       continue;
     }
     ordered.push(node);
 
-    for (const dependentId of dependents.get(nextId) ?? []) {
+    for (const dependentId of graph.dependents.get(nextId) ?? []) {
       const deps = pending.get(dependentId);
       if (!deps) {
         continue;
@@ -125,6 +137,13 @@ class RunnerRuntimeSession implements RuntimeSession {
         /* swallow cleanup errors */
       }
     }
+  }
+}
+
+class NodeExecutionFailure extends Error {
+  constructor(readonly nodeId: string, message: string) {
+    super(message);
+    this.name = "NodeExecutionFailure";
   }
 }
 
@@ -218,9 +237,85 @@ function evaluateCodeRouter(expression: string, resolvedInputs: Record<string, u
   return branch;
 }
 
-async function invokeAgent(
+function evaluateWhen(
+  when: string,
+  values: Map<string, unknown>,
+): boolean {
+  const [left, right] = when.split(/\s*==\s*/);
+  if (!left || right === undefined) {
+    return true;
+  }
+  const expected = right.trim().replace(/^['"]|['"]$/g, "");
+  const [routerId, field] = left.trim().split(".");
+  const routerOutput = values.get(routerId) as Record<string, unknown> | undefined;
+  const actual = field ? routerOutput?.[field] : undefined;
+  return actual === expected;
+}
+
+function evaluateLoopCondition(
+  expression: string,
+  resolvedInputs: Record<string, unknown>,
+  iteration: number,
+  last: Record<string, unknown> | null,
+): boolean {
+  const scope = {
+    ...resolvedInputs,
+    iteration,
+    index: iteration,
+    last,
+  };
+  const keys = Object.keys(scope);
+  const evaluator = new Function(...keys, `return Boolean(${expression});`);
+  return Boolean(evaluator(...keys.map((key) => scope[key as keyof typeof scope])));
+}
+
+function getLoopItems(resolvedInputs: Record<string, unknown>): unknown[] {
+  if (Array.isArray(resolvedInputs.items)) {
+    return resolvedInputs.items;
+  }
+
+  if (Array.isArray(resolvedInputs.value)) {
+    return resolvedInputs.value;
+  }
+
+  const fallback = Object.values(resolvedInputs).find((value) => Array.isArray(value));
+  if (Array.isArray(fallback)) {
+    return fallback;
+  }
+
+  throw new Error("control.loop for-each mode requires an array input");
+}
+
+function mapInvokeEventToRunEvent(nodeId: string, emit: (event: RunEvent) => void) {
+  return (event: InvokeEvent): void => {
+    if (event.kind === "token") {
+      emit({ kind: "node_token", nodeId, text: event.text });
+      return;
+    }
+
+    if (event.kind === "tool_call") {
+      emit({
+        kind: "node_token",
+        nodeId,
+        text: `\n[tool_call] ${JSON.stringify({ name: event.name, args: event.args })}`,
+      });
+      return;
+    }
+
+    if (event.kind === "tool_result") {
+      emit({
+        kind: "node_token",
+        nodeId,
+        text: `\n[tool_result] ${JSON.stringify({ name: event.name, result: event.result })}`,
+      });
+    }
+  };
+}
+
+async function invokeAgentStream(
   node: FlowNode,
   resolvedInputs: Record<string, unknown>,
+  emit: (event: RunEvent) => void,
   runtime: RuntimeSession,
   flow: LoomFlow,
 ): Promise<unknown> {
@@ -232,10 +327,15 @@ async function invokeAgent(
   const mcps = await buildAgentMcps(node, flow, runtime);
   let finalOutput: unknown;
   for await (const event of adapter.invoke({ node, resolvedInputs, runtime, mcps })) {
-    if (event.kind === "error") {
+    if (event.kind === "token") {
+      emit({ kind: "node_token", nodeId: node.id, text: event.text });
+    } else if (event.kind === "tool_call") {
+      emit({ kind: "node_token", nodeId: node.id, text: `\n[tool_call] ${JSON.stringify({ name: event.name, args: event.args })}` });
+    } else if (event.kind === "tool_result") {
+      emit({ kind: "node_token", nodeId: node.id, text: `\n[tool_result] ${JSON.stringify({ name: event.name, result: event.result })}` });
+    } else if (event.kind === "error") {
       throw event.error;
-    }
-    if (event.kind === "final") {
+    } else if (event.kind === "final") {
       finalOutput = event.output;
     }
   }
@@ -243,7 +343,20 @@ async function invokeAgent(
   return finalOutput;
 }
 
-async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknown>, runtime: RuntimeSession, flow: LoomFlow): Promise<unknown> {
+async function executeMcpServer(
+  node: FlowNode,
+  runtime: RuntimeSession,
+): Promise<unknown> {
+  const options = getMcpClientOptions(node);
+  const handle = await getOrCreateMcpServer(runtime, node.id, options);
+  return {
+    serverInfo: { command: options.command, args: options.args ?? [] },
+    tools: handle.tools,
+    toolCount: handle.tools.length,
+  };
+}
+
+async function executeBuiltinNode(node: FlowNode, resolvedInputs: Record<string, unknown>): Promise<unknown> {
   switch (node.type) {
     case "io.input":
       return resolvedInputs;
@@ -260,7 +373,6 @@ async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknow
         throw new Error("io.file requires a string path input");
       }
 
-      const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
       const absolutePath = path.resolve(workspaceRoot, filePath);
       if (!absolutePath.startsWith(`${workspaceRoot}${path.sep}`)) {
         throw new Error("io.file path must stay within workspace root");
@@ -289,78 +401,20 @@ async function executeNode(node: FlowNode, resolvedInputs: Record<string, unknow
       }
       return { branch };
     }
-    case "agent.claude":
-    case "agent.litellm":
-      return { output: await invokeAgent(node, resolvedInputs, runtime, flow) };
     default:
       throw new Error(`Node type ${node.type} is not supported in this slice`);
   }
 }
 
 export async function loadFlow(flowPath: string): Promise<LoomFlow> {
-  const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
   const absolutePath = path.resolve(workspaceRoot, flowPath);
   const raw = await readFile(absolutePath, "utf8");
-  return flowSchema.parse(YAML.parse(raw));
-}
-
-function evaluateWhen(
-  when: string,
-  values: Map<string, unknown>,
-): boolean {
-  const [left, right] = when.split(/\s*==\s*/);
-  if (!left || right === undefined) {
-    return true;
+  const flow = flowSchema.parse(YAML.parse(raw));
+  const validationErrors = validateFlow(flow);
+  if (validationErrors.length > 0) {
+    throw new Error(validationErrors.join("; "));
   }
-  const expected = right.trim().replace(/^['"]|['"]$/g, "");
-  const [routerId, field] = left.trim().split(".");
-  const routerOutput = values.get(routerId) as Record<string, unknown> | undefined;
-  const actual = field ? routerOutput?.[field] : undefined;
-  return actual === expected;
-}
-
-async function invokeAgentStream(
-  node: FlowNode,
-  resolvedInputs: Record<string, unknown>,
-  onEvent: (event: RunEvent) => void,
-  runtime: RuntimeSession,
-  flow: LoomFlow,
-): Promise<unknown> {
-  const adapter = runtimeAdapters.find((candidate) => candidate.supports(node.type));
-  if (!adapter) {
-    throw new Error(`No runtime adapter for ${node.type}`);
-  }
-
-  const mcps = await buildAgentMcps(node, flow, runtime);
-  let finalOutput: unknown;
-  for await (const event of adapter.invoke({ node, resolvedInputs, runtime, mcps })) {
-    if (event.kind === "token") {
-      onEvent({ kind: "node_token", nodeId: node.id, text: event.text });
-    } else if (event.kind === "tool_call") {
-      onEvent({ kind: "node_token", nodeId: node.id, text: `\n[tool_call] ${JSON.stringify({ name: event.name, args: event.args })}` });
-    } else if (event.kind === "tool_result") {
-      onEvent({ kind: "node_token", nodeId: node.id, text: `\n[tool_result] ${JSON.stringify({ name: event.name, result: event.result })}` });
-    } else if (event.kind === "error") {
-      throw event.error;
-    } else if (event.kind === "final") {
-      finalOutput = event.output;
-    }
-  }
-
-  return finalOutput;
-}
-
-async function executeMcpServer(
-  node: FlowNode,
-  runtime: RuntimeSession,
-): Promise<unknown> {
-  const options = getMcpClientOptions(node);
-  const handle = await getOrCreateMcpServer(runtime, node.id, options);
-  return {
-    serverInfo: { command: options.command, args: options.args ?? [] },
-    tools: handle.tools,
-    toolCount: handle.tools.length,
-  };
+  return flow;
 }
 
 export async function* streamRunFlow(
@@ -368,61 +422,278 @@ export async function* streamRunFlow(
   requestedInputs: Record<string, unknown>,
 ): AsyncGenerator<RunEvent, void, undefined> {
   const flow = await loadFlow(flowPath);
+  const orderedNodes = topologicalSort(flow.nodes);
+  const graph = buildNodeGraph(flow.nodes);
+  const orderedIndex = new Map(orderedNodes.map((node, index) => [node.id, index]));
   const runId = randomUUID();
   const values = new Map<string, unknown>();
   const nodeResults: RunNodeResult[] = [];
+  const nodeResultIndex = new Map<string, number>();
+  const nodeStatus = new Map<string, { startedAt: string; finishedAt: string; completionOrder: number }>();
+  const completedNodes = new Set<string>();
+  const activeNodes = new Set<string>();
+  const inFlightNodes = new Map<string, Promise<unknown>>();
+  const bufferedEvents: RunEvent[] = [];
+  let completionCounter = 0;
   const runtime = new RunnerRuntimeSession();
+
+  const emit = (event: RunEvent): void => {
+    bufferedEvents.push(event);
+  };
+
+  const flushEvents = async function* (): AsyncGenerator<RunEvent, void, undefined> {
+    while (bufferedEvents.length > 0) {
+      yield bufferedEvents.shift()!;
+    }
+  };
+
+  const resolveNodeInputs = (node: FlowNode): Record<string, unknown> => Object.fromEntries(
+    Object.entries(node.inputs).map(([key, reference]) => [
+      key,
+      resolveReference(reference.from, requestedInputs, values) ?? reference.fallback,
+    ]),
+  );
+
+  const upsertNodeResult = (nodeId: string, output: unknown, startedAt?: string, finishedAt?: string): void => {
+    const result: RunNodeResult = { nodeId, output, startedAt, finishedAt };
+    const existingIndex = nodeResultIndex.get(nodeId);
+    if (existingIndex !== undefined) {
+      nodeResults[existingIndex] = result;
+      return;
+    }
+
+    nodeResultIndex.set(nodeId, nodeResults.length);
+    nodeResults.push(result);
+  };
+
+  const getOrderedDependents = (nodeId: string): FlowNode[] => {
+    const dependentIds = graph.dependents.get(nodeId) ?? [];
+    return dependentIds
+      .map((dependentId) => graph.nodeMap.get(dependentId))
+      .filter((candidate): candidate is FlowNode => candidate !== undefined)
+      .sort((left, right) => (orderedIndex.get(left.id) ?? 0) - (orderedIndex.get(right.id) ?? 0));
+  };
+
+  const executeSimpleNode = async (node: FlowNode, resolvedInputs: Record<string, unknown>): Promise<unknown> => {
+    if (node.type === "agent.claude" || node.type === "agent.litellm") {
+      const finalOutput = await invokeAgentStream(node, resolvedInputs, emit, runtime, flow);
+      return { output: finalOutput };
+    }
+
+    if (node.type === "mcp.server") {
+      return executeMcpServer(node, runtime);
+    }
+
+    const extendedOutput = await executeExtendedNode({
+      node,
+      resolvedInputs,
+      runtime,
+      onEvent: mapInvokeEventToRunEvent(node.id, emit),
+    });
+    if (extendedOutput !== undefined) {
+      return extendedOutput;
+    }
+
+    if (node.type === "io.input") {
+      return Object.fromEntries(flow.inputs.map((input) => [input.id, requestedInputs[input.id]]));
+    }
+
+    return executeBuiltinNode(node, resolvedInputs);
+  };
+
+  const executeNodeById = async (nodeId: string, options?: { force?: boolean }): Promise<unknown> => {
+    const node = graph.nodeMap.get(nodeId);
+    if (!node) {
+      throw new Error(`Unknown node ${nodeId}`);
+    }
+
+    if (!options?.force) {
+      if (completedNodes.has(nodeId)) {
+        return values.get(nodeId);
+      }
+
+      const inFlight = inFlightNodes.get(nodeId);
+      if (inFlight) {
+        return inFlight;
+      }
+    }
+
+    const task = (async () => {
+      for (const dependencyId of graph.dependencies.get(nodeId) ?? []) {
+        if (activeNodes.has(dependencyId)) {
+          continue;
+        }
+        if (!completedNodes.has(dependencyId)) {
+          await executeNodeById(dependencyId);
+        }
+      }
+
+      if (!options?.force && completedNodes.has(nodeId)) {
+        return values.get(nodeId);
+      }
+
+      if (node.when && !evaluateWhen(node.when, values)) {
+        completedNodes.add(nodeId);
+        emit({ kind: "node_skipped", nodeId: node.id });
+        return undefined;
+      }
+
+      const startedAt = new Date().toISOString();
+      activeNodes.add(nodeId);
+      emit({ kind: "node_start", nodeId: node.id, type: node.type });
+
+      try {
+        const resolvedInputs = resolveNodeInputs(node);
+        let output: unknown;
+
+        if (node.type === "control.loop") {
+          const config = getControlLoopConfig(node);
+          const bodyNodes = getOrderedDependents(node.id);
+          const iterations: Array<Record<string, unknown>> = [];
+          let lastOutputs: Record<string, unknown> | null = null;
+          let maxReached = false;
+
+          const runIteration = async (iteration: number, item: unknown): Promise<void> => {
+            values.set(node.id, buildControlLoopIterationValue(resolvedInputs, iteration, item, lastOutputs));
+            emit({ kind: "loop_iteration_start", nodeId: node.id, iteration, item });
+
+            const branchResults: ControlBranchResult[] = [];
+            for (const bodyNode of bodyNodes) {
+              const bodyOutput = await executeNodeById(bodyNode.id, { force: true });
+              const status = nodeStatus.get(bodyNode.id);
+              branchResults.push({
+                nodeId: bodyNode.id,
+                output: bodyOutput,
+                startedAt: status?.startedAt,
+                finishedAt: status?.finishedAt,
+                completionOrder: status?.completionOrder,
+              });
+            }
+
+            const outputsByNode = Object.fromEntries(branchResults.map((result) => [result.nodeId, result.output]));
+            const snapshot = {
+              iteration,
+              item,
+              outputs: outputsByNode,
+              branches: branchResults,
+            } satisfies Record<string, unknown>;
+
+            lastOutputs = outputsByNode as Record<string, unknown>;
+            iterations.push(snapshot);
+            emit({ kind: "loop_iteration_complete", nodeId: node.id, iteration, output: snapshot });
+          };
+
+          if (config.mode === "for-each") {
+            const items = getLoopItems(resolvedInputs);
+            for (let iteration = 0; iteration < items.length; iteration += 1) {
+              if (iteration >= config.max) {
+                maxReached = true;
+                emit({
+                  kind: "node_warning",
+                  nodeId: node.id,
+                  message: `control.loop exceeded max iterations (${config.max})`,
+                });
+                break;
+              }
+
+              await runIteration(iteration, items[iteration]);
+            }
+          } else {
+            let iteration = 0;
+            while (evaluateLoopCondition(config.condition!, resolvedInputs, iteration, lastOutputs)) {
+              if (iteration >= config.max) {
+                maxReached = true;
+                emit({
+                  kind: "node_warning",
+                  nodeId: node.id,
+                  message: `control.loop exceeded max iterations (${config.max})`,
+                });
+                break;
+              }
+
+              await runIteration(iteration, undefined);
+              iteration += 1;
+            }
+          }
+
+          output = buildControlLoopOutput(node, iterations, maxReached);
+        } else if (node.type === "control.parallel") {
+          values.set(node.id, buildControlParallelOutput(resolvedInputs, []));
+          const branchNodes = getOrderedDependents(node.id);
+          const branchResults = await Promise.all(branchNodes.map(async (branchNode) => {
+            const branchOutput = await executeNodeById(branchNode.id);
+            const status = nodeStatus.get(branchNode.id);
+            return {
+              nodeId: branchNode.id,
+              output: branchOutput,
+              startedAt: status?.startedAt,
+              finishedAt: status?.finishedAt,
+              completionOrder: status?.completionOrder,
+            } satisfies ControlBranchResult;
+          }));
+          output = buildControlParallelOutput(resolvedInputs, branchResults);
+        } else if (node.type === "control.join") {
+          const entries: ControlJoinEntry[] = Object.entries(node.inputs).map(([inputName, reference]) => {
+            const upstreamNodeId = getReferenceNodeIds(reference.from)[0];
+            const status = upstreamNodeId ? nodeStatus.get(upstreamNodeId) : undefined;
+            return {
+              inputName,
+              nodeId: upstreamNodeId,
+              output: resolvedInputs[inputName],
+              startedAt: status?.startedAt,
+              finishedAt: status?.finishedAt,
+              completionOrder: status?.completionOrder,
+            };
+          });
+          output = buildControlJoinOutput(node, entries);
+        } else {
+          output = await executeSimpleNode(node, resolvedInputs);
+        }
+
+        const finishedAt = new Date().toISOString();
+        values.set(node.id, output);
+        completionCounter += 1;
+        nodeStatus.set(node.id, { startedAt, finishedAt, completionOrder: completionCounter });
+        upsertNodeResult(node.id, output, startedAt, finishedAt);
+        completedNodes.add(node.id);
+        emit({ kind: "node_complete", nodeId: node.id, output, meta: buildNodeMeta(node, output) });
+        return output;
+      } catch (error) {
+        if (error instanceof NodeExecutionFailure) {
+          throw error;
+        }
+
+        const message = error instanceof Error ? error.message : String(error);
+        emit({ kind: "node_error", nodeId: node.id, message });
+        throw new NodeExecutionFailure(node.id, message);
+      } finally {
+        activeNodes.delete(nodeId);
+      }
+    })();
+
+    if (!options?.force) {
+      inFlightNodes.set(nodeId, task);
+    }
+
+    try {
+      return await task;
+    } finally {
+      if (!options?.force) {
+        inFlightNodes.delete(nodeId);
+      }
+    }
+  };
 
   yield { kind: "run_start", runId, flowName: flow.name };
 
   try {
-    for (const node of topologicalSort(flow.nodes)) {
-      if (node.when && !evaluateWhen(node.when, values)) {
-        yield { kind: "node_skipped", nodeId: node.id };
+    for (const node of orderedNodes) {
+      if (completedNodes.has(node.id)) {
         continue;
       }
 
-      const startedAt = new Date().toISOString();
-      yield { kind: "node_start", nodeId: node.id, type: node.type };
-
-      const resolvedInputs = Object.fromEntries(
-        Object.entries(node.inputs).map(([key, reference]) => [
-          key,
-          resolveReference(reference.from, requestedInputs, values) ?? reference.fallback,
-        ]),
-      );
-
-      let output: unknown;
-      try {
-        if (node.type === "io.input") {
-          output = Object.fromEntries(
-            flow.inputs.map((input) => [input.id, requestedInputs[input.id]]),
-          );
-        } else if (node.type === "agent.claude" || node.type === "agent.litellm") {
-          const streamedEvents: RunEvent[] = [];
-          const finalOutput = await invokeAgentStream(node, resolvedInputs, (event) => {
-            streamedEvents.push(event);
-          }, runtime, flow);
-          for (const event of streamedEvents) {
-            yield event;
-          }
-          output = { output: finalOutput };
-        } else if (node.type === "mcp.server") {
-          output = await executeMcpServer(node, runtime);
-        } else {
-          output = await executeNode(node, resolvedInputs, runtime, flow);
-        }
-      } catch (nodeError) {
-        const message = nodeError instanceof Error ? nodeError.message : String(nodeError);
-        yield { kind: "node_error", nodeId: node.id, message };
-        yield { kind: "run_error", runId, message };
-        throw nodeError;
-      }
-
-      const finishedAt = new Date().toISOString();
-      values.set(node.id, output);
-      nodeResults.push({ nodeId: node.id, output, startedAt, finishedAt });
-      yield { kind: "node_complete", nodeId: node.id, output, meta: buildNodeMeta(node, output) };
+      await executeNodeById(node.id);
+      yield* flushEvents();
     }
 
     const outputs = Object.fromEntries(
@@ -438,18 +709,22 @@ export async function* streamRunFlow(
       nodeResults,
     });
 
-    yield {
+    emit({
       kind: "run_complete",
       runId,
       flowName: flow.name,
       outputs,
       nodeResults,
-    };
+    });
+    yield* flushEvents();
   } catch (error) {
-    if (!(error instanceof Error)) {
-      throw new Error(String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    emit({ kind: "run_error", runId, message });
+    yield* flushEvents();
+    if (error instanceof Error) {
+      throw error;
     }
-    throw error;
+    throw new Error(message);
   } finally {
     await runtime.cleanup();
   }

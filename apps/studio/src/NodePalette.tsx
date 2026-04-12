@@ -7,8 +7,10 @@ interface NodePaletteProps {
 
 const PALETTE_GROUPS: Array<{ label: string; types: EditableNodeType[] }> = [
   { label: "io", types: ["io.input", "io.output", "io.file"] },
-  { label: "router", types: ["router.code"] },
-  { label: "agent", types: ["agent.claude", "agent.litellm"] },
+  { label: "router", types: ["router.code", "router.llm"] },
+  { label: "agent", types: ["agent.claude", "agent.litellm", "agent.claude-code", "agent.codex"] },
+  { label: "control", types: ["control.loop", "control.parallel", "control.join"] },
+  { label: "memory", types: ["memory.memento"] },
   { label: "mcp", types: ["mcp.server"] },
 ];
 

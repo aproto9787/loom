@@ -485,3 +485,51 @@ runner and adds a replay timeline scrubber to the studio.
 
 All v0.1 coverage rows are now **shipped**. `pnpm -r build` and
 `pnpm -r test` (9/9) pass.
+
+---
+
+## Phase 5 — v0.2 features
+
+Phase 5 adds the v0.2 feature set: new agent types, an LLM-based
+router, flow-control primitives, and a memory node.
+
+### New node types
+
+| Node type | Purpose |
+|---|---|
+| `agent.claude-code` | Spawns `claude -p` CLI subprocess with stream-json token forwarding |
+| `agent.codex` | Spawns `codex exec` CLI subprocess with JSONL token forwarding |
+| `router.llm` | Sends a classification prompt to a configured LLM and returns a branch name |
+| `control.loop` | Repeats body nodes (modes: while / for-each, max-iteration guard) |
+| `control.parallel` | Fans out to N downstream nodes via Promise.all |
+| `control.join` | Collects parallel results (modes: all / any / race) |
+| `memory.memento` | MCP-backed remember / recall / forget operations |
+
+### Backend
+
+- `packages/core` exports all seven new node types plus three new
+  RunEvent variants (`node_warning`, `loop_iteration_start`,
+  `loop_iteration_complete`)
+- `packages/adapters` adds `claude-code`, `codex`, and `memento`
+  adapter implementations, each with `LOOM_MOCK` fallback
+- `packages/nodes` validates and executes all new types; control
+  nodes include flow-level validation (parallel downstream ≥ 2,
+  join upstream ≥ 2)
+- `runner.ts` extended with control-node handling: loop iteration,
+  parallel fan-out, join collection with completion-order tracking;
+  already-executed body/branch nodes are skipped in later topo passes
+
+### Frontend (Studio)
+
+- `NodePalette` gains two new groups (control, memory) and adds
+  entries to the existing agent and router groups
+- `Inspector` renders dedicated config editors for each new type:
+  AgentCodeEditor, RouterLlmEditor, ControlLoopEditor,
+  ControlJoinEditor, MemoryMementoEditor
+- `store.ts` includes default configs and editable-type registration
+
+### Verification
+
+- `pnpm -r build` passes (all 5 workspace projects)
+- `pnpm -r test` passes (9/9 server tests)
+- All v0.1 functionality preserved

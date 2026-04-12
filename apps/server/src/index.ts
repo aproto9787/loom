@@ -4,6 +4,7 @@ import Fastify from "fastify";
 import { z } from "zod";
 import YAML from "yaml";
 import { flowSchema } from "@loom/core";
+import { validateFlow } from "@loom/nodes";
 import { runFlow, streamRunFlow } from "./runner.js";
 import { stringifyFlow } from "./flow-writer.js";
 import { getRun, listRuns } from "./trace-store.js";
@@ -99,6 +100,16 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsedFlow.error) });
     }
 
+    const validationErrors = validateFlow(parsedFlow.data);
+    if (validationErrors.length > 0) {
+      return reply.code(400).send({
+        error: {
+          formErrors: validationErrors,
+          fieldErrors: { flow: validationErrors },
+        },
+      });
+    }
+
     return reply.code(200).send({ flowPath: parsed.data.path, flow: parsedFlow.data });
   });
 
@@ -106,6 +117,16 @@ export function buildServer() {
     const parsed = saveFlowSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    const validationErrors = validateFlow(parsed.data.flow);
+    if (validationErrors.length > 0) {
+      return reply.code(400).send({
+        error: {
+          formErrors: validationErrors,
+          fieldErrors: { flow: validationErrors },
+        },
+      });
     }
 
     const absolutePath = path.resolve(workspaceRoot, parsed.data.flowPath);

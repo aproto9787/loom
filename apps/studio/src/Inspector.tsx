@@ -20,6 +20,228 @@ function safeParseJson(value: string): { ok: true; parsed: unknown } | { ok: fal
   }
 }
 
+// --- Type-specific config editors ---
+
+interface ConfigEditorProps {
+  node: FlowNode;
+  onUpdate: (patch: Partial<FlowNode>) => void;
+}
+
+function AgentCodeEditor({ node, onUpdate }: ConfigEditorProps) {
+  const config = node.config as Record<string, unknown>;
+  const [system, setSystem] = useState((config.system as string) ?? "");
+  const [model, setModel] = useState((config.model as string) ?? "");
+
+  useEffect(() => {
+    setSystem((node.config.system as string) ?? "");
+    setModel((node.config.model as string) ?? "");
+  }, [node.id]);
+
+  return (
+    <>
+      <label className="inspector__field">
+        <span>system prompt</span>
+        <textarea
+          rows={4}
+          value={system}
+          onChange={(e) => {
+            setSystem(e.target.value);
+            onUpdate({ config: { ...node.config, system: e.target.value } });
+          }}
+        />
+      </label>
+      <label className="inspector__field">
+        <span>model</span>
+        <input
+          type="text"
+          value={model}
+          onChange={(e) => {
+            setModel(e.target.value);
+            onUpdate({ config: { ...node.config, model: e.target.value } });
+          }}
+        />
+      </label>
+    </>
+  );
+}
+
+function RouterLlmEditor({ node, onUpdate }: ConfigEditorProps) {
+  const config = node.config as Record<string, unknown>;
+  const [system, setSystem] = useState((config.system as string) ?? "");
+  const [model, setModel] = useState((config.model as string) ?? "");
+  const [branchDraft, setBranchDraft] = useState(node.branches.join(", "));
+
+  useEffect(() => {
+    setSystem((node.config.system as string) ?? "");
+    setModel((node.config.model as string) ?? "");
+    setBranchDraft(node.branches.join(", "));
+  }, [node.id]);
+
+  return (
+    <>
+      <label className="inspector__field">
+        <span>system (classifier prompt)</span>
+        <textarea
+          rows={4}
+          value={system}
+          onChange={(e) => {
+            setSystem(e.target.value);
+            onUpdate({ config: { ...node.config, system: e.target.value } });
+          }}
+        />
+      </label>
+      <label className="inspector__field">
+        <span>model</span>
+        <input
+          type="text"
+          value={model}
+          onChange={(e) => {
+            setModel(e.target.value);
+            onUpdate({ config: { ...node.config, model: e.target.value } });
+          }}
+        />
+      </label>
+      <label className="inspector__field">
+        <span>branches (comma-separated)</span>
+        <input
+          type="text"
+          value={branchDraft}
+          placeholder="e.g. technical, creative, general"
+          onChange={(e) => {
+            setBranchDraft(e.target.value);
+            const branches = e.target.value
+              .split(",")
+              .map((b) => b.trim())
+              .filter(Boolean);
+            onUpdate({ branches });
+          }}
+        />
+      </label>
+    </>
+  );
+}
+
+function ControlLoopEditor({ node, onUpdate }: ConfigEditorProps) {
+  const config = node.config as Record<string, unknown>;
+  const [mode, setMode] = useState((config.mode as string) ?? "for-each");
+  const [max, setMax] = useState((config.max as number) ?? 10);
+  const [condition, setCondition] = useState((config.condition as string) ?? "");
+
+  useEffect(() => {
+    setMode((node.config.mode as string) ?? "for-each");
+    setMax((node.config.max as number) ?? 10);
+    setCondition((node.config.condition as string) ?? "");
+  }, [node.id]);
+
+  return (
+    <>
+      <label className="inspector__field">
+        <span>mode</span>
+        <select
+          value={mode}
+          onChange={(e) => {
+            setMode(e.target.value);
+            onUpdate({ config: { ...node.config, mode: e.target.value } });
+          }}
+        >
+          <option value="while">while</option>
+          <option value="for-each">for-each</option>
+        </select>
+      </label>
+      <label className="inspector__field">
+        <span>max iterations</span>
+        <input
+          type="number"
+          min={1}
+          value={max}
+          onChange={(e) => {
+            const v = parseInt(e.target.value, 10) || 1;
+            setMax(v);
+            onUpdate({ config: { ...node.config, max: v } });
+          }}
+        />
+      </label>
+      {mode === "while" ? (
+        <label className="inspector__field">
+          <span>condition</span>
+          <input
+            type="text"
+            value={condition}
+            placeholder="e.g. result.done != true"
+            onChange={(e) => {
+              setCondition(e.target.value);
+              onUpdate({ config: { ...node.config, condition: e.target.value } });
+            }}
+          />
+        </label>
+      ) : null}
+    </>
+  );
+}
+
+function ControlJoinEditor({ node, onUpdate }: ConfigEditorProps) {
+  const config = node.config as Record<string, unknown>;
+  const [mode, setMode] = useState((config.mode as string) ?? "all");
+
+  useEffect(() => {
+    setMode((node.config.mode as string) ?? "all");
+  }, [node.id]);
+
+  return (
+    <label className="inspector__field">
+      <span>mode</span>
+      <select
+        value={mode}
+        onChange={(e) => {
+          setMode(e.target.value);
+          onUpdate({ config: { ...node.config, mode: e.target.value } });
+        }}
+      >
+        <option value="all">all</option>
+        <option value="any">any</option>
+        <option value="race">race</option>
+      </select>
+    </label>
+  );
+}
+
+function MemoryMementoEditor({ node, onUpdate }: ConfigEditorProps) {
+  const config = node.config as Record<string, unknown>;
+  const [operation, setOperation] = useState((config.operation as string) ?? "recall");
+
+  useEffect(() => {
+    setOperation((node.config.operation as string) ?? "recall");
+  }, [node.id]);
+
+  return (
+    <label className="inspector__field">
+      <span>operation</span>
+      <select
+        value={operation}
+        onChange={(e) => {
+          setOperation(e.target.value);
+          onUpdate({ config: { ...node.config, operation: e.target.value } });
+        }}
+      >
+        <option value="remember">remember</option>
+        <option value="recall">recall</option>
+        <option value="forget">forget</option>
+      </select>
+    </label>
+  );
+}
+
+const TYPE_SPECIFIC_EDITORS: Record<string, React.FC<ConfigEditorProps>> = {
+  "agent.claude-code": AgentCodeEditor,
+  "agent.codex": AgentCodeEditor,
+  "router.llm": RouterLlmEditor,
+  "control.loop": ControlLoopEditor,
+  "control.join": ControlJoinEditor,
+  "memory.memento": MemoryMementoEditor,
+};
+
+// --- Main Inspector ---
+
 interface InspectorProps {
   node: FlowNode;
 }
@@ -103,6 +325,16 @@ function NodeEditor({ node }: InspectorProps) {
     }
   };
 
+  const handleTypeSpecificUpdate = (patch: Partial<FlowNode>) => {
+    updateNode(node.id, patch);
+    if (patch.config) {
+      setConfigJson(stringifyJson(patch.config));
+      setConfigError(undefined);
+    }
+  };
+
+  const SpecificEditor = TYPE_SPECIFIC_EDITORS[node.type];
+
   return (
     <div className="inspector__body">
       <label className="inspector__field">
@@ -124,16 +356,20 @@ function NodeEditor({ node }: InspectorProps) {
         <span>Type</span>
         <code>{node.type}</code>
       </div>
-      <label className="inspector__field">
-        <span>config (JSON)</span>
-        <textarea
-          rows={6}
-          value={configJson}
-          spellCheck={false}
-          onChange={(event) => commitConfig(event.target.value)}
-        />
-        {configError ? <em className="inspector__error">{configError}</em> : null}
-      </label>
+      {SpecificEditor ? (
+        <SpecificEditor node={node} onUpdate={handleTypeSpecificUpdate} />
+      ) : (
+        <label className="inspector__field">
+          <span>config (JSON)</span>
+          <textarea
+            rows={6}
+            value={configJson}
+            spellCheck={false}
+            onChange={(event) => commitConfig(event.target.value)}
+          />
+          {configError ? <em className="inspector__error">{configError}</em> : null}
+        </label>
+      )}
       <label className="inspector__field">
         <span>inputs (JSON)</span>
         <textarea
