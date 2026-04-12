@@ -8,9 +8,8 @@ import {
   type Edge,
   type OnSelectionChangeParams,
 } from "reactflow";
-import { RunPanel } from "./RunPanel.js";
+import { ChatPanel } from "./ChatPanel.js";
 import { NodePalette } from "./NodePalette.js";
-import { Inspector } from "./Inspector.js";
 import { agentTreeToGraph } from "./flowToGraph.js";
 import { saveFlow } from "./api.js";
 import { useRunStore, type AgentRuntime } from "./store.js";
@@ -256,9 +255,8 @@ export default function App() {
             <ReactFlowProvider>
               <AgentTreeCanvas />
             </ReactFlowProvider>
-            <Inspector />
           </div>
-          <RunPanel />
+          <ChatPanel />
         </div>
       </main>
     </div>

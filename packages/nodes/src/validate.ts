@@ -17,10 +17,6 @@ export function validateAgentConfig(agent: AgentConfig, path = "agent"): string[
     errors.push(`[${path}.type] type must be one of: claude-code, codex`);
   }
 
-  if (agent.repo !== undefined && !isNonEmptyString(agent.repo)) {
-    errors.push(`[${path}.repo] repo must be a non-empty string when provided`);
-  }
-
   if (agent.system !== undefined && !isNonEmptyString(agent.system)) {
     errors.push(`[${path}.system] system must be a non-empty string when provided`);
   }
@@ -50,6 +46,10 @@ export function validateFlow(flow: FlowDefinition): string[] {
 
   if (flow.description !== undefined && !isNonEmptyString(flow.description)) {
     errors.push("[flow.description] description must be a non-empty string when provided");
+  }
+
+  if (!isNonEmptyString(flow.repo)) {
+    errors.push("[flow.repo] repo is required");
   }
 
   if (!flow.orchestrator) {

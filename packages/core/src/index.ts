@@ -6,7 +6,6 @@ export type AgentType = z.infer<typeof agentTypeSchema>;
 export interface AgentConfig {
   name: string;
   type: AgentType;
-  repo?: string;
   system?: string;
   agents?: AgentConfig[];
 }
@@ -14,7 +13,6 @@ export interface AgentConfig {
 export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   name: z.string().min(1),
   type: agentTypeSchema,
-  repo: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
   agents: z.array(agentConfigSchema).optional(),
 }));
@@ -22,12 +20,14 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
 export interface FlowDefinition {
   name: string;
   description?: string;
+  repo: string;
   orchestrator: AgentConfig;
 }
 
 export const flowDefinitionSchema: z.ZodType<FlowDefinition> = z.object({
   name: z.string().min(1),
   description: z.string().min(1).optional(),
+  repo: z.string().min(1),
   orchestrator: agentConfigSchema,
 });
 

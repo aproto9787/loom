@@ -82,6 +82,7 @@ loomTest("GET /flows/get parses a nested recursive flow definition", async (t) =
   const body = response.json();
   assert.equal(body.flowPath, "examples/nested.yaml");
   assert.equal(body.flow.name, "Nested Agent Orchestration");
+  assert.equal(body.flow.repo, "..");
   assert.equal(body.flow.orchestrator.name, "lead");
   assert.equal(body.flow.orchestrator.agents[0].name, "backend-lead");
   assert.equal(body.flow.orchestrator.agents[0].agents[0].name, "database-specialist");
@@ -178,7 +179,7 @@ loomTest("GET /runs and GET /runs/:id return persisted runs from streamed execut
     url: "/runs/stream",
     payload: {
       flowPath: "examples/multi-repo.yaml",
-      userPrompt: "Coordinate work across repos",
+      userPrompt: "Coordinate work inside one repo",
     },
   });
 
@@ -201,7 +202,7 @@ loomTest("GET /runs and GET /runs/:id return persisted runs from streamed execut
   assert.equal(listBody.runs.length, 1);
   assert.deepEqual(listBody.runs[0], {
     runId: runStart.runId,
-    flowName: "Multi Repo Agent Orchestration",
+    flowName: "Single Repo Agent Orchestration",
     createdAt: listBody.runs[0].createdAt,
     agentCount: 1,
   });
@@ -215,17 +216,17 @@ loomTest("GET /runs and GET /runs/:id return persisted runs from streamed execut
   assert.equal(detailResponse.statusCode, 200);
   const detailBody = detailResponse.json();
   assert.equal(detailBody.runId, runStart.runId);
-  assert.equal(detailBody.flowName, "Multi Repo Agent Orchestration");
+  assert.equal(detailBody.flowName, "Single Repo Agent Orchestration");
   assert.equal(detailBody.flowPath, "examples/multi-repo.yaml");
-  assert.equal(detailBody.userPrompt, "Coordinate work across repos");
+  assert.equal(detailBody.userPrompt, "Coordinate work inside one repo");
   assert.equal(
     detailBody.output,
-    "Mock Claude Code response from coordinator: Coordinate work across repos",
+    "Mock Claude Code response from coordinator: Coordinate work inside one repo",
   );
   assert.equal(detailBody.agentResults.length, 1);
   assert.deepEqual(detailBody.agentResults[0], {
     agentName: "coordinator",
-    output: "Mock Claude Code response from coordinator: Coordinate work across repos",
+    output: "Mock Claude Code response from coordinator: Coordinate work inside one repo",
     startedAt: detailBody.agentResults[0].startedAt,
     finishedAt: detailBody.agentResults[0].finishedAt,
     createdAt: detailBody.agentResults[0].createdAt,
@@ -299,6 +300,7 @@ loomTest("PUT /flows/save rejects invalid recursive flow bodies and bad paths", 
       flowPath: "examples/invalid.yaml",
       flow: {
         name: "Broken Flow",
+        repo: "",
         orchestrator: {
           name: "",
           type: "claude-code",
@@ -314,6 +316,7 @@ loomTest("PUT /flows/save rejects invalid recursive flow bodies and bad paths", 
 
   const validFlow: FlowDefinition = {
     name: "Valid Saved Flow",
+    repo: "..",
     orchestrator: {
       name: "lead",
       type: "claude-code",

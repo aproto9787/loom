@@ -31,12 +31,12 @@ function resolveFlowPath(flowPath: string): string {
   return path.isAbsolute(flowPath) ? flowPath : path.resolve(workspaceRoot, flowPath);
 }
 
-function resolveAgentCwd(agent: AgentConfig, flowDir: string): string {
-  if (!agent.repo) {
+function resolveFlowCwd(flow: FlowDefinition, flowDir: string): string {
+  if (!flow.repo) {
     return flowDir;
   }
 
-  return path.isAbsolute(agent.repo) ? agent.repo : path.resolve(flowDir, agent.repo);
+  return path.isAbsolute(flow.repo) ? flow.repo : path.resolve(flowDir, flow.repo);
 }
 
 function nextResultAgentName(agentName: string, state: ExecutionState): string {
@@ -60,19 +60,20 @@ function recordAgentResult(
   });
 }
 
-function buildAgentPrompt(agent: AgentConfig): string {
+function buildAgentPrompt(agent: AgentConfig, flowRepo: string): string {
   const sections: string[] = [];
 
   if (agent.system?.trim()) {
     sections.push(agent.system.trim());
   }
 
+  sections.push(`Shared flow repo: ${flowRepo}`);
+
   if (agent.agents?.length) {
     const children = agent.agents.map((child) => {
       const fields = [
         `name: ${child.name}`,
         `type: ${child.type}`,
-        `repo: ${child.repo ?? "<flow directory>"}`,
       ];
       return `- ${fields.join(", ")}`;
     });
@@ -111,14 +112,15 @@ export async function loadFlow(flowPath: string): Promise<LoadedFlow> {
 async function* executeAgent(
   agent: AgentConfig,
   input: string,
-  flowDir: string,
+  flowRepo: string,
+  flowCwd: string,
   state: ExecutionState,
 ): AsyncGenerator<RunEvent, string, undefined> {
-  const cwd = resolveAgentCwd(agent, flowDir);
+  const cwd = flowCwd;
   const adapter = getAgentAdapter(agent.type);
   const configuredAgent: AgentConfig = {
     ...agent,
-    system: buildAgentPrompt(agent),
+    system: buildAgentPrompt(agent, flowRepo),
   };
   const resultAgentName = nextResultAgentName(agent.name, state);
   const startedAt = new Date().toISOString();
@@ -139,7 +141,7 @@ async function* executeAgent(
         }
 
         yield { type: "agent_delegate", parentAgent: agent.name, childAgent: child.name };
-        const childOutput = yield* executeAgent(child, event.reason, flowDir, state);
+        const childOutput = yield* executeAgent(child, event.reason, flowRepo, flowCwd, state);
         const finishedAt = new Date().toISOString();
         recordAgentResult(state, resultAgentName, childOutput, startedAt, finishedAt);
         yield { type: "agent_complete", agentName: agent.name, output: childOutput };
@@ -174,6 +176,7 @@ export async function* streamRunFlow(
   userPrompt: string,
 ): AsyncGenerator<RunEvent, void, undefined> {
   const { flow, flowDir } = await loadFlow(flowPath);
+  const flowCwd = resolveFlowCwd(flow, flowDir);
   const runId = randomUUID();
   const state: ExecutionState = {
     agentResults: [],
@@ -183,7 +186,7 @@ export async function* streamRunFlow(
   yield { type: "run_start", runId, flowName: flow.name };
 
   try {
-    const output = yield* executeAgent(flow.orchestrator, userPrompt, flowDir, state);
+    const output = yield* executeAgent(flow.orchestrator, userPrompt, flow.repo, flowCwd, state);
 
     persistRun({
       runId,
@@ -207,6 +210,7 @@ export async function runFlow(
   userPrompt: string,
 ): Promise<RunResponse> {
   const { flow, flowDir } = await loadFlow(flowPath);
+  const flowCwd = resolveFlowCwd(flow, flowDir);
   const runId = randomUUID();
   const state: ExecutionState = {
     agentResults: [],
@@ -214,7 +218,7 @@ export async function runFlow(
   };
 
   const output = await (async () => {
-    const iterator = executeAgent(flow.orchestrator, userPrompt, flowDir, state);
+    const iterator = executeAgent(flow.orchestrator, userPrompt, flow.repo, flowCwd, state);
     let step = await iterator.next();
     while (!step.done) {
       step = await iterator.next();

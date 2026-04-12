@@ -40,9 +40,7 @@ const flowPathSchema = z
   });
 
 const runRequestSchema = z.object({
-  flowPath: z.string().min(1).refine(isAllowedFlowPath, {
-    message: "flowPath must stay within examples/",
-  }),
+  flowPath: flowPathSchema,
   userPrompt: z.string().min(1),
 });
 
