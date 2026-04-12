@@ -232,6 +232,18 @@ function ChatBubble({ entry }: { entry: ChatEntry }) {
           {entry.agentName}: {entry.error}
         </div>
       );
+    case "agent_abort":
+      return (
+        <div className="px-3 py-2 rounded-lg bg-amber-500/15 text-amber-300 text-sm">
+          {entry.agentName}: aborted
+        </div>
+      );
+    case "agent_timeout":
+      return (
+        <div className="px-3 py-2 rounded-lg bg-amber-500/15 text-amber-300 text-sm">
+          {entry.agentName}: timed out after {entry.timeoutMs}ms
+        </div>
+      );
     case "run_complete":
       return (
         <div className="px-3 py-2 rounded-xl bg-white/[0.04] border border-slate-700">
@@ -241,6 +253,12 @@ function ChatBubble({ entry }: { entry: ChatEntry }) {
           <pre className="m-0 px-2 py-1.5 rounded-lg bg-black/30 text-sm text-slate-200 whitespace-pre-wrap break-words font-mono max-h-48 overflow-auto">
             {entry.output}
           </pre>
+        </div>
+      );
+    case "run_aborted":
+      return (
+        <div className="px-3 py-2 rounded-lg bg-amber-500/15 text-amber-300 text-sm">
+          Run aborted
         </div>
       );
     case "run_error":
@@ -279,12 +297,15 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
   const flowDraft = useRunStore((s) => s.flowDraft);
   const selectedAgentPath = useRunStore((s) => s.selectedAgentPath);
   const isStreaming = useRunStore((s) => s.isStreaming);
+  const runId = useRunStore((s) => s.runId);
+  const runError = useRunStore((s) => s.runError);
   const events = useRunStore((s) => s.events);
   const agentRuntimes = useRunStore((s) => s.agentRuntimes);
 
-  const { runFlow } = useSseRun();
+  const { runFlow, abortFlow } = useSseRun();
   const [input, setInput] = useState("");
   const [configExpanded, setConfigExpanded] = useState(false);
+  const [abortError, setAbortError] = useState<string>();
   const [chatLog, setChatLog] = useState<ChatEntry[]>([]);
   const processedRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -322,10 +343,21 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
   const handleSend = useCallback(async () => {
     const prompt = input.trim();
     if (!prompt || isStreaming) return;
+    setAbortError(undefined);
     setChatLog((prev) => [...prev, { kind: "user" as const, content: prompt }]);
     setInput("");
     await runFlow(flowPath, prompt);
   }, [input, isStreaming, flowPath, runFlow]);
+
+  const handleAbort = useCallback(async () => {
+    if (!runId || !isStreaming) return;
+    try {
+      setAbortError(undefined);
+      await abortFlow(runId);
+    } catch (error) {
+      setAbortError(error instanceof Error ? error.message : String(error));
+    }
+  }, [abortFlow, isStreaming, runId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -369,7 +401,13 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
       </div>
 
       <div className="flex items-end gap-2 p-3 border-t border-slate-800 bg-black/20 shrink-0">
-        <textarea
+        <div className="flex-1 flex flex-col gap-2">
+          {(abortError || runError) && (
+            <div className="px-3 py-2 rounded-lg bg-red-500/15 text-red-400 text-sm">
+              {abortError ?? runError}
+            </div>
+          )}
+          <textarea
           className="flex-1 px-3 py-2 rounded-lg border border-slate-600 bg-slate-800 text-slate-100 text-sm font-mono resize-none placeholder:text-slate-500 focus:outline-none focus:border-blue-500 disabled:opacity-40 transition-colors"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -378,6 +416,16 @@ export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {
           placeholder="Enter a prompt..."
           rows={2}
         />
+        </div>
+        {isStreaming && runId ? (
+          <button
+            type="button"
+            className="px-3 h-8 rounded-lg bg-red-500/20 text-red-300 text-xs font-semibold border border-red-500/30 shrink-0 hover:bg-red-500/30 disabled:opacity-40 transition-colors"
+            onClick={handleAbort}
+          >
+            Abort
+          </button>
+        ) : null}
         <button
           type="button"
           className="w-8 h-8 rounded-lg bg-blue-500 text-white font-bold border-0 shrink-0 hover:bg-blue-600 disabled:opacity-40 transition-colors"

@@ -16,7 +16,7 @@ import {
   type RunResponse,
   type SkillDefinition,
 } from "@loom/core";
-import { getAgentAdapter } from "@loom/adapters";
+import { getAgentAdapter, parseParallelDelegationDirective } from "@loom/adapters";
 import { validateFlow } from "@loom/nodes";
 import { persistRun } from "./trace-store.js";
 
@@ -37,9 +37,16 @@ interface RunResources {
 }
 
 interface ExecutionState {
+  runId: string;
   agentResults: RunAgentResult[];
   agentNameCounts: Map<string, number>;
   resources: RunResources;
+  abortController: AbortController;
+}
+
+interface AgentExecutionResult {
+  output: string;
+  error?: string;
 }
 
 // ── Resource loading ─────────────────────────────────────────────
@@ -134,6 +141,17 @@ function recordAgentResult(
   state.agentResults.push({ agentName, output, startedAt, finishedAt });
 }
 
+function buildParallelChildPrompt(parentPrompt: string, siblingNames: string[]): string {
+  return [
+    parentPrompt,
+    "",
+    `When the task can be split across siblings, delegate independently to any of: ${siblingNames.join(", ")}.`,
+    "If you need true sibling concurrency, emit one JSON line with this shape:",
+    '{"parallel": [{"childAgent": "name", "reason": "subtask"}]}',
+    "Do not use this JSON form for a single child.",
+  ].join("\n");
+}
+
 function buildAgentPrompt(
   agent: AgentConfig,
   flowRepo: string,
@@ -198,27 +216,54 @@ export async function loadFlow(flowPath: string): Promise<LoadedFlow> {
 
 // ── Agent execution ──────────────────────────────────────────────
 
+const DEFAULT_AGENT_TIMEOUT_MS = 10 * 60 * 1000;
+const activeRuns = new Map<string, AbortController>();
+
+export function abortRun(runId: string): boolean {
+  const controller = activeRuns.get(runId);
+  if (!controller) {
+    return false;
+  }
+  controller.abort();
+  return true;
+}
+
 async function* executeAgent(
   agent: AgentConfig,
   input: string,
   flowRepo: string,
   flowCwd: string,
   state: ExecutionState,
-): AsyncGenerator<RunEvent, string, undefined> {
+): AsyncGenerator<RunEvent, AgentExecutionResult, undefined> {
   const adapter = getAgentAdapter(agent.type);
   const configuredAgent: AgentConfig = {
     ...agent,
-    system: buildAgentPrompt(agent, flowRepo, state.resources),
+    system: agent.parallel && agent.agents?.length
+      ? buildParallelChildPrompt(buildAgentPrompt(agent, flowRepo, state.resources), agent.agents.map((child) => child.name))
+      : buildAgentPrompt(agent, flowRepo, state.resources),
   };
   const resultAgentName = nextResultAgentName(agent.name, state);
   const startedAt = new Date().toISOString();
   const hookEnv = { LOOM_AGENT: agent.name, LOOM_AGENT_TYPE: agent.type };
+  const timeoutMs = agent.timeout ?? DEFAULT_AGENT_TIMEOUT_MS;
+  const childAgents = agent.agents ?? [];
+  let timedOut = false;
+  let aborted = false;
 
   yield { type: "agent_start", agentName: agent.name, agentType: agent.type };
   await runHooks(agent, "on_start", state.resources, hookEnv);
 
   try {
-    for await (const event of adapter.spawn(configuredAgent, input, flowCwd)) {
+    for await (const event of adapter.spawn(configuredAgent, input, flowCwd, {
+      signal: state.abortController.signal,
+      timeoutMs,
+      onAbort: () => {
+        aborted = true;
+      },
+      onTimeout: () => {
+        timedOut = true;
+      },
+    })) {
       if (event.type === "token") {
         yield { type: "agent_token", agentName: agent.name, token: event.content };
         continue;
@@ -230,16 +275,75 @@ async function* executeAgent(
           throw new Error(`Agent ${agent.name} attempted to delegate to unknown child ${event.childAgent}`);
         }
 
-        yield { type: "agent_delegate", parentAgent: agent.name, childAgent: child.name };
-        await runHooks(agent, "on_delegate", state.resources, { ...hookEnv, LOOM_DELEGATE_TO: child.name });
+        const delegatedChildren = [child];
+        const parallelSiblings = agent.parallel
+          ? childAgents.filter((candidate) => candidate.name !== child.name)
+          : [];
+        const delegatedSet = new Set([child.name]);
+        const parallelDelegations = event.reason.trim().length > 0
+          ? parseParallelDelegationDirective(event.reason)
+          : undefined;
 
-        const childOutput = yield* executeAgent(child, event.reason, flowRepo, flowCwd, state);
+        for (const sibling of parallelSiblings) {
+          const siblingReason = parallelDelegations?.find((entry: { childAgent: string; reason: string }) => entry.childAgent === sibling.name)?.reason ?? event.reason;
+          if (!siblingReason.trim() || delegatedSet.has(sibling.name)) {
+            continue;
+          }
+          delegatedChildren.push(sibling);
+          delegatedSet.add(sibling.name);
+          yield { type: "agent_delegate", parentAgent: agent.name, childAgent: sibling.name };
+        }
+
+        await runHooks(agent, "on_delegate", state.resources, { ...hookEnv, LOOM_DELEGATE_TO: delegatedChildren.map((entry) => entry.name).join(",") });
+
+        const childRuns = delegatedChildren.map(async (delegatedChild) => {
+          const childReason = delegatedChild.name === child.name
+            ? event.reason
+            : parallelDelegations?.find((entry: { childAgent: string; reason: string }) => entry.childAgent === delegatedChild.name)?.reason ?? event.reason;
+          const iterator = executeAgent(delegatedChild, childReason, flowRepo, flowCwd, state);
+          const forwardedEvents: RunEvent[] = [];
+          let step = await iterator.next();
+          while (!step.done) {
+            forwardedEvents.push(step.value);
+            step = await iterator.next();
+          }
+          return { child: delegatedChild, forwardedEvents, result: step.value };
+        });
+
+        const childSettled = await Promise.allSettled(childRuns);
+        for (const [, result] of childSettled.entries()) {
+          if (result.status === "fulfilled") {
+            for (const forwardedEvent of result.value.forwardedEvents) {
+              yield forwardedEvent;
+            }
+          }
+        }
+
+        const childOutputs = childSettled.map((result, index) => {
+          const childName = delegatedChildren[index]?.name ?? `child-${index + 1}`;
+          if (result.status === "rejected") {
+            const error = result.reason instanceof Error ? result.reason.message : String(result.reason);
+            return { name: childName, output: "", error };
+          }
+
+          return {
+            name: result.value.child.name,
+            output: result.value.result.output,
+            error: result.value.result.error,
+          };
+        });
+
+        const childOutput = childOutputs
+          .map((entry) => entry.error
+            ? `[${entry.name}]\nERROR: ${entry.error}`
+            : `[${entry.name}]\n${entry.output}`)
+          .join("\n\n");
         const finishedAt = new Date().toISOString();
         recordAgentResult(state, resultAgentName, childOutput, startedAt, finishedAt);
 
         yield { type: "agent_complete", agentName: agent.name, output: childOutput };
         await runHooks(agent, "on_complete", state.resources, { ...hookEnv, LOOM_OUTPUT: childOutput.slice(0, 1000) });
-        return childOutput;
+        return { output: childOutput };
       }
 
       if (event.type === "complete") {
@@ -248,11 +352,30 @@ async function* executeAgent(
 
         yield { type: "agent_complete", agentName: agent.name, output: event.output };
         await runHooks(agent, "on_complete", state.resources, { ...hookEnv, LOOM_OUTPUT: event.output.slice(0, 1000) });
-        return event.output;
+        return { output: event.output };
       }
 
       if (event.type === "error") {
-        throw new Error(event.error);
+        if (aborted) {
+          const finishedAt = new Date().toISOString();
+          recordAgentResult(state, resultAgentName, "", startedAt, finishedAt);
+          yield { type: "agent_abort", agentName: agent.name };
+          return { output: "", error: `Run aborted while ${agent.name} was executing` };
+        }
+
+        if (timedOut) {
+          const finishedAt = new Date().toISOString();
+          recordAgentResult(state, resultAgentName, "", startedAt, finishedAt);
+          yield { type: "agent_timeout", agentName: agent.name, timeoutMs };
+          yield { type: "agent_error", agentName: agent.name, error: `Timed out after ${timeoutMs}ms`, fatal: false };
+          return { output: "", error: `Agent ${agent.name} timed out after ${timeoutMs}ms` };
+        }
+
+        const finishedAt = new Date().toISOString();
+        recordAgentResult(state, resultAgentName, "", startedAt, finishedAt);
+        yield { type: "agent_error", agentName: agent.name, error: event.error, fatal: false };
+        await runHooks(agent, "on_error", state.resources, { ...hookEnv, LOOM_ERROR: event.error });
+        return { output: "", error: event.error };
       }
     }
 
@@ -260,12 +383,27 @@ async function* executeAgent(
     recordAgentResult(state, resultAgentName, "", startedAt, finishedAt);
     yield { type: "agent_complete", agentName: agent.name, output: "" };
     await runHooks(agent, "on_complete", state.resources, hookEnv);
-    return "";
+    return { output: "" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    yield { type: "agent_error", agentName: agent.name, error: message };
+    if (aborted) {
+      const finishedAt = new Date().toISOString();
+      recordAgentResult(state, resultAgentName, "", startedAt, finishedAt);
+      yield { type: "agent_abort", agentName: agent.name };
+      return { output: "", error: message };
+    }
+
+    if (timedOut) {
+      const finishedAt = new Date().toISOString();
+      recordAgentResult(state, resultAgentName, "", startedAt, finishedAt);
+      yield { type: "agent_timeout", agentName: agent.name, timeoutMs };
+      yield { type: "agent_error", agentName: agent.name, error: `Timed out after ${timeoutMs}ms`, fatal: false };
+      return { output: "", error: message };
+    }
+
+    yield { type: "agent_error", agentName: agent.name, error: message, fatal: false };
     await runHooks(agent, "on_error", state.resources, { ...hookEnv, LOOM_ERROR: message });
-    throw error instanceof Error ? error : new Error(message);
+    return { output: "", error: message };
   }
 }
 
@@ -279,16 +417,21 @@ export async function* streamRunFlow(
   const flowCwd = resolveFlowCwd(flow, flowDir);
   const runId = randomUUID();
   const resources = await loadRunResources();
+  const abortController = new AbortController();
   const state: ExecutionState = {
+    runId,
     agentResults: [],
     agentNameCounts: new Map<string, number>(),
     resources,
+    abortController,
   };
 
+  activeRuns.set(runId, abortController);
   yield { type: "run_start", runId, flowName: flow.name };
 
   try {
-    const output = yield* executeAgent(flow.orchestrator, userPrompt, flow.repo, flowCwd, state);
+    const result = yield* executeAgent(flow.orchestrator, userPrompt, flow.repo, flowCwd, state);
+    const output = result.output;
 
     persistRun({
       runId,
@@ -301,9 +444,16 @@ export async function* streamRunFlow(
 
     yield { type: "run_complete", output };
   } catch (error) {
+    if (abortController.signal.aborted) {
+      yield { type: "run_aborted", runId };
+      return;
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     yield { type: "run_error", error: message };
-    throw error instanceof Error ? error : new Error(message);
+    return;
+  } finally {
+    activeRuns.delete(runId);
   }
 }
 
@@ -315,34 +465,44 @@ export async function runFlow(
   const flowCwd = resolveFlowCwd(flow, flowDir);
   const runId = randomUUID();
   const resources = await loadRunResources();
+  const abortController = new AbortController();
   const state: ExecutionState = {
+    runId,
     agentResults: [],
     agentNameCounts: new Map<string, number>(),
     resources,
+    abortController,
   };
 
-  const output = await (async () => {
-    const iterator = executeAgent(flow.orchestrator, userPrompt, flow.repo, flowCwd, state);
-    let step = await iterator.next();
-    while (!step.done) {
-      step = await iterator.next();
-    }
-    return step.value;
-  })();
+  activeRuns.set(runId, abortController);
 
-  persistRun({
-    runId,
-    flowName: flow.name,
-    flowPath,
-    userPrompt,
-    output,
-    agentResults: state.agentResults,
-  });
+  try {
+    const result = await (async () => {
+      const iterator = executeAgent(flow.orchestrator, userPrompt, flow.repo, flowCwd, state);
+      let step = await iterator.next();
+      while (!step.done) {
+        step = await iterator.next();
+      }
+      return step.value;
+    })();
+    const output = result.output;
 
-  return {
-    runId,
-    flowName: flow.name,
-    output,
-    agentResults: state.agentResults,
-  };
+    persistRun({
+      runId,
+      flowName: flow.name,
+      flowPath,
+      userPrompt,
+      output,
+      agentResults: state.agentResults,
+    });
+
+    return {
+      runId,
+      flowName: flow.name,
+      output,
+      agentResults: state.agentResults,
+    };
+  } finally {
+    activeRuns.delete(runId);
+  }
 }

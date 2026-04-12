@@ -97,8 +97,11 @@ export type RunStreamEvent =
   | { kind: "agent_token"; agentName: string; token: string }
   | { kind: "agent_complete"; agentName: string; output: string }
   | { kind: "agent_error"; agentName: string; error: string }
+  | { kind: "agent_abort"; agentName: string }
+  | { kind: "agent_timeout"; agentName: string; timeoutMs: number }
   | { kind: "agent_delegate"; parentAgent: string; childAgent: string }
   | { kind: "run_complete"; output: string }
+  | { kind: "run_aborted"; runId: string }
   | { kind: "run_error"; message: string };
 
 export type AgentRunState = "pending" | "running" | "done" | "error";
@@ -366,6 +369,28 @@ export const useRunStore = create<StudioState>((set) => ({
           }
           break;
         }
+        case "agent_abort": {
+          const current = nextAgents[event.agentName];
+          if (current) {
+            nextAgents[event.agentName] = {
+              ...current,
+              state: "error",
+              error: "aborted",
+            };
+          }
+          break;
+        }
+        case "agent_timeout": {
+          const current = nextAgents[event.agentName];
+          if (current) {
+            nextAgents[event.agentName] = {
+              ...current,
+              state: "error",
+              error: `timed out after ${event.timeoutMs}ms`,
+            };
+          }
+          break;
+        }
         case "agent_delegate": {
           const parent = nextAgents[event.parentAgent];
           const parentDepth = parent?.depth ?? 0;
@@ -380,6 +405,9 @@ export const useRunStore = create<StudioState>((set) => ({
         }
         case "run_complete":
           nextOutput = event.output;
+          break;
+        case "run_aborted":
+          nextRunError = "Run aborted";
           break;
         case "run_error":
           nextRunError = event.message;

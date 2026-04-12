@@ -6,7 +6,7 @@ import { z } from "zod";
 import YAML from "yaml";
 import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@loom/core";
 import { validateFlow } from "@loom/nodes";
-import { runFlow, streamRunFlow } from "./runner.js";
+import { abortRun, runFlow, streamRunFlow } from "./runner.js";
 import { stringifyFlow } from "./flow-writer.js";
 import { getRun, listRuns } from "./trace-store.js";
 
@@ -183,6 +183,20 @@ export function buildServer() {
     }
 
     return reply.code(200).send(run);
+  });
+
+  app.post("/runs/:id/abort", async (request, reply) => {
+    const parsed = runParamsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    const aborted = abortRun(parsed.data.id);
+    if (!aborted) {
+      return reply.code(404).send({ error: { message: "run not found" } });
+    }
+
+    return reply.code(202).send({ runId: parsed.data.id, aborted: true });
   });
 
   app.post("/runs", async (request, reply) => {

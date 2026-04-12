@@ -105,5 +105,16 @@ export function useSseRun() {
     [beginStream, ingest, endStream],
   );
 
-  return { runFlow };
+  const abortFlow = useCallback(async (runId: string) => {
+    const response = await fetch(`${SERVER_ORIGIN}/runs/${runId}/abort`, {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`HTTP ${response.status}${text ? `: ${text}` : ""}`);
+    }
+  }, []);
+
+  return { runFlow, abortFlow };
 }

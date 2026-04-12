@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import type { AgentConfig } from "@loom/core";
-import { emitMockEvents, parseDelegationDirective } from "../protocol.js";
-import type { AgentAdapter, AgentEvent } from "../types.js";
+import { emitMockEvents, parseDelegationDirective, parseParallelDelegationDirective } from "../protocol.js";
+import type { AgentAdapter, AgentEvent, SpawnController } from "../types.js";
 
 export const claudeCodeAdapterId = "claude-code";
 
@@ -77,21 +77,43 @@ function extractDelta(candidate: string, emittedText: string): string {
 class ClaudeCodeAdapter implements AgentAdapter {
   readonly type = "claude-code" as const;
 
-  async *spawn(config: AgentConfig, input: string, cwd: string): AsyncGenerator<AgentEvent, void, undefined> {
+  async *spawn(
+    config: AgentConfig,
+    input: string,
+    cwd: string,
+    controller?: SpawnController,
+  ): AsyncGenerator<AgentEvent, void, undefined> {
     if (process.env.LOOM_MOCK === "1") {
       yield* emitMockEvents(`Mock Claude Code response from ${config.name}: ${input}`);
       return;
     }
+
+    let timeoutHandle: NodeJS.Timeout | undefined;
 
     try {
       const proc = spawn("claude", buildArgs(config), {
         cwd,
         env: process.env,
         stdio: ["pipe", "pipe", "pipe"],
+        signal: controller?.signal,
       });
 
       if (!proc.stdin || !proc.stdout || !proc.stderr) {
         throw new Error("claude CLI spawn did not provide stdio pipes");
+      }
+
+      if (controller?.signal) {
+        controller.signal.addEventListener("abort", () => {
+          proc.kill("SIGTERM");
+          controller.onAbort?.();
+        }, { once: true });
+      }
+
+      if (controller?.timeoutMs) {
+        timeoutHandle = setTimeout(() => {
+          proc.kill("SIGTERM");
+          controller.onTimeout?.();
+        }, controller.timeoutMs);
       }
 
       proc.stdout.setEncoding("utf8");
@@ -186,6 +208,14 @@ class ClaudeCodeAdapter implements AgentAdapter {
       }
 
       const output = (finalOutput || emittedText).trim();
+      const parallelDelegation = parseParallelDelegationDirective(output);
+      if (parallelDelegation) {
+        for (const delegation of parallelDelegation) {
+          yield { type: "delegate", ...delegation };
+        }
+        return;
+      }
+
       const delegation = parseDelegationDirective(output);
       if (delegation) {
         yield { type: "delegate", ...delegation };
@@ -198,6 +228,10 @@ class ClaudeCodeAdapter implements AgentAdapter {
         type: "error",
         error: error instanceof Error ? error.message : String(error),
       };
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
     }
   }
 }

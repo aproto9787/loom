@@ -43,6 +43,8 @@ export interface AgentConfig {
   model?: string;
   system?: string;
   effort?: 'low' | 'medium' | 'high';
+  timeout?: number;
+  parallel?: boolean;
   mcps?: string[];
   hooks?: string[];
   skills?: string[];
@@ -55,6 +57,8 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
   effort: z.enum(['low', 'medium', 'high']).optional(),
+  timeout: z.number().int().positive().optional(),
+  parallel: z.boolean().optional(),
   mcps: z.array(z.string().min(1)).optional(),
   hooks: z.array(z.string().min(1)).optional(),
   skills: z.array(z.string().min(1)).optional(),
@@ -121,7 +125,10 @@ export type RunEvent =
   | { type: "agent_start"; agentName: string; agentType: AgentType }
   | { type: "agent_token"; agentName: string; token: string }
   | { type: "agent_complete"; agentName: string; output: string }
-  | { type: "agent_error"; agentName: string; error: string }
+  | { type: "agent_error"; agentName: string; error: string; fatal?: boolean }
+  | { type: "agent_timeout"; agentName: string; timeoutMs: number }
+  | { type: "agent_abort"; agentName: string }
   | { type: "agent_delegate"; parentAgent: string; childAgent: string }
   | { type: "run_complete"; output: string }
+  | { type: "run_aborted"; runId: string }
   | { type: "run_error"; error: string };

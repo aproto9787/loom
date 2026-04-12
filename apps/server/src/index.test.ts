@@ -248,6 +248,18 @@ loomTest("GET /runs/:id returns 404 for a missing run", async (t) => {
   assert.deepEqual(response.json(), { error: { message: "run not found" } });
 });
 
+loomTest("POST /runs/:id/abort returns 404 when the run does not exist", async (t) => {
+  const app = createTestApp(t);
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/runs/missing-run-id/abort",
+  });
+
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.json(), { error: { message: "run not found" } });
+});
+
 loomTest("PUT /flows/save round-trips a recursive flow through YAML", async (t) => {
   const app = createTestApp(t);
   const flowPath = "examples/_roundtrip.yaml";

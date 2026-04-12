@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./claude-code/index.js";
 export * from "./codex/index.js";
+export { parseDelegationDirective, parseParallelDelegationDirective } from "./protocol.js";
 
 import type { AgentType } from "@loom/core";
 import { claudeCodeAdapter } from "./claude-code/index.js";

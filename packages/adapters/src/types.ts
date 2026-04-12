@@ -6,7 +6,14 @@ export type AgentEvent =
   | { type: "error"; error: string }
   | { type: "delegate"; childAgent: string; reason: string };
 
+export interface SpawnController {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  onAbort?: () => void;
+  onTimeout?: () => void;
+}
+
 export interface AgentAdapter {
   readonly type: AgentType;
-  spawn(config: AgentConfig, input: string, cwd: string): AsyncGenerator<AgentEvent, void, undefined>;
+  spawn(config: AgentConfig, input: string, cwd: string, controller?: SpawnController): AsyncGenerator<AgentEvent, void, undefined>;
 }

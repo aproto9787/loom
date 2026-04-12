@@ -35,6 +35,28 @@ function normalizeDelegate(value: unknown): { childAgent: string; reason: string
   };
 }
 
+export function parseParallelDelegationDirective(output: string): Array<{ childAgent: string; reason: string }> | undefined {
+  const trimmed = output.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    if (!Array.isArray(parsed.parallel)) {
+      return undefined;
+    }
+
+    const directives = parsed.parallel
+      .map((entry) => normalizeDelegate(entry))
+      .filter((entry): entry is { childAgent: string; reason: string } => Boolean(entry));
+
+    return directives.length > 0 ? directives : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function parseDelegationDirective(output: string): { childAgent: string; reason: string } | undefined {
   const trimmed = output.trim();
   if (trimmed.length === 0) {
@@ -68,6 +90,14 @@ export function* emitMockEvents(output: string): Generator<AgentEvent, void, und
     if (word.length > 0) {
       yield { type: "token", content: word };
     }
+  }
+
+  const parallelDelegation = parseParallelDelegationDirective(output);
+  if (parallelDelegation) {
+    for (const delegation of parallelDelegation) {
+      yield { type: "delegate", ...delegation };
+    }
+    return;
   }
 
   const delegation = parseDelegationDirective(output);
