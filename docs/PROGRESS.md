@@ -376,7 +376,7 @@ Workspace escape protection for flowPath and io.file | shipped
 Studio React Flow canvas rendering the loaded flow | shipped
 Studio RunPanel + SSE client + live token buffer | shipped
 CORS for the Vite dev server | shipped
-Graph editing (drag/connect/inspect) | not yet
+Graph editing (drag/connect/inspect) | shipped
 Run replay timeline | not yet
 Real `@anthropic-ai/sdk` calls | shipped
 Real LiteLLM Python proxy bridge | shipped
@@ -417,7 +417,7 @@ Real MCP `tools/call` from an agent node | shipped
 **Commits.**
 
 ```
-# + the commits produced by this phase
+f224752 feat(server): PUT /flows/save backend for phase 3a graph editing
 ```
 
 **Acceptance verified.**
@@ -430,13 +430,33 @@ Real MCP `tools/call` from an agent node | shipped
 
 ---
 
+## Phase 3B — graph editing frontend
+
+**Goal.** Turn the studio from a read-only flow viewer into a graph editor. Add a node palette, drag-and-drop node creation, an inspector panel for the selected node, and a Save button that pushes the edited draft back through Phase 3A's `PUT /flows/save` — closing the v0.1 "Graph editing" coverage row end-to-end.
+
+**Commits.**
+
+```
+# + the commit produced by this phase
+```
+
+**Acceptance verified.**
+
+- `apps/studio/src/store.ts` carries a `flowDraft`/`loadedFlow` split with edit actions (`addNode`, `deleteNode`, `updateNode`, `renameNode`, `connectNodes`, `disconnectEdge`, `setNodePosition`) plus save lifecycle (`beginSave`/`endSave`/`setSaveError`) and an `isDirty` flag driven by a structural diff against `loadedFlow`
+- `apps/studio/src/NodePalette.tsx` exposes the v0.1 editable node types in a sidebar palette with HTML5 drag sources (`application/loom-node-type`)
+- `apps/studio/src/Inspector.tsx` edits the selected node's id, `config` (JSON), `inputs` (JSON), and optional `when` expression; shows parse errors inline and offers a Delete button
+- `apps/studio/src/App.tsx` switches the React Flow canvas to interactive (`nodesDraggable`/`nodesConnectable`/`elementsSelectable`), wires `onNodesChange`, `onEdgesChange`, `onConnect`, `onSelectionChange`, and palette `onDrop` via `useReactFlow().screenToFlowPosition`; node positions live in an ephemeral `nodePositionOverrides` map (not persisted in YAML for v0.1)
+- `apps/studio/src/api.ts` ships a `saveFlow(origin, flowPath, flow)` helper that PUTs to `/flows/save` and surfaces non-2xx responses as `Error`s
+- A `SaveControls` section on the canvas header renders "Save flow" when `isDirty`, "Saving…" while `isSaving`, and "Saved" after a successful round-trip; any server-side 400 shows under the button
+- `pnpm --filter @loom/studio build` passes (tsc strict + vite build), `pnpm -r build` stays clean across core/adapters/nodes/server/studio, and `pnpm -r test` keeps passing (adapters 1/1 + server 5/5) because the backend surface is unchanged
+- `apps/studio/src/styles.css` gains palette, inspector, save-control, and selection highlight styles without touching the existing run-panel/node-card appearance
+
+---
+
 ## Natural next slices
 
-1. **Phase 3B — Graph editing frontend.** Node palette + drag-and-drop +
-   inspector panel; wire the new save API into the studio UI.
-2. **Phase 4 — Run replay.** Surface the SQLite trace rows in the
+1. **Phase 4 — Run replay.** Surface the SQLite trace rows in the
    studio and add a timeline scrubber.
 
-These map onto the README's v0.2 → v1.0 roadmap and are the two
-remaining v0.1 coverage gaps ("Graph editing" and "Run replay
-timeline") after the current v0.1 MVP+ is in place.
+This is the single remaining v0.1 coverage gap ("Run replay timeline")
+after Phase 3 landed graph editing end-to-end.
