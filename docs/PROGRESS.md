@@ -410,10 +410,30 @@ Real MCP `tools/call` from an agent node | shipped
 
 ---
 
+## Phase 3A — flow save backend
+
+**Goal.** Add the backend write path for graph editing so the studio can persist validated LoomFlow edits back into `examples/*.yaml` without widening the v0.1 scope into frontend editing yet.
+
+**Commits.**
+
+```
+# + the commits produced by this phase
+```
+
+**Acceptance verified.**
+
+- `PUT /flows/save` validates `{ flowPath, flow }` against `flowSchema`, rejects non-`examples/*.yaml` paths, writes through a temp file, and echoes the saved `flowPath`
+- `apps/server/src/index.test.ts` covers round-trip save/load, invalid schema rejection, path escape rejection, and non-`.yaml` rejection
+- `pnpm -r test` passes from the repo root with the new server save-path tests included
+- `pnpm --filter @loom/server build` passes after adding the new backend write helper
+- Phase 3 stays open in the v0.1 coverage table because frontend graph editing (Phase 3B) is still pending
+
+---
+
 ## Natural next slices
 
-1. **Phase 3 — Graph editing.** Node palette + drag-and-drop +
-   inspector panel; write edits back to the underlying YAML file.
+1. **Phase 3B — Graph editing frontend.** Node palette + drag-and-drop +
+   inspector panel; wire the new save API into the studio UI.
 2. **Phase 4 — Run replay.** Surface the SQLite trace rows in the
    studio and add a timeline scrubber.
 
