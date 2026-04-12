@@ -5,7 +5,7 @@ import { useSseRun } from "./useSseRun.js";
 
 /* ── Agent config header ────────────────────────────────────── */
 
-function AgentSummary({
+export function AgentSummary({
   agent,
   path,
   expanded,
@@ -178,7 +178,7 @@ function StreamingBlock({ name, tokens }: { name: string; tokens: string[] }) {
 
 /* ── Main panel ─────────────────────────────────────────────── */
 
-export function ChatPanel() {
+export function ChatPanel({ hideAgentConfig }: { hideAgentConfig?: boolean } = {}) {
   const flowPath = useRunStore((s) => s.flowPath);
   const flowDraft = useRunStore((s) => s.flowDraft);
   const selectedAgentPath = useRunStore((s) => s.selectedAgentPath);
@@ -243,7 +243,7 @@ export function ChatPanel() {
 
   return (
     <section className="chat-panel">
-      {selectedAgent ? (
+      {!hideAgentConfig && (selectedAgent ? (
         <AgentSummary
           agent={selectedAgent}
           path={selectedAgentPath}
@@ -255,7 +255,7 @@ export function ChatPanel() {
         <div className="chat-agent">
           <p className="chat-agent__empty">Select an agent in the tree</p>
         </div>
-      )}
+      ))}
 
       <div className="chat-panel__messages" ref={scrollRef}>
         {chatLog.length === 0 && streamingAgents.length === 0 && (

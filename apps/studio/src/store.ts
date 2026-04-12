@@ -114,6 +114,8 @@ interface StudioState {
   isSaving: boolean;
   saveError?: string;
   loadError?: string;
+  activeTab: 'workflow' | 'chat';
+  chatRepo: string;
 
   // Run state
   isStreaming: boolean;
@@ -142,6 +144,9 @@ interface StudioState {
   beginStream: () => void;
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
+
+  setActiveTab: (tab: 'workflow' | 'chat') => void;
+  setChatRepo: (path: string) => void;
 }
 
 export const useRunStore = create<StudioState>((set) => ({
@@ -153,6 +158,8 @@ export const useRunStore = create<StudioState>((set) => ({
   isStreaming: false,
   events: [],
   agentRuntimes: {},
+  activeTab: 'workflow' as const,
+  chatRepo: '',
 
   setFlowPath: (value) =>
     set({
@@ -348,4 +355,7 @@ export const useRunStore = create<StudioState>((set) => ({
         runError: nextRunError,
       };
     }),
+
+  setActiveTab: (tab) => set({ activeTab: tab }),
+  setChatRepo: (path) => set({ chatRepo: path }),
 }));

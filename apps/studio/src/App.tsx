@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background,
   Controls,
@@ -8,11 +8,11 @@ import {
   type Edge,
   type OnSelectionChangeParams,
 } from "reactflow";
-import { ChatPanel } from "./ChatPanel.js";
+import { ChatPanel, AgentSummary } from "./ChatPanel.js";
 import { NodePalette } from "./NodePalette.js";
 import { agentTreeToGraph } from "./flowToGraph.js";
 import { saveFlow } from "./api.js";
-import { useRunStore, type AgentRuntime } from "./store.js";
+import { useRunStore, getAgentAtPath, type AgentRuntime } from "./store.js";
 
 const SERVER_ORIGIN =
   (import.meta.env?.VITE_LOOM_SERVER as string | undefined) ?? "http://localhost:8787";
@@ -22,7 +22,6 @@ function applyAgentRuntimeState(
   agentRuntimes: Record<string, AgentRuntime>,
 ): Node[] {
   return nodes.map((node) => {
-    // Match by agent name (last segment of node id path)
     const agentName = node.id.split("/").pop() ?? node.id;
     const runtime = agentRuntimes[agentName];
     const stateClass = runtime ? `loom-agent--state-${runtime.state}` : "";
@@ -154,60 +153,77 @@ function SaveControls() {
   );
 }
 
-export default function App() {
-  const flowPath = useRunStore((state) => state.flowPath);
-  const flowDraft = useRunStore((state) => state.flowDraft);
-  const availableFlows = useRunStore((state) => state.availableFlows);
-  const selectedAgentPath = useRunStore((state) => state.selectedAgentPath);
-  const setAvailableFlows = useRunStore((state) => state.setAvailableFlows);
-  const setLoadedFlow = useRunStore((state) => state.setLoadedFlow);
-  const setLoadError = useRunStore((state) => state.setLoadError);
-  const addAgent = useRunStore((state) => state.addAgent);
-  const loadError = useRunStore((state) => state.loadError);
+/* ── Tab Bar ───────────────────────────────────────────────────── */
+
+function TabBar() {
+  const activeTab = useRunStore((s) => s.activeTab);
+  const setActiveTab = useRunStore((s) => s.setActiveTab);
+  return (
+    <nav className="tab-bar">
+      <button
+        type="button"
+        className={`tab-bar__tab${activeTab === "workflow" ? " tab-bar__tab--active" : ""}`}
+        onClick={() => setActiveTab("workflow")}
+      >
+        Workflow
+      </button>
+      <button
+        type="button"
+        className={`tab-bar__tab${activeTab === "chat" ? " tab-bar__tab--active" : ""}`}
+        onClick={() => setActiveTab("chat")}
+      >
+        Chat
+      </button>
+    </nav>
+  );
+}
+
+/* ── Agent Config Panel (workflow tab right column) ────────────── */
+
+function AgentConfigPanel() {
+  const flowDraft = useRunStore((s) => s.flowDraft);
+  const selectedAgentPath = useRunStore((s) => s.selectedAgentPath);
+  const [expanded, setExpanded] = useState(true);
+
+  const selectedAgent =
+    flowDraft && selectedAgentPath.length > 0
+      ? getAgentAtPath(flowDraft.orchestrator, selectedAgentPath)
+      : undefined;
+
+  return (
+    <section className="config-panel">
+      <p className="config-panel__title">Agent Config</p>
+      {selectedAgent ? (
+        <AgentSummary
+          agent={selectedAgent}
+          path={selectedAgentPath}
+          expanded={expanded}
+          onToggle={() => setExpanded((v) => !v)}
+          key={selectedAgentPath.join("/")}
+        />
+      ) : (
+        <p className="config-panel__empty">
+          Select an agent in the tree to edit its configuration.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/* ── Workflow View ─────────────────────────────────────────────── */
+
+function WorkflowView() {
+  const flowPath = useRunStore((s) => s.flowPath);
+  const flowDraft = useRunStore((s) => s.flowDraft);
+  const availableFlows = useRunStore((s) => s.availableFlows);
+  const selectedAgentPath = useRunStore((s) => s.selectedAgentPath);
+  const addAgent = useRunStore((s) => s.addAgent);
+  const loadError = useRunStore((s) => s.loadError);
 
   const selectedAgentName =
     selectedAgentPath.length > 0
       ? selectedAgentPath[selectedAgentPath.length - 1]
       : undefined;
-
-  // Fetch available flows on mount
-  useEffect(() => {
-    let active = true;
-    fetch(`${SERVER_ORIGIN}/flows`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((data: { flows: string[] }) => {
-        if (active) setAvailableFlows(data.flows ?? []);
-      })
-      .catch((error: unknown) => {
-        if (active) setLoadError(error instanceof Error ? error.message : "failed to list flows");
-      });
-    return () => {
-      active = false;
-    };
-  }, [setAvailableFlows, setLoadError]);
-
-  // Load selected flow
-  useEffect(() => {
-    let active = true;
-    setLoadedFlow(undefined);
-    fetch(`${SERVER_ORIGIN}/flows/get?path=${encodeURIComponent(flowPath)}`)
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
-        }
-        return res.json() as Promise<{ flow: import("@loom/core").FlowDefinition }>;
-      })
-      .then((data) => {
-        if (active) setLoadedFlow(data.flow);
-      })
-      .catch((error: unknown) => {
-        if (active) setLoadError(error instanceof Error ? error.message : "failed to load flow");
-      });
-    return () => {
-      active = false;
-    };
-  }, [flowPath, setLoadedFlow, setLoadError]);
 
   return (
     <div className="app-shell">
@@ -256,9 +272,118 @@ export default function App() {
               <AgentTreeCanvas />
             </ReactFlowProvider>
           </div>
-          <ChatPanel />
+          <AgentConfigPanel />
         </div>
       </main>
+    </div>
+  );
+}
+
+/* ── Chat View ─────────────────────────────────────────────────── */
+
+function ChatView() {
+  const chatRepo = useRunStore((s) => s.chatRepo);
+  const setChatRepo = useRunStore((s) => s.setChatRepo);
+  const availableFlows = useRunStore((s) => s.availableFlows);
+  const flowPath = useRunStore((s) => s.flowPath);
+
+  return (
+    <div className="chat-view">
+      <aside className="chat-sidebar">
+        <div className="chat-sidebar__section">
+          <p className="chat-sidebar__label">Repository</p>
+          <input
+            type="text"
+            className="chat-sidebar__input"
+            placeholder="/path/to/repo"
+            value={chatRepo}
+            onChange={(e) => setChatRepo(e.target.value)}
+          />
+        </div>
+        <div className="chat-sidebar__section">
+          <p className="chat-sidebar__label">Flows</p>
+          <ul className="flow-list">
+            {availableFlows.length === 0 ? (
+              <li className="flow-list__empty">No flows available</li>
+            ) : (
+              availableFlows.map((candidate) => (
+                <li key={candidate}>
+                  <button
+                    type="button"
+                    className={
+                      candidate === flowPath
+                        ? "flow-list__button flow-list__button--active"
+                        : "flow-list__button"
+                    }
+                    onClick={() => useRunStore.getState().setFlowPath(candidate)}
+                  >
+                    {candidate.replace("examples/", "")}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      </aside>
+      <main className="chat-main">
+        <ChatPanel hideAgentConfig />
+      </main>
+    </div>
+  );
+}
+
+/* ── App (root) ────────────────────────────────────────────────── */
+
+export default function App() {
+  const activeTab = useRunStore((s) => s.activeTab);
+  const flowPath = useRunStore((s) => s.flowPath);
+  const setAvailableFlows = useRunStore((s) => s.setAvailableFlows);
+  const setLoadedFlow = useRunStore((s) => s.setLoadedFlow);
+  const setLoadError = useRunStore((s) => s.setLoadError);
+
+  // Fetch available flows on mount
+  useEffect(() => {
+    let active = true;
+    fetch(`${SERVER_ORIGIN}/flows`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data: { flows: string[] }) => {
+        if (active) setAvailableFlows(data.flows ?? []);
+      })
+      .catch((error: unknown) => {
+        if (active) setLoadError(error instanceof Error ? error.message : "failed to list flows");
+      });
+    return () => {
+      active = false;
+    };
+  }, [setAvailableFlows, setLoadError]);
+
+  // Load selected flow
+  useEffect(() => {
+    let active = true;
+    setLoadedFlow(undefined);
+    fetch(`${SERVER_ORIGIN}/flows/get?path=${encodeURIComponent(flowPath)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
+        }
+        return res.json() as Promise<{ flow: import("@loom/core").FlowDefinition }>;
+      })
+      .then((data) => {
+        if (active) setLoadedFlow(data.flow);
+      })
+      .catch((error: unknown) => {
+        if (active) setLoadError(error instanceof Error ? error.message : "failed to load flow");
+      });
+    return () => {
+      active = false;
+    };
+  }, [flowPath, setLoadedFlow, setLoadError]);
+
+  return (
+    <div className="app-root">
+      <TabBar />
+      {activeTab === "workflow" ? <WorkflowView /> : <ChatView />}
     </div>
   );
 }

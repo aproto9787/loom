@@ -17,10 +17,52 @@ body {
   min-height: 100vh;
 }
 
+.app-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ── Tab Bar ────────────────────────────────────────────────────── */
+
+.tab-bar {
+  display: flex;
+  background: rgba(255, 248, 238, 0.95);
+  border-bottom: 1px solid rgba(32, 26, 22, 0.12);
+  padding: 0 24px;
+  flex-shrink: 0;
+  backdrop-filter: blur(12px);
+}
+
+.tab-bar__tab {
+  padding: 12px 24px;
+  border: 0;
+  background: transparent;
+  color: #5f5349;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tab-bar__tab:hover {
+  color: #201a16;
+}
+
+.tab-bar__tab--active {
+  color: #201a16;
+  border-bottom-color: #8f5d34;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+
 .app-shell {
   display: grid;
   grid-template-columns: 280px 1fr;
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
 }
 
 .sidebar {
@@ -157,7 +199,7 @@ body {
 .canvas-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 0;
 }
 
 .canvas-header {
@@ -647,6 +689,99 @@ body {
   transform: translateY(-1px);
 }
 
+/* ── Config Panel (workflow tab right column) ───────────────────── */
+
+.config-panel {
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  border: 1px solid rgba(32, 26, 22, 0.18);
+  background: #1c1917;
+  box-shadow: 0 22px 60px rgba(76, 57, 35, 0.12);
+  overflow: hidden;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.config-panel__title {
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #8f5d34;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.config-panel__empty {
+  margin: 0;
+  padding: 24px 16px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.3);
+  font-style: italic;
+  text-align: center;
+}
+
+/* ── Chat View ──────────────────────────────────────────────────── */
+
+.chat-view {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-sidebar {
+  padding: 24px;
+  background: rgba(255, 248, 238, 0.88);
+  border-right: 1px solid rgba(32, 26, 22, 0.12);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-y: auto;
+}
+
+.chat-sidebar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-sidebar__label {
+  margin: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #8f5d34;
+}
+
+.chat-sidebar__input {
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(32, 26, 22, 0.12);
+  background: rgba(255, 255, 255, 0.75);
+  color: #201a16;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.chat-sidebar__input::placeholder {
+  color: rgba(32, 26, 22, 0.35);
+}
+
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 20px 20px;
+}
+
+.chat-main .chat-panel {
+  flex: 1;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -664,5 +799,15 @@ body {
 
   .chat-panel {
     order: -1;
+  }
+
+  .chat-view {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .chat-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(32, 26, 22, 0.12);
   }
 }
