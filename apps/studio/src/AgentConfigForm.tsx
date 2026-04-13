@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentConfig, RoleDefinition } from "@loom/core";
-import { SERVER_ORIGIN } from "./chat-run.js";
-import { ResourceToggles } from "./ChatResourceToggles.js";
+import { SERVER_ORIGIN } from "./sse-run.js";
+import { ResourceToggles } from "./ResourceToggles.js";
 import { inputDark, selectDark } from "./panelStyles.js";
 import { useRunStore, type DiscoveredResource } from "./store.js";
 

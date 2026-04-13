@@ -11,8 +11,32 @@ import type { AgentConfig } from "@loom/core";
 import { loadFlow, createScopedMcpConfig } from "../../../apps/server/src/runner.js";
 import { buildConfiguredAgent } from "../../../apps/server/src/runner-prompt-builder.js";
 
+const VERSION = "0.1.0";
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const examplesDir = path.join(workspaceRoot, "examples");
+
+function handleFlags(): boolean {
+  const args = process.argv.slice(2);
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`loom v${VERSION} — interactive flow launcher
+
+Usage: loom [options]
+
+Options:
+  -h, --help     Show this help
+  -v, --version  Show version
+
+Scans for flow YAML files in the current directory and examples/,
+presents an interactive selection menu, and spawns the chosen
+flow's orchestrator (claude/codex) with isolated config.`);
+    return true;
+  }
+  if (args.includes("--version") || args.includes("-v")) {
+    console.log(VERSION);
+    return true;
+  }
+  return false;
+}
 
 interface LoadedCliFlow {
   absolutePath: string;
@@ -196,6 +220,7 @@ async function promptForSelection(flows: LoadedCliFlow[]): Promise<SelectionResu
 }
 
 async function main(): Promise<void> {
+  if (handleFlags()) return;
   const cwd = process.cwd();
   const flowPaths = await listFlowPaths(cwd);
   const loadResults = await Promise.all(

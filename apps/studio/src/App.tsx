@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { WorkflowTab } from "./AppSections.js";
 import { StaticTabView, TabBar } from "./app-shell.js";
 import { useRunStore } from "./store.js";
-import { SERVER_ORIGIN } from "./chat-run.js";
+import { SERVER_ORIGIN } from "./sse-run.js";
 
 export default function App() {
   const activeTab = useRunStore((s) => s.activeTab);

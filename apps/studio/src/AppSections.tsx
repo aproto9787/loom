@@ -9,7 +9,7 @@ import {
   type NodeMouseHandler,
 } from "reactflow";
 import { saveFlow } from "./api.js";
-import { SERVER_ORIGIN } from "./chat-run.js";
+import { SERVER_ORIGIN } from "./sse-run.js";
 import { AgentConfigForm } from "./AgentConfigForm.js";
 import { NodePalette } from "./NodePalette.js";
 import { agentTreeToGraph } from "./flowToGraph.js";
