@@ -578,3 +578,53 @@ and progress tracking around the new runtime contract.
 - The studio default flow now points at `examples/simple.yaml`, so
   deleting the legacy DAG examples does not leave the UI booting into
   a missing file
+
+---
+
+## Phase 6B — Runner split, isolation, capabilities, and role inheritance
+
+**Goal.** Break the runner and studio god objects into narrower files,
+add per-agent isolation and scoped resource handling, then layer
+capability-aware delegation plus role inheritance on top of the new
+runtime shape.
+
+**Commits.**
+
+```
+2d50f70 refactor: split god objects, add tests, clean dead code, fix silent failures, add schema version
+462a5b1 feat: agent isolation and capabilities-based auto-delegation
+5292bf7 feat: role-based capabilities and isolation inheritance
+```
+
+**What changed.**
+
+- `apps/server/src/runner.ts` now focuses on `loadFlow()` and re-exports,
+  while execution, prompt construction, and resource loading live in
+  `runner-executor.ts`, `runner-prompt-builder.ts`, and
+  `runner-resource-loader.ts`
+- `AgentConfig` and `RoleDefinition` gained `isolated` and
+  `capabilities` fields, and the flow schema now defaults `version` to
+  `"1"`
+- The runner can create a temporary HOME for isolated agents, build a
+  scoped `.mcp.json` containing only the selected servers, and remove
+  both temporary directories during cleanup
+- Parent agent prompts now include child capability metadata and a
+  delegation instruction that routes work to the most appropriate child
+- Roles loaded from `roles/*.yaml` can now provide default
+  capabilities/isolation, and explicit agent values override those
+  defaults when both are present
+- The studio exposes the same model in two places: the workflow agent
+  editor shows role-derived defaults, and the Roles tab can create,
+  save, and delete reusable role YAML files through the server role
+  endpoints
+
+**Acceptance verified.**
+
+- `docs/ARCHITECTURE.md` now reflects the split runner modules plus the
+  current isolation/capabilities/role system
+- `README.md` feature bullets and project-structure notes now describe
+  recursive agent trees, scoped MCP access, agent isolation, and role
+  inheritance instead of the older DAG-era module map
+- Source-backed behavior exists for runner splitting, temporary isolated
+  HOME handling, scoped MCP config creation, capability-aware prompt
+  building, and role inheritance across both backend and studio code

@@ -10,13 +10,13 @@ Think ComfyUI, but for agents. Or Figma, but for Claude and Codex sessions.
 
 ## Features
 
-- **Runtime Neutral.** Claude API calls, Claude Code CLI sessions, Codex CLI sessions, and any model reachable via LiteLLM coexist on the same canvas. Adding a new runtime means implementing one adapter interface.
-- **Condition-First Graphs.** Branching is a first-class concept, not an afterthought. Loom ships with code-expression routers, LLM classifier routers, loops, parallel fork/join, and breakpoints.
-- **Live Canvas.** Token streams animate along edges while runs are executing. Every node shows a live progress ring, a running token/cost/latency badge, and a thinking bubble with the last tokens it generated.
+- **Recursive Agent Trees.** Each flow runs through one orchestrator agent that can delegate to nested child agents, record per-agent outputs, and stream the full run lifecycle back to the studio.
+- **Runtime Neutral.** Claude Code CLI sessions and Codex CLI sessions coexist in the same flow, and the runner keeps their execution contract behind one adapter interface.
+- **Scoped MCP Access.** MCP servers are selected per flow or per agent. Loom writes a throwaway `.mcp.json` per run so each agent only sees the servers it was granted.
+- **Agent Isolation.** Agents can opt into `isolated: true`, which gives the spawned CLI process a temporary HOME and prevents accidental reuse of the user's default Claude/Codex home state.
+- **Capabilities + Roles.** Agents advertise free-form capabilities for delegation, and role YAML files can supply default type, model, system, effort, capabilities, and isolation that individual agents inherit or override.
 - **Run Replay.** When a run finishes, a timeline scrubber lets you rewind the canvas to any point. Click any node to see exactly what it received and produced at that moment.
-- **MCP Native.** Model Context Protocol servers are first-class nodes. Drop an `mcp.server` node, wire it to an agent node, and that agent gains those tools.
-- **Git-Friendly Storage.** Flows are plain `flow.yaml` files. Human-readable, diffable, mergeable, reviewable. The canvas is a view on the file, not the other way around.
-- **Local-First.** Loom runs entirely on your machine. No accounts, no cloud, no telemetry. Remote execution is an optional v1.0 feature, never mandatory.
+- **Git-Friendly Storage.** Flows remain plain YAML files, while roles, hooks, and skills also live as local files under the workspace for reviewable changes.
 
 ---
 
@@ -38,130 +38,76 @@ loom ./my-project       # open a specific directory
 
 ### Your first flow in 30 seconds
 
-1. Double-click the empty canvas → type `claude` → Enter. An `agent.claude` node drops in.
-2. Drag from the node's text input port into empty space → release → pick `io.input`.
-3. Drag from the node's output port into empty space → release → pick `io.output`.
-4. Click the `agent.claude` node → paste your API key in the inspector panel.
-5. Hit **Run**, type a prompt, watch tokens stream across the edges.
+1. Open the Workflow tab and start from the default orchestrator agent.
+2. Add a child agent in the inspector and choose `claude-code` or `codex`.
+3. Give that child a short system prompt plus optional `capabilities` like `frontend` or `review`.
+4. Toggle `Isolated` if the child should run with a temporary HOME.
+5. Hit **Run**, type a prompt, and watch delegation plus token streaming in the chat transcript.
 
 ---
 
 ## Core Concepts
 
-Loom's vocabulary is deliberately plain. If you've used any node-based editor, you already know it.
+Loom now centers on recursive agent orchestration rather than DAG nodes.
 
 ```
-Flow      A full graph, persisted to flow.yaml
- ├─ Node  An execution unit (agent / router / control / io / memory / mcp)
- │   └─ Ports  Typed input/output sockets
- ├─ Edge  A typed connection between ports
- └─ Meta  Viewport, layout, annotations
+Flow           A YAML document with one orchestrator agent at the root
+ ├─ repo       Working tree shared by the run
+ ├─ resources  Flow-wide MCP / hook / skill grants
+ └─ orchestrator
+     └─ Agent  claude-code or codex, optionally with child agents
 
-Run       A single execution instance of a flow
- ├─ Events  Per-node lifecycle (start, token, tool_call, complete, error)
- ├─ Values  Snapshot of actual data that flowed across each edge
- └─ Cost    Aggregated token / dollar / latency breakdown
+Role           Reusable YAML defaults for agent type/model/system/
+               effort/capabilities/isolation
+
+Run            One execution of the agent tree
+ ├─ Events     run_start / agent_start / token / delegate / complete / error
+ ├─ Results    Per-agent outputs with timestamps
+ └─ Trace      Persisted run summary in SQLite
 ```
 
-### Node Catalog
+### Agent Fields
 
-| Category | Node | Description | Since |
-|---|---|---|---|
-| **agent** | `agent.claude` | Anthropic API, streaming | v0.1 |
-| | `agent.litellm` | Any model via the LiteLLM proxy (OpenAI, Gemini, Ollama, …) | v0.1 |
-| | `agent.claude-code` | Claude Code CLI session — real file edits and tool calls | v0.2 |
-| | `agent.codex` | Codex CLI session | v0.2 |
-| **router** | `router.code` | Branch on a JavaScript expression (`out.score > 0.8`) | v0.1 |
-| | `router.llm` | Branch chosen by a small classifier model | v0.2 |
-| **control** | `control.loop` | `while` and `for-each` loops | v0.2 |
-| | `control.parallel` | Parallel fork | v0.2 |
-| | `control.join` | Parallel join (`all` / `any` / `race`) | v0.2 |
-| **io** | `io.input` | Prompt the user at the start of a run | v0.1 |
-| | `io.output` | Publish the run's final result | v0.1 |
-| | `io.file` | Read and write files on disk | v0.1 |
-| **memory** | `memory.blackboard` | Shared key-value store, scoped to the run | v0.1 |
-| | `memory.memento` | Long-term memory via the memento-mcp adapter | v0.2 |
-| **mcp** | `mcp.server` | Mount an MCP server and expose its tools to agent nodes | v0.1 |
-
-### Port Types
-
-| Type | Color | Purpose |
-|---|---|---|
-| `text` | white | Plain strings |
-| `json` | amber | Structured data |
-| `file` | blue | File paths |
-| `stream` | violet (glowing) | Token streams — the targets of edge animation |
-| `control` | gray | Trigger signals, no payload |
-
-Port compatibility is checked at connection time. Incompatible connections are rejected, and Loom suggests inserting a converter node (`text → json`, `json → file`, etc.) when types are close.
+| Field | Purpose |
+|---|---|
+| `type` | Selects the runtime adapter (`claude-code` or `codex`) |
+| `system` | Base instruction block for the agent |
+| `capabilities` | Free-form labels surfaced to parent delegation prompts |
+| `isolated` | Runs the CLI with a temporary HOME when enabled |
+| `mcps` / `hooks` / `skills` | Agent-local resource grants merged with flow-level resources |
+| `agents` | Child agents available for delegation |
+| `role` | Reference to a role YAML whose defaults are merged into the agent |
 
 ---
 
 ## Flow Schema
 
-`flow.yaml` is a plain, human-readable specification. This is a real working flow.
+`flow.yaml` is a plain, human-readable recursive agent definition. This is a real working shape from the current runtime.
 
 ```yaml
-version: loom/v1
-name: Research & Draft
-description: Web search → summarize → conditional deep dive → draft
-
-inputs:
-  - id: topic
-    type: text
-    prompt: "Topic to research"
-
-mcps:
-  - id: brave-search
-    command: npx
-    args: ["@modelcontextprotocol/brave-search"]
-    env:
-      BRAVE_API_KEY: ${env.BRAVE_API_KEY}
-
-nodes:
-  - id: search
-    type: agent.litellm
-    config:
-      model: gpt-4o-mini
-      system: |
-        You are a web search agent. Given a topic, return the five most
-        important sources as a JSON array.
-    mcps: [brave-search]
-    inputs:
-      query: { from: $inputs.topic }
-    outputs:
-      sources: json
-
-  - id: score
-    type: router.code
-    config:
-      expression: sources.length >= 3 ? 'deep' : 'shallow'
-    inputs:
-      sources: { from: search.sources }
-    branches: [deep, shallow]
-
-  - id: deep_research
-    type: agent.claude
-    config:
-      model: claude-opus-4-6
-      system: Deep analyst. Verify each source and cross-reference them.
-    inputs:
-      sources: { from: search.sources }
-    when: score.branch == 'deep'
-
-  - id: draft
-    type: agent.claude-code
-    config:
-      cwd: ./workspace
-      system: Draft author. Produce draft.md from the analysis.
-    inputs:
-      analysis:
-        from: deep_research.output
-        fallback: search.sources
-
-outputs:
-  - id: result
-    from: draft.output
+version: "1"
+name: Single Repo Agent Orchestration
+description: Multiple specialists collaborate inside one shared repository root.
+repo: ..
+orchestrator:
+  name: coordinator
+  type: claude-code
+  system: You coordinate implementation across one repository.
+  agents:
+    - name: api
+      type: codex
+      isolated: true
+      capabilities: ["api", "backend", "database"]
+      system: You own the API service repository.
+    - name: ui
+      type: claude-code
+      isolated: true
+      capabilities: ["frontend", "react", "ux"]
+      system: You own the UI repository.
+    - name: shared
+      type: codex
+      capabilities: ["shared-types", "contracts", "refactors"]
+      system: You maintain shared types and contracts.
 ```
 
 ---
@@ -169,89 +115,70 @@ outputs:
 ## Architecture
 
 ```
-┌───────────────────────────────────────────────────────┐
-│                   Browser (React)                      │
-│   ┌────────────────────────────────────────────────┐  │
-│   │  Canvas (React Flow)                            │  │
-│   │    ├─ Node palette (drag source)                │  │
-│   │    ├─ Graph editor with type-aware connections  │  │
-│   │    ├─ Live edge animation (token streams)       │  │
-│   │    ├─ Node inspector panel                      │  │
-│   │    └─ Run timeline with scrubbable replay       │  │
-│   └────────────────────────────────────────────────┘  │
-│               ▲ WebSocket (SSE for tokens)             │
-└───────────────┼────────────────────────────────────────┘
-                │
-┌───────────────▼────────────────────────────────────────┐
-│            Loom Server (Node.js + TypeScript)          │
-│                                                         │
-│   ┌──────────┐  ┌──────────┐  ┌──────────────────┐    │
-│   │ Flow API │  │  Runner  │  │ Trace/Checkpoint │    │
-│   │ YAML r/w │  │  (graph  │  │     (SQLite)     │    │
-│   └──────────┘  │ executor)│  └──────────────────┘    │
-│                 └────┬─────┘                            │
-│                      │                                  │
-│          ┌───────────┼──────────┬──────────┐           │
-│          ▼           ▼          ▼          ▼           │
-│   ┌──────────┐ ┌──────────┐ ┌────────┐ ┌──────────┐  │
-│   │  Claude  │ │  Claude  │ │  Codex │ │ LiteLLM  │  │
-│   │   API    │ │   Code   │ │   CLI  │ │  Proxy   │  │
-│   │ Adapter  │ │ Adapter  │ │Adapter │ │ Adapter  │  │
-│   └──────────┘ └──────────┘ └────────┘ └──────────┘  │
-│                      │                                  │
-│               ┌──────▼──────┐                           │
-│               │  MCP Bridge │  (stdio to MCP servers)   │
-│               └─────────────┘                           │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│                Studio (React + Vite)                │
+│  ┌────────────────────────────────────────────────┐ │
+│  │ Workflow tab  │ Chat transcript │ Roles tab    │ │
+│  │ Agent editor  │ Run stream      │ Role editor  │ │
+│  └────────────────────────────────────────────────┘ │
+│                    ▲ HTTP + SSE                      │
+└────────────────────┼─────────────────────────────────┘
+                     │
+┌────────────────────▼─────────────────────────────────┐
+│           apps/server (Fastify + TypeScript)         │
+│                                                      │
+│  index.ts                  REST + SSE endpoints      │
+│  runner.ts                 loadFlow() + exports      │
+│  runner-executor.ts        executeAgent/runFlow      │
+│  runner-prompt-builder.ts  role merge + prompts      │
+│  runner-resource-loader.ts scoped MCP/hook/skill set │
+│  trace-store.ts            SQLite run persistence    │
+│                                                      │
+│                    ▼ adapter spawn                   │
+│              claude-code CLI / codex CLI             │
+└──────────────────────────────────────────────────────┘
 ```
 
 ### Runtime Adapter Interface
 
-Every runtime Loom supports implements one interface. This is the extension point.
+The current runtime is centered on CLI-backed agent adapters.
 
 ```ts
-interface RuntimeAdapter {
-  id: string;                                          // "claude-api" | "claude-code" | "codex" | "litellm"
-  validate(config: NodeConfig): Result;
-  invoke(ctx: InvokeCtx): AsyncIterable<InvokeEvent>;  // streaming
-  cancel(ctx: InvokeCtx): Promise<void>;
-  cost(events: InvokeEvent[]): CostBreakdown;
+interface AgentConfig {
+  name: string;
+  type: "claude-code" | "codex";
+  role?: string;
+  model?: string;
+  system?: string;
+  effort?: "low" | "medium" | "high";
+  isolated?: boolean;
+  capabilities?: string[];
+  mcps?: string[];
+  hooks?: string[];
+  skills?: string[];
+  agents?: AgentConfig[];
 }
-
-type InvokeEvent =
-  | { kind: "token", text: string }
-  | { kind: "tool_call", name: string, args: unknown }
-  | { kind: "tool_result", name: string, result: unknown }
-  | { kind: "final", output: unknown }
-  | { kind: "error", error: Error };
 ```
-
-Loom ships with four adapters out of the box: `claude-api`, `claude-code`, `codex`, `litellm`. Each runs in its own worker and emits a unified event stream to the runner.
 
 ### Execution Model
 
-- **Stateless nodes** invoke once per run, consuming their inputs and producing outputs.
-- **Session nodes** (`agent.claude-code`, `agent.codex`) spawn a long-lived subprocess for the duration of a run. Conversation context is preserved across invocations within the same graph execution. When the run ends, the session terminates.
-- **Checkpoints** are committed to SQLite after every node completes. On failure, runs resume from any completed node via *"Continue from here."*
-- **Cancellation** is cooperative. Hitting Stop sends cancel signals down the adapter chain; each adapter is responsible for tearing its subprocess down cleanly.
+- `loadFlow()` parses a recursive `FlowDefinition` from YAML and validates it before execution starts.
+- `executeAgent()` builds the effective agent config, runs hooks, streams adapter tokens, and records `RunAgentResult` timestamps.
+- Child delegation is runtime-driven: parent prompts include child names, descriptions, and capabilities, and the runner can fan out to siblings when the adapter emits a parallel delegation directive.
+- `isolated: true` creates a temporary HOME for the spawned CLI process, while `createScopedMcpConfig()` writes a temporary `.mcp.json` containing only the MCP servers granted to that agent.
+- Role defaults are loaded from `roles/*.yaml` on each run and merged into agents before execution; explicit agent fields still win when both values are present.
 
 ---
 
 ## The Live Canvas
 
-The canvas is the reason you'll want to use Loom.
+The studio is now organized around orchestration, execution, and role authoring.
 
-**Token streams on edges.** Edges carrying the `stream` type render a custom path with points flowing in the direction of data. Speed is proportional to real-time tokens per second — fast streams look like light; slow ones look like a trickle.
+**Workflow editing.** The workflow tab lets you configure the orchestrator and nested child agents, including role assignment, capabilities, isolation, and scoped MCP / hook / skill resources.
 
-**Live meters.** Every executing node shows a progress ring, a running token/cost/latency badge, and, for agent nodes, a thinking bubble with the last few tokens generated.
+**Live transcript.** Runs stream `agent_start`, token, delegate, complete, timeout, abort, and error events into the chat transcript so you can see delegation decisions as they happen.
 
-**Run replay.** When a run finishes, a timeline scrubber appears at the bottom of the canvas. Drag it to rewind the canvas to any point in time. Click a node to see exactly what it received and produced at that moment.
-
-**Type-aware editing.** Dragging from a port highlights compatible targets and dims incompatible ones. When types are close but not equal, Loom suggests inserting a converter node.
-
-**Breakpoints and mocks.** Drop a breakpoint on any node to pause execution there and inspect its inputs. Toggle mock mode on an agent node to replace its output with a fixture — perfect for fast graph iteration without burning tokens.
-
-**Quick spawn.** Double-click the canvas to open a fuzzy node picker. Type a few characters, hit Enter, drop.
+**Role authoring.** The Roles tab edits reusable role YAML files that the runner loads on every run.
 
 ---
 
@@ -269,15 +196,15 @@ The canvas is the reason you'll want to use Loom.
 
 ## Tech Stack
 
-**Frontend.** React 18, TypeScript, Vite, [React Flow](https://reactflow.dev), Tailwind, shadcn/ui, Zustand, Monaco (for in-node code editing).
+**Frontend.** React 19, TypeScript, Vite, Zustand.
 
-**Backend.** Node.js 20+, TypeScript, Fastify (HTTP), `ws` (WebSocket streaming), `better-sqlite3` (traces and checkpoints), `zod` (schema validation), `yaml` (flow parser).
+**Backend.** Node.js 20+, TypeScript, Fastify, `node:sqlite`, `zod`, `yaml`.
 
-**Adapters.** `@anthropic-ai/sdk`, Claude Code CLI wrapper, Codex CLI wrapper, a LiteLLM proxy bridge (spawns a Python `litellm` subprocess on first use).
+**Adapters.** Claude Code CLI wrapper and Codex CLI wrapper, both supporting temporary HOME isolation and scoped MCP config injection.
 
-**Protocol.** [`@modelcontextprotocol/sdk`](https://modelcontextprotocol.io) for MCP.
+**Protocol.** Local MCP server discovery via generated `.mcp.json` files and workspace role/hook/skill YAML definitions.
 
-Loom does not use Electron. It runs as a local HTTP server and opens your default browser — faster startup, smaller install, easier updates.
+Loom does not use Electron. It runs as a local HTTP server and opens your default browser.
 
 ---
 
@@ -287,15 +214,18 @@ Loom does not use Electron. It runs as a local HTTP server and opens your defaul
 loom/
 ├── apps/
 │   ├── studio/              Frontend (Vite + React + React Flow)
-│   │   └── src/{canvas, nodes, edges, palette, inspector, runs}
+│   │   └── src/{app-shell, chat, roles, workflow}
 │   └── server/              Backend (Fastify + TypeScript)
-│       └── src/{api, runner, storage, mcp}
+│       └── src/{index, runner, runner-executor, runner-prompt-builder, runner-resource-loader, trace-store}
 ├── packages/
-│   ├── core/                Shared types and zod schemas
-│   ├── adapters/            {claude-api, claude-code, codex, litellm}
-│   └── nodes/               Node definitions — runtime behavior + UI metadata
-├── examples/                Ready-to-run flow.yaml files
-└── docs/                    Architecture, adapter authoring, node authoring
+│   ├── core/                Shared recursive flow schema, roles, run events
+│   ├── adapters/            {claude-code, codex} runtime adapters
+│   └── nodes/               Flow validation helpers
+├── roles/                   Reusable role defaults (YAML)
+├── hooks/                   Hook definitions (YAML)
+├── skills/                  Skill definitions (YAML)
+├── examples/                Ready-to-run recursive agent flows
+└── docs/                    Architecture and progress notes
 ```
 
 Monorepo managed by pnpm workspaces.
@@ -306,14 +236,13 @@ Monorepo managed by pnpm workspaces.
 
 These are the non-obvious calls Loom makes. Knowing them up front will save you time.
 
-- **Node.js, not Python.** The runtime is Node because Claude Code is Node and wrapping it as a subprocess is trivial. LiteLLM runs as a child Python process, started on demand.
-- **Plain terms, not a bespoke vocabulary.** dot-studio uses `Tal / Dance / Performer / Act`. Loom uses `Flow / Node / Port / Edge / Run`. The cost of inventing vocabulary isn't worth the metaphor.
-- **Condition graphs, not choreography.** Loom is a workflow engine with explicit branching, not a runtime collaboration layer. Agents talk to each other by exchanging values on edges, not by chatting freely.
-- **flow.yaml is the source of truth.** The canvas is a view on the file. Editing `flow.yaml` by hand is a fully supported workflow — the canvas reflects the file, never overrides it.
-- **Run-scoped sessions.** Session nodes (Claude Code, Codex) live for exactly one run. They do not persist across runs. Long-term memory lives in `memory.memento` or `memory.blackboard`, never in CLI process state.
-- **Strong port types, with escape hatches.** Port mismatches are errors by default, but a converter node is always one click away.
-- **Local-first, always.** Loom never phones home. No telemetry, no login, no cloud sync. v1.0 adds *optional* remote execution; it will never be mandatory.
-- **No Electron.** A local HTTP server plus the user's browser beats a 200 MB Electron bundle for startup, memory, and update ergonomics.
+- **Node.js, not Python.** The runtime is Node because both supported agent runtimes are local CLIs that are easy to spawn and supervise from one Fastify process.
+- **Recursive trees, not DAG wiring.** Loom now treats orchestration as a parent/child agent tree. Delegation is explicit and capability-driven instead of being modeled as graph edges.
+- **flow.yaml is still the source of truth.** The studio edits YAML-backed state; roles, hooks, and skills are also plain workspace files.
+- **Run-scoped sessions.** Claude Code and Codex subprocesses live for exactly one run. Isolation is optional per agent, but cleanup is always automatic.
+- **Least-visible resources by default.** MCP access is rebuilt per agent from flow and agent grants, and isolated agents intentionally skip the user's global Claude config.
+- **Local-first, always.** Loom never phones home. No telemetry, no login, no cloud sync.
+- **No Electron.** A local HTTP server plus the user's browser keeps startup and updates simple.
 
 ---
 

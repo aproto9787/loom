@@ -27,12 +27,12 @@ system as it stands at the end of the early v0.1 slices.
 │   POST /runs                 — synchronous RunResponse │
 │   POST /runs/stream          — SSE of RunEvent         │
 │                                                         │
-│   runner.ts ── streamRunFlow(AsyncGenerator<RunEvent>) │
-│     ├─ topological sort                                │
-│     ├─ when: routerId.branch == 'X' skipping           │
-│     ├─ router.code JS expression evaluator             │
-│     ├─ io.file read / write (workspace-scoped)         │
-│     └─ agent.claude / agent.litellm → runtime adapters │
+│   runner.ts ── loadFlow() + public runner exports      │
+│     ├─ runner-executor.ts → streamRunFlow / runFlow    │
+│     ├─ runner-prompt-builder.ts → agent prompt build   │
+│     ├─ runner-resource-loader.ts → roles/hooks/skills  │
+│     ├─ role merge + capability-aware delegation hints  │
+│     └─ isolated HOME + scoped MCP config per agent     │
 │                                                         │
 │   trace-store.ts — node:sqlite (.loom/traces.db)       │
 │     ├─ runs(run_id, flow_name, flow_path, …)           │
@@ -58,25 +58,72 @@ system as it stands at the end of the early v0.1 slices.
 2. `loadFlow()` resolves the path from the workspace root, reads
    the YAML, and hands it to `flowSchema.parse` so the rest of the
    runner can rely on a fully typed `LoomFlow`.
-3. `streamRunFlow()` walks the nodes in topological order. For
-   each node it checks `when:` gating, resolves inputs through the
-   edge references (`$inputs.x`, `node.field`, or `a || b` fallback
-   chains), executes the node body, and yields `node_start`,
-   `node_token*`, `node_complete`, `node_skipped` or `node_error`
-   events. `mcp.server` completions now also attach `meta.mcp.tools`
-   (and `meta.mcp.toolNames`) so streaming clients can render the
-   discovered tool list directly from the event payload. On success it
-   also yields a terminal `run_complete`.
-4. `runFlow()` is a thin consumer of `streamRunFlow()` that collects
-   the final outputs map and rebuilds the original synchronous
-   `RunResponse` shape so `POST /runs` stays backward compatible.
-5. The runner also owns a per-run `RuntimeSession` resource cache. MCP
-   clients created for `flow.mcps[*]` and `mcp.server` nodes are keyed by
-   server id, so `mcp.server` metadata collection and `agent.*`
-   tool-execution loops share one subprocess per server within a run.
-6. Every completed run is persisted to `.loom/traces.db` through
-   `trace-store.ts`, including all node outputs. The SQLite file
-   is gitignored.
+3. `streamRunFlow()` now resolves a recursive `orchestrator` tree,
+   allocates one `AbortController` plus loaded role / hook / skill
+   resources for the run, and emits `run_start`, `agent_start`,
+   `agent_token`, `agent_delegate`, `agent_complete`, `agent_error`,
+   `agent_timeout`, `agent_abort`, `run_complete`, `run_aborted`, or
+   `run_error` events as the tree executes.
+4. `executeAgent()` in `runner-executor.ts` is the runtime core. It
+   builds the effective agent config, chooses the adapter, records
+   per-agent timestamps/results, runs hooks, supports sibling-parallel
+   delegation, and gives isolated agents a temporary HOME plus a
+   scoped `.mcp.json` assembled only from the resources they can see.
+5. `buildConfiguredAgent()` in `runner-prompt-builder.ts` merges role
+   defaults into each agent, recursively applies the same merge to
+   child agents, and injects capability/description metadata into the
+   delegation prompt so parent agents can route work to the most
+   appropriate child.
+6. `runFlow()` is the synchronous wrapper around `executeAgent()` and
+   rebuilds the final `RunResponse` from the collected agent results.
+   Every completed, failed, or aborted run is persisted to
+   `.loom/traces.db` through `trace-store.ts`.
+
+## Agent isolation and scoped resources
+
+`AgentConfig` now carries two orchestration-specific fields:
+
+- `isolated` — when true, the runner creates a temporary HOME for the
+  spawned CLI process and removes it during cleanup. This lets Claude
+  Code or Codex agents run without inheriting the user's default home
+  directory state.
+- `capabilities` — free-form labels that are surfaced into parent
+  prompts so delegation can target the most appropriate child agent.
+
+Resource scoping is assembled from two places:
+
+- Flow-level resources (`flow.resources.{mcps,hooks,skills}`) apply to
+  every agent in the tree.
+- Agent-level resource lists are merged on top via
+  `resolveAgentResources()`.
+
+When an agent has MCP bindings, `createScopedMcpConfig()` writes a
+throwaway `.mcp.json` containing only the selected servers. Non-isolated
+agents may inherit MCP server entries from the user's `~/.claude.json`;
+isolated agents intentionally skip that global file and see only the
+workspace-level `.mcp.json` entries that were explicitly selected.
+
+## Capabilities and roles
+
+Roles live as YAML files in `roles/` and are loaded on each run, plus
+exposed through `GET /roles`, `GET /roles/:name`, `PUT /roles/save`, and
+`DELETE /roles/:name`.
+
+A role can define:
+
+- `type`, `model`, `system`, `effort`, and `description`
+- `capabilities`
+- `isolated`
+- role-scoped MCP defaults
+
+When an agent sets `role: <name>`, `buildConfiguredAgent()` merges role
+values first and then lets explicit agent fields win. In practice this
+means a role can provide default capabilities and isolation, while an
+individual agent can still override them when needed.
+
+On the studio side, the Workflow tab agent editor and the dedicated
+Roles tab both surface these defaults, so authors can see when a role is
+supplying the effective type, effort, isolation, or capability set.
 
 ## Runtime adapters
 
