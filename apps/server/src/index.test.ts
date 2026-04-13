@@ -203,6 +203,7 @@ loomTest("GET /runs and GET /runs/:id return persisted runs from streamed execut
   assert.deepEqual(listBody.runs[0], {
     runId: runStart.runId,
     flowName: "Single Repo Agent Orchestration",
+    status: "success",
     createdAt: listBody.runs[0].createdAt,
     agentCount: 1,
   });

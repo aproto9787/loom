@@ -66,6 +66,7 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
 }));
 
 export interface FlowDefinition {
+  version?: string;
   name: string;
   description?: string;
   repo: string;
@@ -78,6 +79,7 @@ export interface FlowDefinition {
 }
 
 export const flowDefinitionSchema: z.ZodType<FlowDefinition> = z.object({
+  version: z.string().min(1).default("1").optional(),
   name: z.string().min(1),
   description: z.string().min(1).optional(),
   repo: z.string().min(1),
