@@ -17,6 +17,7 @@ import {
   getAgentAtPath,
   useRunStore,
   type AgentRuntime,
+  type RunHistoryItem,
 } from "./store.js";
 
 function applyAgentRuntimeState(
@@ -313,3 +314,77 @@ export function WorkflowTab() {
   );
 }
 
+export function RunsPanel() {
+  const runHistory = useRunStore((s) => s.runHistory);
+  const keyword = useRunStore((s) => s.runHistoryKeyword);
+  const statusFilter = useRunStore((s) => s.runHistoryStatus);
+  const loading = useRunStore((s) => s.runHistoryLoading);
+  const setKeyword = useRunStore((s) => s.setRunHistoryKeyword);
+  const setStatus = useRunStore((s) => s.setRunHistoryStatus);
+  const fetchRunHistory = useRunStore((s) => s.fetchRunHistory);
+
+  useEffect(() => {
+    fetchRunHistory(SERVER_ORIGIN);
+  }, [fetchRunHistory, keyword, statusFilter]);
+
+  useEffect(() => {
+    const interval = setInterval(() => fetchRunHistory(SERVER_ORIGIN), 5000);
+    return () => clearInterval(interval);
+  }, [fetchRunHistory, keyword, statusFilter]);
+
+  return (
+    <div className="flex flex-col h-full p-5 gap-4">
+      <div className="flex items-center gap-3">
+        <input
+          type="text"
+          placeholder="Search runs..."
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          className="flex-1 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatus(e.target.value as typeof statusFilter)}
+          className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm"
+        >
+          <option value="all">All</option>
+          <option value="running">Running</option>
+          <option value="done">Done</option>
+          <option value="error">Error</option>
+        </select>
+      </div>
+      {loading && runHistory.length === 0 ? (
+        <p className="text-slate-400 text-sm">Loading...</p>
+      ) : runHistory.length === 0 ? (
+        <p className="text-slate-400 text-sm">No runs found</p>
+      ) : (
+        <ul className="flex flex-col gap-2 overflow-y-auto">
+          {runHistory.map((run: RunHistoryItem) => (
+            <li
+              key={run.runId}
+              className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white"
+            >
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-slate-900">{run.flowName}</span>
+                <span className="text-xs text-slate-500">
+                  {run.source === "cli" ? "CLI" : "Studio"} · {new Date(run.createdAt).toLocaleString()}
+                </span>
+              </div>
+              <span
+                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  run.status === "running"
+                    ? "bg-blue-100 text-blue-700"
+                    : run.status === "done"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-red-100 text-red-700"
+                }`}
+              >
+                {run.status}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

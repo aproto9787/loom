@@ -11,11 +11,13 @@ export default function App() {
   const setLoadedFlow = useRunStore((s) => s.setLoadedFlow);
   const setLoadError = useRunStore((s) => s.setLoadError);
   const fetchRoles = useRunStore((s) => s.fetchRoles);
+  const fetchRunHistory = useRunStore((s) => s.fetchRunHistory);
   const setActiveTab = useRunStore((s) => s.setActiveTab);
 
   useEffect(() => {
     fetchRoles(SERVER_ORIGIN);
-  }, [fetchRoles]);
+    fetchRunHistory(SERVER_ORIGIN);
+  }, [fetchRoles, fetchRunHistory]);
 
   useEffect(() => {
     let active = true;

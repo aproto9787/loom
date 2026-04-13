@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig } from "@loom/core";
+import type { AgentConfig, AgentType } from "@loom/core";
 import { loadFlow, createScopedMcpConfig } from "../../../apps/server/src/runner.js";
 import { buildConfiguredAgent } from "../../../apps/server/src/runner-prompt-builder.js";
 
@@ -47,6 +48,11 @@ interface LoadedCliFlow {
 
 interface SelectionResult {
   flow: LoadedCliFlow;
+}
+
+interface RunRegistration {
+  runId: string;
+  cleanup: (exitCode: number) => Promise<void>;
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {
@@ -141,6 +147,52 @@ function buildSpawnArgs(agent: AgentConfig): { command: string; args: string[] }
   return { command: "codex", args };
 }
 
+function getServerOrigin(): string {
+  return process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
+}
+
+async function reportCliRunStart(flow: LoadedCliFlow, agentType: AgentType): Promise<RunRegistration> {
+  const runId = randomUUID();
+  const startTime = new Date().toISOString();
+  const origin = getServerOrigin();
+
+  try {
+    await fetch(`${origin}/runs/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        runId,
+        flowPath: flow.relativePath,
+        flowName: flow.flow.name,
+        agentType,
+        startTime,
+        source: "cli",
+      }),
+    });
+  } catch {
+    return { runId, cleanup: async () => undefined };
+  }
+
+  return {
+    runId,
+    cleanup: async (exitCode: number) => {
+      try {
+        await fetch(`${origin}/runs/${runId}/status`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            endTime: new Date().toISOString(),
+            exitCode,
+            status: exitCode === 0 ? "done" : "error",
+          }),
+        });
+      } catch {
+        // Server monitoring is best-effort for CLI launches.
+      }
+    },
+  };
+}
+
 async function createIsolatedHome(systemPrompt: string): Promise<string> {
   const isolatedHome = await mkdtemp(path.join(os.tmpdir(), "loom-cli-home-"));
   await writeFile(
@@ -167,6 +219,7 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   const systemPrompt = configuredAgent.system ?? "";
   const isolatedHome = await createIsolatedHome(systemPrompt);
   const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow.flow, isolatedHome);
+  const registration = await reportCliRunStart(flow, configuredAgent.type);
   const { command, args } = buildSpawnArgs(configuredAgent);
   const child = spawn(command, args, {
     cwd: resolveFlowCwd(flow),
@@ -192,11 +245,9 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
         await rm(path.dirname(scopedMcpConfigPath), { recursive: true, force: true }).catch(() => undefined);
       }
       await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
-      if (signal) {
-        resolve(1);
-        return;
-      }
-      resolve(code ?? 0);
+      const resolvedCode = signal ? 1 : (code ?? 0);
+      await registration.cleanup(resolvedCode);
+      resolve(resolvedCode);
     });
   });
 }

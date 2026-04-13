@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, RoleDefinition, RunEvent, SkillDefinition } from "@loom/core";
+import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, RoleDefinition, RunEvent, RunSource, RunStatus, SkillDefinition } from "@loom/core";
 import { duplicateFlow as duplicateFlowRequest } from "./api.js";
 
 // --- Agent path helpers ---
@@ -120,13 +120,15 @@ export interface AgentRuntime {
 
 // --- Store ---
 
-type RunStatus = "success" | "failed" | "aborted";
-
 export interface RunHistoryItem {
   runId: string;
   flowName: string;
   status: RunStatus;
+  source: RunSource;
   createdAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  exitCode?: number;
   agentCount: number;
 }
 
@@ -140,7 +142,7 @@ interface StudioState {
   isSaving: boolean;
   saveError?: string;
   loadError?: string;
-  activeTab: 'workflow' | 'roles' | 'custom';
+  activeTab: 'workflow' | 'runs' | 'roles' | 'custom';
   duplicateName: string;
   runHistory: RunHistoryItem[];
   runHistoryKeyword: string;
@@ -182,7 +184,7 @@ interface StudioState {
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
 
-  setActiveTab: (tab: 'workflow' | 'roles' | 'custom') => void;
+  setActiveTab: (tab: 'workflow' | 'runs' | 'roles' | 'custom') => void;
   setDuplicateName: (value: string) => void;
   setRunHistoryKeyword: (value: string) => void;
   setRunHistoryStatus: (value: "all" | RunStatus) => void;

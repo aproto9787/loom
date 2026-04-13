@@ -8,7 +8,7 @@ import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinition
 import { validateFlow } from "@loom/nodes";
 import { abortRun, runFlow, streamRunFlow } from "./runner.js";
 import { stringifyFlow } from "./flow-writer.js";
-import { getRun, listRuns } from "./trace-store.js";
+import { createRunRecord, getRun, listRuns, updateRunRecord } from "./trace-store.js";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
 const allowedFlowDir = path.join(workspaceRoot, "examples");
@@ -52,7 +52,22 @@ const runsListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   keyword: z.string().trim().optional(),
-  status: z.enum(["success", "failed", "aborted"]).optional(),
+  status: z.enum(["success", "failed", "aborted", "running", "done", "error"]).optional(),
+});
+
+const registerRunSchema = z.object({
+  runId: z.string().min(1),
+  flowPath: z.string().min(1),
+  flowName: z.string().min(1),
+  agentType: z.enum(["claude-code", "codex"]),
+  startTime: z.string().datetime(),
+  source: z.literal("cli"),
+});
+
+const updateRunStatusSchema = z.object({
+  endTime: z.string().datetime(),
+  exitCode: z.number().int(),
+  status: z.enum(["done", "error"]),
 });
 
 const duplicateFlowSchema = z.object({
@@ -260,6 +275,55 @@ export function buildServer() {
 
     const result = await runFlow(parsed.data.flowPath, parsed.data.userPrompt);
     return reply.code(200).send(result);
+  });
+
+  app.post("/runs/register", async (request, reply) => {
+    const parsed = registerRunSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    createRunRecord({
+      runId: parsed.data.runId,
+      flowName: parsed.data.flowName,
+      flowPath: parsed.data.flowPath,
+      userPrompt: "",
+      output: "",
+      status: "running",
+      source: parsed.data.source,
+      startedAt: parsed.data.startTime,
+      agentResults: [
+        {
+          agentName: parsed.data.agentType,
+          output: "",
+          startedAt: parsed.data.startTime,
+        },
+      ],
+    });
+    return reply.code(201).send({ runId: parsed.data.runId });
+  });
+
+  app.patch("/runs/:id/status", async (request, reply) => {
+    const params = runParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: flattenValidationError(params.error) });
+    }
+
+    const parsed = updateRunStatusSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    const updated = updateRunRecord(params.data.id, {
+      status: parsed.data.status,
+      exitCode: parsed.data.exitCode,
+      endedAt: parsed.data.endTime,
+    });
+    if (!updated) {
+      return reply.code(404).send({ error: { message: "run not found" } });
+    }
+
+    return reply.code(200).send({ runId: params.data.id });
   });
 
   app.post("/runs/stream", async (request, reply) => {
