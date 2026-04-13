@@ -12,6 +12,7 @@ test("runHooks executes matching hooks and ignores missing ones", async () => {
     hooks: ["start", "missing"],
   };
   const resources: RunResources = {
+    roles: new Map(),
     hooks: new Map([
       ["start", { name: "start", event: "on_start", command: `node -e "if (process.env.LOOM_AGENT === 'lead' && process.env.LOOM_CUSTOM === 'ok') process.exit(0); process.exit(1)"` }],
     ]),
@@ -44,6 +45,7 @@ test("runHooks swallows hook failures after logging them", async () => {
       hooks: ["broken"],
     };
     const resources: RunResources = {
+      roles: new Map(),
       hooks: new Map([
         ["broken", { name: "broken", event: "on_start", command: "node -e \"process.exit(9)\"" }],
       ]),

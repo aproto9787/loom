@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentConfig, FlowDefinition } from "@loom/core";
+import type { AgentConfig, FlowDefinition, RoleDefinition } from "@loom/core";
 import { buildAgentPrompt, buildConfiguredAgent } from "./runner-prompt-builder.js";
 import type { RunResources } from "./runner-resource-loader.js";
 
@@ -16,6 +16,7 @@ const flow: FlowDefinition = {
 };
 
 const resources: RunResources = {
+  roles: new Map(),
   hooks: new Map(),
   skills: new Map([
     ["brief", { name: "brief", prompt: "Summarize before acting.", description: "team habit" }],
@@ -58,4 +59,64 @@ test("buildConfiguredAgent adds parallel child guidance when parallel is enabled
   assert.ok(configured.system);
   assert.match(configured.system, /When the task can be split across siblings/);
   assert.match(configured.system, /child-a, child-b/);
+});
+
+test("buildConfiguredAgent inherits role capabilities when agent has none", () => {
+  const agent: AgentConfig = {
+    name: "frontend",
+    type: "claude-code",
+    role: "frontend-dev",
+  };
+  const roles: Map<string, RoleDefinition> = new Map([
+    [
+      "frontend-dev",
+      {
+        name: "frontend-dev",
+        type: "claude-code",
+        system: "Build UI.",
+        capabilities: ["react", "typescript"],
+        isolated: true,
+      },
+    ],
+  ]);
+
+  const configured = buildConfiguredAgent(agent, flow, "/repo", resources, roles);
+
+  assert.deepEqual(configured.capabilities, ["react", "typescript"]);
+  assert.equal(configured.isolated, true);
+  assert.match(configured.system ?? "", /Build UI\./);
+});
+
+test("buildConfiguredAgent lets agent values override role values", () => {
+  const agent: AgentConfig = {
+    name: "frontend",
+    type: "codex",
+    role: "frontend-dev",
+    system: "Own prompt.",
+    description: "Own description.",
+    capabilities: ["storybook"],
+    isolated: false,
+  };
+  const roles: Map<string, RoleDefinition> = new Map([
+    [
+      "frontend-dev",
+      {
+        name: "frontend-dev",
+        type: "claude-code",
+        system: "Build UI.",
+        description: "Role description.",
+        capabilities: ["react", "typescript"],
+        isolated: true,
+      },
+    ],
+  ]);
+
+  const configured = buildConfiguredAgent(agent, flow, "/repo", resources, roles);
+
+  assert.equal(configured.type, "codex");
+  assert.equal(configured.description, "Own description.");
+  assert.deepEqual(configured.capabilities, ["storybook"]);
+  assert.equal(configured.isolated, false);
+  assert.match(configured.system ?? "", /Own prompt\./);
+  assert.doesNotMatch(configured.system ?? "", /Build UI\./);
 });

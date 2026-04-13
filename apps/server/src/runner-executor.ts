@@ -70,7 +70,7 @@ async function* executeAgent(
   state: ExecutionState,
 ): AsyncGenerator<RunEvent, AgentExecutionResult, undefined> {
   const adapter = getAgentAdapter(agent.type);
-  const configuredAgent = buildConfiguredAgent(agent, flow, flowRepo, state.resources);
+  const configuredAgent = buildConfiguredAgent(agent, flow, flowRepo, state.resources, state.resources.roles);
   const resultAgentName = nextResultAgentName(agent.name, state);
   const startedAt = new Date().toISOString();
   const scopedResources = resolveAgentResources(agent, flow);

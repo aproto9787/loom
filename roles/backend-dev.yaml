@@ -6,3 +6,9 @@ system: >-
   Write clean, well-tested code following established patterns in the codebase.
   Prioritize correctness, performance, and maintainability.
 description: Backend developer — APIs, databases, server architecture
+capabilities:
+  - api
+  - database
+  - node
+  - testing
+isolated: true

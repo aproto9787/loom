@@ -40,8 +40,10 @@ export const skillDefinitionSchema: z.ZodType<SkillDefinition> = z.object({
 export interface AgentConfig {
   name: string;
   type: AgentType;
+  role?: string;
   model?: string;
   system?: string;
+  description?: string;
   effort?: 'low' | 'medium' | 'high';
   timeout?: number;
   parallel?: boolean;
@@ -56,8 +58,10 @@ export interface AgentConfig {
 export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   name: z.string().min(1),
   type: agentTypeSchema,
+  role: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
   effort: z.enum(['low', 'medium', 'high']).optional(),
   timeout: z.number().int().positive().optional(),
   parallel: z.boolean().optional(),
@@ -104,6 +108,8 @@ export interface RoleDefinition {
   system: string;
   effort?: 'low' | 'medium' | 'high';
   description?: string;
+  isolated?: boolean;
+  capabilities?: string[];
   mcps?: string[];
 }
 
@@ -114,6 +120,8 @@ export const roleDefinitionSchema: z.ZodType<RoleDefinition> = z.object({
   system: z.string().min(1),
   effort: z.enum(['low', 'medium', 'high']).optional(),
   description: z.string().min(1).optional(),
+  isolated: z.boolean().optional(),
+  capabilities: z.array(z.string().min(1)).optional(),
   mcps: z.array(z.string().min(1)).optional(),
 });
 

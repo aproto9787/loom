@@ -6,7 +6,7 @@ const SERVER_ORIGIN =
   (import.meta.env?.VITE_LOOM_SERVER as string | undefined) ?? "http://localhost:8787";
 
 function emptyRole(): RoleDefinition {
-  return { name: "", type: "claude-code", system: "" };
+  return { name: "", type: "claude-code", system: "", capabilities: [] };
 }
 
 /* ── Shared light-mode input classes ──────────────────────────── */
@@ -56,6 +56,8 @@ export function RolesPanel() {
         system: draft.system.trim(),
         description: draft.description?.trim() || undefined,
         effort: draft.effort || undefined,
+        isolated: draft.isolated,
+        capabilities: (draft.capabilities ?? []).length > 0 ? draft.capabilities : undefined,
         mcps: (draft.mcps ?? []).length > 0 ? draft.mcps : undefined,
       });
       setSelected({ ...draft });
@@ -179,6 +181,61 @@ export function RolesPanel() {
               value={draft.description ?? ""}
               onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
               placeholder="One-line description"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+              System
+            </span>
+            <textarea
+              className={inputLight}
+              value={draft.system}
+              onChange={(e) => setDraft((d) => ({ ...d, system: e.target.value }))}
+              placeholder="Role system prompt"
+              rows={5}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+              Effort
+            </span>
+            <select
+              className={selectLight}
+              value={draft.effort ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, effort: (e.target.value || undefined) as RoleDefinition["effort"] }))}
+            >
+              <option value="">Default</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={draft.isolated ?? false}
+              onChange={(e) => setDraft((d) => ({ ...d, isolated: e.target.checked || undefined }))}
+            />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Isolated</span>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+              Capabilities
+            </span>
+            <input
+              type="text"
+              className={inputLight}
+              value={(draft.capabilities ?? []).join(", ")}
+              onChange={(e) =>
+                setDraft((d) => ({
+                  ...d,
+                  capabilities: e.target.value
+                    .split(",")
+                    .map((entry) => entry.trim())
+                    .filter(Boolean),
+                }))
+              }
+              placeholder="react, typescript, css"
             />
           </label>
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AgentConfig } from "@loom/core";
+import type { AgentConfig, RoleDefinition } from "@loom/core";
 import { SERVER_ORIGIN } from "./chat-run.js";
 import { ResourceToggles } from "./ChatResourceToggles.js";
 import { inputDark, selectDark } from "./chatPanelStyles.js";
@@ -11,6 +11,34 @@ function uniqueSorted(values: string[]): string[] {
 
 function getDiscoveredNames(resources: DiscoveredResource[], type: DiscoveredResource["type"]): string[] {
   return resources.filter((resource) => resource.type === type).map((resource) => resource.name);
+}
+
+function formatCapabilitiesHint(values: string[] | undefined): string {
+  return values?.join(", ") ?? "";
+}
+
+function formatIsolatedHint(value: boolean | undefined): string {
+  if (value === undefined) {
+    return "";
+  }
+  return value ? "Role default: enabled" : "Role default: disabled";
+}
+
+function buildRoleHint(role: RoleDefinition | undefined, field: "type" | "system" | "capabilities" | "isolated"): string {
+  if (!role) {
+    return "";
+  }
+
+  switch (field) {
+    case "type":
+      return `Role default: ${role.type}`;
+    case "system":
+      return role.system ? `Role default: ${role.system}` : "";
+    case "capabilities":
+      return formatCapabilitiesHint(role.capabilities);
+    case "isolated":
+      return formatIsolatedHint(role.isolated);
+  }
 }
 
 export function AgentConfigForm({
@@ -46,8 +74,11 @@ export function AgentConfigForm({
     setCapabilities((agent.capabilities ?? []).join(", "));
   }, [agent.name, agent.type, agent.model, agent.effort, agent.capabilities]);
 
+  const role = useMemo(() => roles.find((entry) => entry.name === agent.role), [agent.role, roles]);
+
+  const effectiveType = agent.type ?? role?.type ?? type;
   const modelOptions =
-    type === "claude-code"
+    effectiveType === "claude-code"
       ? ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
       : ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
 
@@ -124,6 +155,7 @@ export function AgentConfigForm({
             <select
               className={selectDark}
               value={type}
+              title={buildRoleHint(role, "type") || undefined}
               onChange={(e) => {
                 const next = e.target.value as AgentConfig["type"];
                 setType(next);
@@ -139,6 +171,7 @@ export function AgentConfigForm({
             <select
               className={selectDark}
               value={model}
+              title={role?.model ? `Role default: ${role.model}` : undefined}
               onChange={(e) => {
                 const val = e.target.value;
                 setModel(val);
@@ -153,29 +186,21 @@ export function AgentConfigForm({
           </label>
           {roles.length > 0 && (
             <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
-              <span>Import from Role</span>
+              <span>Role</span>
               <select
                 className={selectDark}
-                value=""
+                value={agent.role ?? ""}
+                title={role?.system ? `Role system: ${role.system}` : undefined}
                 onChange={(e) => {
-                  const role = roles.find((r) => r.name === e.target.value);
-                  if (!role) return;
-                  setName(role.name);
-                  setType(role.type);
-                  setModel(role.model ?? "");
-                  setEffort(role.effort ?? "");
-                  updateAgent(path, {
-                    name: role.name,
-                    type: role.type,
-                    model: role.model,
-                    system: role.system,
-                    effort: role.effort,
-                  });
+                  const value = e.target.value || undefined;
+                  const nextRole = roles.find((entry) => entry.name === value);
+                  setType(agent.type ?? nextRole?.type ?? "claude-code");
+                  setModel(agent.model ?? "");
+                  setEffort(agent.effort ?? "");
+                  updateAgent(path, { role: value });
                 }}
               >
-                <option value="" disabled>
-                  Select a role...
-                </option>
+                <option value="">No role</option>
                 {roles.map((r) => (
                   <option key={r.name} value={r.name}>
                     {r.name}
@@ -183,6 +208,15 @@ export function AgentConfigForm({
                   </option>
                 ))}
               </select>
+              {role ? (
+                <div className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                  <div>Type default: {role.type}</div>
+                  {role.model ? <div>Model default: {role.model}</div> : null}
+                  {role.effort ? <div>Effort default: {role.effort}</div> : null}
+                  {role.capabilities?.length ? <div>Capabilities default: {formatCapabilitiesHint(role.capabilities)}</div> : null}
+                  {role.isolated !== undefined ? <div>{formatIsolatedHint(role.isolated)}</div> : null}
+                </div>
+              ) : null}
             </label>
           )}
           <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -190,6 +224,7 @@ export function AgentConfigForm({
             <select
               className={selectDark}
               value={effort}
+              title={role?.effort ? `Role default: ${role.effort}` : undefined}
               onChange={(e) => {
                 const val = e.target.value;
                 setEffort(val);
@@ -201,14 +236,29 @@ export function AgentConfigForm({
               <option value="medium">medium</option>
               <option value="high">high</option>
             </select>
+            {!agent.effort && role?.effort && (
+              <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                Role default: {role.effort}
+              </span>
+            )}
           </label>
-          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          {role?.system && !agent.system && (
+            <p className="m-0 text-[10px] leading-4 text-slate-500">
+              Role system: {role.system}
+            </p>
+          )}
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400" title={buildRoleHint(role, "isolated") || undefined}>
             <input
               type="checkbox"
-              checked={agent.isolated ?? false}
+              checked={agent.isolated ?? role?.isolated ?? false}
               onChange={(e) => updateAgent(path, { isolated: e.target.checked || undefined })}
             />
             <span>Isolated</span>
+            {!agent.isolated && role?.isolated !== undefined && (
+              <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                {buildRoleHint(role, "isolated")}
+              </span>
+            )}
           </label>
           <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
             <span>Capabilities</span>
@@ -216,7 +266,8 @@ export function AgentConfigForm({
               type="text"
               className={inputDark}
               value={capabilities}
-              placeholder="code review, api design"
+              placeholder={agent.capabilities?.length ? "code review, api design" : buildRoleHint(role, "capabilities") || "code review, api design"}
+              title={buildRoleHint(role, "capabilities") || undefined}
               onChange={(e) => setCapabilities(e.target.value)}
               onBlur={() => {
                 const next = capabilities
@@ -227,6 +278,11 @@ export function AgentConfigForm({
                 setCapabilities(next.join(", "));
               }}
             />
+            {!agent.capabilities?.length && role?.capabilities?.length ? (
+              <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                Role default: {formatCapabilitiesHint(role.capabilities)}
+              </span>
+            ) : null}
           </label>
           <ResourceToggles
             agent={agent}

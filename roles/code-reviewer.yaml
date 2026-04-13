@@ -6,3 +6,7 @@ system: >-
   Provide clear, actionable feedback. Flag critical issues first,
   then suggestions for improvement.
 description: Code reviewer — correctness, security, performance analysis
+capabilities:
+  - code-review
+  - architecture
+  - best-practices

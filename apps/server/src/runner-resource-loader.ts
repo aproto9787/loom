@@ -5,14 +5,17 @@ import path from "node:path";
 import YAML from "yaml";
 import {
   hookDefinitionSchema,
+  roleDefinitionSchema,
   skillDefinitionSchema,
   type AgentConfig,
   type FlowDefinition,
   type HookDefinition,
+  type RoleDefinition,
   type SkillDefinition,
 } from "@loom/core";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
+const rolesDir = path.join(workspaceRoot, "roles");
 const hooksDir = path.join(workspaceRoot, "hooks");
 const skillsDir = path.join(workspaceRoot, "skills");
 
@@ -23,12 +26,32 @@ export interface AgentResourceScope {
 }
 
 export interface RunResources {
+  roles: Map<string, RoleDefinition>;
   hooks: Map<string, HookDefinition>;
   skills: Map<string, SkillDefinition>;
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+export async function loadRoleDefinitions(): Promise<Map<string, RoleDefinition>> {
+  const map = new Map<string, RoleDefinition>();
+  try {
+    await mkdir(rolesDir, { recursive: true });
+    const entries = await readdir(rolesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
+      const raw = await readFile(path.join(rolesDir, entry.name), "utf8");
+      const parsed = roleDefinitionSchema.safeParse(YAML.parse(raw));
+      if (parsed.success) {
+        map.set(parsed.data.name, parsed.data);
+      }
+    }
+  } catch {
+    console.warn("Failed to load role definitions");
+  }
+  return map;
 }
 
 export async function loadHookDefinitions(): Promise<Map<string, HookDefinition>> {
@@ -70,8 +93,12 @@ export async function loadSkillDefinitions(): Promise<Map<string, SkillDefinitio
 }
 
 export async function loadRunResources(): Promise<RunResources> {
-  const [hooks, skills] = await Promise.all([loadHookDefinitions(), loadSkillDefinitions()]);
-  return { hooks, skills };
+  const [roles, hooks, skills] = await Promise.all([
+    loadRoleDefinitions(),
+    loadHookDefinitions(),
+    loadSkillDefinitions(),
+  ]);
+  return { roles, hooks, skills };
 }
 
 export function resolveAgentResources(agent: AgentConfig, flow: FlowDefinition): AgentResourceScope {

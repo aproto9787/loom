@@ -1,4 +1,4 @@
-import type { AgentConfig, FlowDefinition, SkillDefinition } from "@loom/core";
+import type { AgentConfig, FlowDefinition, RoleDefinition, SkillDefinition } from "@loom/core";
 import type { RunResources } from "./runner-resource-loader.js";
 import { resolveAgentResources } from "./runner-resource-loader.js";
 
@@ -23,6 +23,28 @@ function formatCapabilities(value: string[] | undefined): string {
   }
 
   return `[${value.map((entry) => JSON.stringify(entry)).join(", ")}]`;
+}
+
+function mergeRoleIntoAgent(agent: AgentConfig, roles: Map<string, RoleDefinition>): AgentConfig {
+  if (!agent.role) {
+    return agent;
+  }
+
+  const role = roles.get(agent.role);
+  if (!role) {
+    return agent;
+  }
+
+  return {
+    ...role,
+    ...agent,
+    type: agent.type ?? role.type,
+    description: agent.description ?? role.description,
+    system: agent.system ?? role.system,
+    capabilities: agent.capabilities ?? role.capabilities,
+    isolated: agent.isolated ?? role.isolated,
+    role: agent.role,
+  };
 }
 
 export function buildAgentPrompt(
@@ -83,15 +105,21 @@ export function buildConfiguredAgent(
   flow: FlowDefinition,
   flowRepo: string,
   resources: RunResources,
+  roles: Map<string, RoleDefinition> = new Map(),
 ): AgentConfig {
+  const mergedAgent = mergeRoleIntoAgent(agent, roles);
+  const mergedChildren = mergedAgent.agents?.map((child) => buildConfiguredAgent(child, flow, flowRepo, resources, roles));
+  const basePrompt = buildAgentPrompt(mergedAgent, flow, flowRepo, resources);
+
   return {
-    ...agent,
+    ...mergedAgent,
+    agents: mergedChildren,
     system:
-      agent.parallel && agent.agents?.length
+      mergedAgent.parallel && mergedChildren?.length
         ? buildParallelChildPrompt(
-            buildAgentPrompt(agent, flow, flowRepo, resources),
-            agent.agents.map((child) => child.name),
+            basePrompt,
+            mergedChildren.map((child) => child.name),
           )
-        : buildAgentPrompt(agent, flow, flowRepo, resources),
+        : basePrompt,
   };
 }
