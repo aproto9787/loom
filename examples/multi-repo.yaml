@@ -8,10 +8,15 @@ orchestrator:
   agents:
     - name: api
       type: codex
+      isolated: true
+      capabilities: ["api", "backend", "database"]
       system: You own the API service repository.
     - name: ui
       type: claude-code
+      isolated: true
+      capabilities: ["frontend", "react", "ux"]
       system: You own the UI repository.
     - name: shared
       type: codex
+      capabilities: ["shared-types", "contracts", "refactors"]
       system: You maintain shared types and contracts.

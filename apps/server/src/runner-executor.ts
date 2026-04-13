@@ -1,5 +1,6 @@
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import type { AgentConfig, FlowDefinition, RunAgentResult, RunEvent, RunResponse } from "@loom/core";
 import { getAgentAdapter, parseParallelDelegationDirective } from "@loom/adapters";
@@ -73,7 +74,8 @@ async function* executeAgent(
   const resultAgentName = nextResultAgentName(agent.name, state);
   const startedAt = new Date().toISOString();
   const scopedResources = resolveAgentResources(agent, flow);
-  const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow);
+  const isolatedHome = agent.isolated ? await mkdtemp(path.join(os.tmpdir(), "loom-agent-home-")) : undefined;
+  const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow, isolatedHome);
   const hookEnv = {
     LOOM_AGENT: agent.name,
     LOOM_AGENT_TYPE: agent.type,
@@ -92,6 +94,7 @@ async function* executeAgent(
       signal: state.abortController.signal,
       timeoutMs,
       env: scopedMcpConfigPath ? { LOOM_MCP_CONFIG_PATH: scopedMcpConfigPath } : undefined,
+      isolatedHome,
       onAbort: () => {
         aborted = true;
       },
@@ -235,6 +238,9 @@ async function* executeAgent(
   } finally {
     if (scopedMcpConfigPath) {
       await rm(path.dirname(scopedMcpConfigPath), { recursive: true, force: true }).catch(() => undefined);
+    }
+    if (isolatedHome) {
+      await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 }

@@ -12,6 +12,7 @@ export interface SpawnController {
   onAbort?: () => void;
   onTimeout?: () => void;
   env?: Record<string, string | undefined>;
+  isolatedHome?: string;
 }
 
 export interface AgentAdapter {

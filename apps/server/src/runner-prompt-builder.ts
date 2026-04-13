@@ -17,6 +17,14 @@ function appendSkillPrompt(sections: string[], skill: SkillDefinition): void {
   sections.push(`[Skill: ${skill.name}]${skill.description ? ` — ${skill.description}` : ""}\n${skill.prompt}`);
 }
 
+function formatCapabilities(value: string[] | undefined): string {
+  if (!value || value.length === 0) {
+    return "[]";
+  }
+
+  return `[${value.map((entry) => JSON.stringify(entry)).join(", ")}]`;
+}
+
 export function buildAgentPrompt(
   agent: AgentConfig,
   flow: FlowDefinition,
@@ -48,10 +56,16 @@ export function buildAgentPrompt(
   }
 
   if (agent.agents?.length) {
-    const children = agent.agents.map((child) => `- name: ${child.name}, type: ${child.type}`);
+    const children = agent.agents.map((child) => [
+      `- name: ${child.name}`,
+      `  type: ${child.type}`,
+      `  capabilities: ${formatCapabilities(child.capabilities)}`,
+      `  description: ${child.system?.trim() || ""}`,
+    ].join("\n"));
     sections.push([
       "You can delegate tasks to these agents:",
       ...children,
+      "First analyze the task, then delegate to the most appropriate child based on its capabilities, description, and role.",
       "If you need to delegate, respond with exactly one line in this format:",
       "DELEGATE <child-agent-name>: <subtask for the child>",
       "Do not add any extra text when delegating.",

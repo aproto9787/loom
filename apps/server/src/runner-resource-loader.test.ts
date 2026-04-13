@@ -54,11 +54,46 @@ test("createScopedMcpConfig writes a filtered config for requested servers", asy
   };
 
   try {
-    const configPath = await createScopedMcpConfig(agent, flow);
+    const configPath = await createScopedMcpConfig(agent, flow, tempHome);
     assert.ok(configPath);
     const raw = await readFile(configPath, "utf8");
     assert.deepEqual(JSON.parse(raw), { mcpServers: { beta: { command: "b" } } });
     await rm(path.dirname(configPath), { recursive: true, force: true });
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("createScopedMcpConfig ignores global MCP config for isolated agents", async () => {
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), "loom-home-"));
+  const originalHome = process.env.HOME;
+  process.env.HOME = tempHome;
+  await writeFile(
+    path.join(tempHome, ".claude.json"),
+    JSON.stringify({ mcpServers: { alpha: { command: "a" } } }),
+    "utf8",
+  );
+
+  const flow: FlowDefinition = {
+    name: "demo",
+    repo: ".",
+    orchestrator: { name: "lead", type: "claude-code" },
+  };
+  const agent: AgentConfig = {
+    name: "child",
+    type: "claude-code",
+    isolated: true,
+    mcps: ["alpha"],
+  };
+
+  try {
+    const configPath = await createScopedMcpConfig(agent, flow, tempHome);
+    assert.equal(configPath, undefined);
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;
@@ -93,7 +128,7 @@ test("createScopedMcpConfig warns when a config source cannot be parsed", async 
   };
 
   try {
-    const configPath = await createScopedMcpConfig(agent, flow);
+    const configPath = await createScopedMcpConfig(agent, flow, tempHome);
     assert.equal(configPath, undefined);
     assert.ok(errors.length >= 1);
     assert.ok(errors.every((message) => /Failed to read MCP config/.test(message)));

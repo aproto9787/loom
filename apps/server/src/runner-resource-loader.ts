@@ -82,14 +82,14 @@ export function resolveAgentResources(agent: AgentConfig, flow: FlowDefinition):
   };
 }
 
-export async function createScopedMcpConfig(agent: AgentConfig, flow: FlowDefinition): Promise<string | undefined> {
+export async function createScopedMcpConfig(agent: AgentConfig, flow: FlowDefinition, homeDir?: string): Promise<string | undefined> {
   const scopedMcps = resolveAgentResources(agent, flow).mcps;
   if (scopedMcps.length === 0) {
     return undefined;
   }
 
   const sources = [
-    path.join(os.homedir(), ".claude.json"),
+    ...(agent.isolated ? [] : [path.join(homeDir ?? os.homedir(), ".claude.json")]),
     path.join(workspaceRoot, ".mcp.json"),
   ];
   const mergedServers: Record<string, unknown> = {};

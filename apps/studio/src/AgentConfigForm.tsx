@@ -36,13 +36,15 @@ export function AgentConfigForm({
   const [type, setType] = useState(agent.type);
   const [model, setModel] = useState(agent.model ?? "");
   const [effort, setEffort] = useState(agent.effort ?? "");
+  const [capabilities, setCapabilities] = useState((agent.capabilities ?? []).join(", "));
 
   useEffect(() => {
     setName(agent.name);
     setType(agent.type);
     setModel(agent.model ?? "");
     setEffort(agent.effort ?? "");
-  }, [agent.name, agent.type, agent.model, agent.effort]);
+    setCapabilities((agent.capabilities ?? []).join(", "));
+  }, [agent.name, agent.type, agent.model, agent.effort, agent.capabilities]);
 
   const modelOptions =
     type === "claude-code"
@@ -199,6 +201,32 @@ export function AgentConfigForm({
               <option value="medium">medium</option>
               <option value="high">high</option>
             </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <input
+              type="checkbox"
+              checked={agent.isolated ?? false}
+              onChange={(e) => updateAgent(path, { isolated: e.target.checked || undefined })}
+            />
+            <span>Isolated</span>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <span>Capabilities</span>
+            <input
+              type="text"
+              className={inputDark}
+              value={capabilities}
+              placeholder="code review, api design"
+              onChange={(e) => setCapabilities(e.target.value)}
+              onBlur={() => {
+                const next = capabilities
+                  .split(",")
+                  .map((entry) => entry.trim())
+                  .filter(Boolean);
+                updateAgent(path, { capabilities: next.length > 0 ? next : undefined });
+                setCapabilities(next.join(", "));
+              }}
+            />
           </label>
           <ResourceToggles
             agent={agent}

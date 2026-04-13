@@ -45,6 +45,8 @@ export interface AgentConfig {
   effort?: 'low' | 'medium' | 'high';
   timeout?: number;
   parallel?: boolean;
+  isolated?: boolean;
+  capabilities?: string[];
   mcps?: string[];
   hooks?: string[];
   skills?: string[];
@@ -59,6 +61,8 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   effort: z.enum(['low', 'medium', 'high']).optional(),
   timeout: z.number().int().positive().optional(),
   parallel: z.boolean().optional(),
+  isolated: z.boolean().optional(),
+  capabilities: z.array(z.string().min(1)).optional(),
   mcps: z.array(z.string().min(1)).optional(),
   hooks: z.array(z.string().min(1)).optional(),
   skills: z.array(z.string().min(1)).optional(),

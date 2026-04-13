@@ -27,7 +27,7 @@ test("buildAgentPrompt includes resource context and delegation instructions", (
     name: "lead",
     type: "claude-code",
     system: "You are lead.",
-    agents: [{ name: "child", type: "codex" }],
+    agents: [{ name: "child", type: "codex", capabilities: ["review"], system: "Reviews code changes." }],
   };
 
   const prompt = buildAgentPrompt(agent, flow, "/repo", resources);
@@ -37,6 +37,9 @@ test("buildAgentPrompt includes resource context and delegation instructions", (
   assert.match(prompt, /Shared flow repo: \/repo/);
   assert.match(prompt, /MCP servers available to you: figma/);
   assert.match(prompt, /Hook resources available to you: boot/);
+  assert.match(prompt, /capabilities: \["review"\]/);
+  assert.match(prompt, /description: Reviews code changes\./);
+  assert.match(prompt, /First analyze the task, then delegate to the most appropriate child based on its capabilities/);
   assert.match(prompt, /DELEGATE <child-agent-name>:/);
 });
 
