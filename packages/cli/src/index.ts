@@ -65,9 +65,16 @@ async function listFlowPaths(cwd: string): Promise<string[]> {
     }));
   }));
 
+  const seen = new Set<string>();
   return discovered
     .flat()
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+    .filter((entry) => {
+      const abs = path.resolve(cwd, entry.relativePath);
+      if (seen.has(abs)) return false;
+      seen.add(abs);
+      return true;
+    })
     .map((entry) => entry.relativePath);
 }
 
@@ -191,10 +198,19 @@ async function promptForSelection(flows: LoadedCliFlow[]): Promise<SelectionResu
 async function main(): Promise<void> {
   const cwd = process.cwd();
   const flowPaths = await listFlowPaths(cwd);
-  if (flowPaths.length === 0) {
-    throw new Error("No flow YAML files found in the current directory or examples/");
+  const loadResults = await Promise.all(
+    flowPaths.map(async (flowPath) => {
+      try {
+        return await loadCliFlow(flowPath, cwd);
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const flows = loadResults.filter((f): f is LoadedCliFlow => f !== null);
+  if (flows.length === 0) {
+    throw new Error("No valid flow YAML files found in the current directory or examples/");
   }
-  const flows = await Promise.all(flowPaths.map((flowPath) => loadCliFlow(flowPath, cwd)));
   const selection = await promptForSelection(flows);
   const exitCode = await launchAgent(selection.flow);
   process.exitCode = exitCode;
