@@ -2,7 +2,7 @@ import { type ReactNode } from "react";
 import { CustomPanel } from "./CustomPanel.js";
 import { RolesPanel } from "./RolesPanel.js";
 
-export const TABS = ["workflow", "chat", "roles", "custom"] as const;
+export const TABS = ["workflow", "roles", "custom"] as const;
 
 export function TabBar({
   activeTab,

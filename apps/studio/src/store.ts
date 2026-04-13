@@ -140,10 +140,7 @@ interface StudioState {
   isSaving: boolean;
   saveError?: string;
   loadError?: string;
-  activeTab: 'workflow' | 'chat' | 'roles' | 'custom';
-  chatRepo: string;
-  chatInput: string;
-  autoRunAfterSave: boolean;
+  activeTab: 'workflow' | 'roles' | 'custom';
   duplicateName: string;
   runHistory: RunHistoryItem[];
   runHistoryKeyword: string;
@@ -185,10 +182,7 @@ interface StudioState {
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
 
-  setActiveTab: (tab: 'workflow' | 'chat' | 'roles' | 'custom') => void;
-  setChatRepo: (path: string) => void;
-  setChatInput: (value: string) => void;
-  setAutoRunAfterSave: (value: boolean) => void;
+  setActiveTab: (tab: 'workflow' | 'roles' | 'custom') => void;
   setDuplicateName: (value: string) => void;
   setRunHistoryKeyword: (value: string) => void;
   setRunHistoryStatus: (value: "all" | RunStatus) => void;
@@ -222,9 +216,6 @@ export const useRunStore = create<StudioState>((set) => ({
   events: [],
   agentRuntimes: {},
   activeTab: 'workflow' as const,
-  chatRepo: '',
-  chatInput: '',
-  autoRunAfterSave: false,
   duplicateName: "",
   runHistory: [],
   runHistoryKeyword: "",
@@ -457,9 +448,6 @@ export const useRunStore = create<StudioState>((set) => ({
     }),
 
   setActiveTab: (tab) => set({ activeTab: tab }),
-  setChatRepo: (path) => set({ chatRepo: path }),
-  setChatInput: (value) => set({ chatInput: value }),
-  setAutoRunAfterSave: (value) => set({ autoRunAfterSave: value }),
   setDuplicateName: (value) => set({ duplicateName: value }),
   setRunHistoryKeyword: (value) => set({ runHistoryKeyword: value }),
   setRunHistoryStatus: (value) => set({ runHistoryStatus: value }),

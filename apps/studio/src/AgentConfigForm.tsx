@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentConfig, RoleDefinition } from "@loom/core";
 import { SERVER_ORIGIN } from "./chat-run.js";
 import { ResourceToggles } from "./ChatResourceToggles.js";
-import { inputDark, selectDark } from "./chatPanelStyles.js";
+import { inputDark, selectDark } from "./panelStyles.js";
 import { useRunStore, type DiscoveredResource } from "./store.js";
 
 function uniqueSorted(values: string[]): string[] {

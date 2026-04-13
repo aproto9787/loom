@@ -1,0 +1,26 @@
+{
+  "name": "loom",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "loom": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@loom/adapters": "workspace:^",
+    "@loom/core": "workspace:^",
+    "@loom/nodes": "workspace:^",
+    "yaml": "^2.8.3"
+  }
+}

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { HistoryTab, WorkflowTab } from "./AppSections.js";
+import { WorkflowTab } from "./AppSections.js";
 import { StaticTabView, TabBar } from "./app-shell.js";
 import { useRunStore } from "./store.js";
 import { SERVER_ORIGIN } from "./chat-run.js";
@@ -58,7 +58,6 @@ export default function App() {
     <div className="flex flex-col min-h-screen bg-white">
       <TabBar activeTab={activeTab} onSelect={setActiveTab} />
       {activeTab === "workflow" && <WorkflowTab />}
-      {activeTab === "chat" && <HistoryTab />}
       <StaticTabView activeTab={activeTab} />
     </div>
   );

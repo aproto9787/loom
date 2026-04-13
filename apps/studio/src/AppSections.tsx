@@ -9,8 +9,8 @@ import {
   type NodeMouseHandler,
 } from "reactflow";
 import { saveFlow } from "./api.js";
-import { SERVER_ORIGIN, parseSseChunk, toRunStreamEvent } from "./chat-run.js";
-import { AgentConfigForm, AgentTree } from "./ChatPanelSections.js";
+import { SERVER_ORIGIN } from "./chat-run.js";
+import { AgentConfigForm } from "./AgentConfigForm.js";
 import { NodePalette } from "./NodePalette.js";
 import { agentTreeToGraph } from "./flowToGraph.js";
 import {
@@ -117,98 +117,22 @@ export function SaveControls() {
   const isDirty = useRunStore((s) => s.isDirty);
   const isSaving = useRunStore((s) => s.isSaving);
   const saveError = useRunStore((s) => s.saveError);
-  const chatInput = useRunStore((s) => s.chatInput);
-  const autoRunAfterSave = useRunStore((s) => s.autoRunAfterSave);
   const beginSave = useRunStore((s) => s.beginSave);
   const endSave = useRunStore((s) => s.endSave);
   const setSaveError = useRunStore((s) => s.setSaveError);
-  const setActiveTab = useRunStore((s) => s.setActiveTab);
-  const setAutoRunAfterSave = useRunStore((s) => s.setAutoRunAfterSave);
-  const beginStream = useRunStore((s) => s.beginStream);
-  const ingest = useRunStore((s) => s.ingest);
-  const endStreamAction = useRunStore((s) => s.endStream);
-
-  const runSavedFlow = useCallback(async () => {
-    const prompt = chatInput.trim();
-    if (!flowDraft || !prompt) return;
-
-    setActiveTab("chat");
-    beginStream();
-
-    let response: Response;
-    try {
-      response = await fetch(`${SERVER_ORIGIN}/runs/stream`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ flowPath, userPrompt: prompt }),
-      });
-    } catch (error) {
-      ingest({
-        kind: "run_error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-      endStreamAction();
-      return;
-    }
-
-    if (!response.ok || !response.body) {
-      const text = await response.text().catch(() => "");
-      ingest({
-        kind: "run_error",
-        message: `HTTP ${response.status}${text ? `: ${text}` : ""}`,
-      });
-      endStreamAction();
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const { blocks, rest } = parseSseChunk(buffer);
-        buffer = rest;
-        for (const block of blocks) {
-          const event = toRunStreamEvent(block);
-          if (event) ingest(event);
-        }
-      }
-    } catch (error) {
-      ingest({
-        kind: "run_error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      endStreamAction();
-      setAutoRunAfterSave(false);
-    }
-  }, [beginStream, chatInput, endStreamAction, flowDraft, flowPath, ingest, setActiveTab, setAutoRunAfterSave]);
 
   const handleSave = useCallback(async () => {
-    if (!flowDraft || isSaving || (!isDirty && !autoRunAfterSave)) return;
+    if (!flowDraft || isSaving || !isDirty) return;
     beginSave();
     try {
       await saveFlow(SERVER_ORIGIN, flowPath, flowDraft);
       endSave(flowDraft);
-      if (autoRunAfterSave) {
-        await runSavedFlow();
-      }
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "save failed");
-      setAutoRunAfterSave(false);
     }
-  }, [autoRunAfterSave, beginSave, endSave, flowDraft, flowPath, isDirty, isSaving, runSavedFlow, setAutoRunAfterSave, setSaveError]);
+  }, [beginSave, endSave, flowDraft, flowPath, isDirty, isSaving, setSaveError]);
 
-  const handleSaveAndRunToggle = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    setAutoRunAfterSave(event.target.checked);
-  }, [setAutoRunAfterSave]);
-
-  const canSave = Boolean(flowDraft) && !isSaving && (isDirty || autoRunAfterSave);
-  const canSaveAndRun = Boolean(flowDraft) && !isSaving && chatInput.trim().length > 0;
+  const canSave = Boolean(flowDraft) && !isSaving && isDirty;
 
   return (
     <div className="flex items-center gap-3">
@@ -218,18 +142,8 @@ export function SaveControls() {
         onClick={handleSave}
         disabled={!canSave}
       >
-        {isSaving ? "Saving..." : isDirty ? "Save flow" : autoRunAfterSave ? "Save & run" : "Saved"}
+        {isSaving ? "Saving..." : isDirty ? "Save flow" : "Saved"}
       </button>
-      <label className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${canSaveAndRun ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-slate-50 text-slate-400"}`}>
-        <input
-          type="checkbox"
-          className="h-3.5 w-3.5"
-          checked={autoRunAfterSave}
-          onChange={handleSaveAndRunToggle}
-          disabled={!canSaveAndRun}
-        />
-        Save then run from Chat prompt
-      </label>
       {saveError ? (
         <p className="m-0 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs">{saveError}</p>
       ) : null}
@@ -399,127 +313,3 @@ export function WorkflowTab() {
   );
 }
 
-export function HistoryTab() {
-  const chatRepo = useRunStore((s) => s.chatRepo);
-  const setChatRepo = useRunStore((s) => s.setChatRepo);
-  const availableFlows = useRunStore((s) => s.availableFlows);
-  const flowPath = useRunStore((s) => s.flowPath);
-  const runHistory = useRunStore((s) => s.runHistory);
-  const runHistoryKeyword = useRunStore((s) => s.runHistoryKeyword);
-  const runHistoryStatus = useRunStore((s) => s.runHistoryStatus);
-  const runHistoryLoading = useRunStore((s) => s.runHistoryLoading);
-  const setRunHistoryKeyword = useRunStore((s) => s.setRunHistoryKeyword);
-  const setRunHistoryStatus = useRunStore((s) => s.setRunHistoryStatus);
-  const fetchRunHistory = useRunStore((s) => s.fetchRunHistory);
-
-  useEffect(() => {
-    fetchRunHistory(SERVER_ORIGIN);
-  }, [fetchRunHistory, runHistoryKeyword, runHistoryStatus]);
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] flex-1 min-h-0">
-      <aside className="p-6 bg-slate-50 border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col gap-6 overflow-y-auto">
-        <div className="flex flex-col gap-1">
-          <p className="m-0 text-xs font-semibold uppercase tracking-wider text-blue-600">
-            Repository
-          </p>
-          <input
-            type="text"
-            className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-mono placeholder:text-slate-400 focus:outline-none focus:border-blue-400 transition-colors"
-            placeholder="/path/to/repo"
-            value={chatRepo}
-            onChange={(e) => setChatRepo(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <p className="m-0 mb-1 text-xs font-semibold uppercase tracking-wider text-blue-600">
-            Flows
-          </p>
-          <ul className="list-none m-0 p-0 space-y-1.5">
-            {availableFlows.length === 0 ? (
-              <li className="text-sm text-slate-500">No flows available</li>
-            ) : (
-              availableFlows.map((candidate) => (
-                <li key={candidate}>
-                  <button
-                    type="button"
-                    className={`w-full px-3 py-2 rounded-lg text-sm font-mono text-left transition-colors ${
-                      candidate === flowPath
-                        ? "bg-slate-900 text-white border border-transparent"
-                        : "bg-white border border-slate-300 text-slate-800 hover:border-slate-400"
-                    }`}
-                    onClick={() => useRunStore.getState().setFlowPath(candidate)}
-                  >
-                    {candidate.replace("examples/", "")}
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="m-0 text-xs font-semibold uppercase tracking-wider text-blue-600">
-                Run History
-              </p>
-              <p className="m-0 mt-1 text-xs text-slate-500">
-                Search prior executions from the API.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
-              onClick={() => fetchRunHistory(SERVER_ORIGIN)}
-              disabled={runHistoryLoading}
-            >
-              {runHistoryLoading ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
-          <input
-            type="search"
-            className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:border-blue-400 transition-colors"
-            placeholder="Search flow or run id"
-            value={runHistoryKeyword}
-            onChange={(e) => setRunHistoryKeyword(e.target.value)}
-          />
-          <select
-            className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:border-blue-400 transition-colors"
-            value={runHistoryStatus}
-            onChange={(e) => setRunHistoryStatus(e.target.value as "all" | "success" | "failed" | "aborted")}
-          >
-            <option value="all">All statuses</option>
-            <option value="success">success</option>
-            <option value="failed">failed</option>
-            <option value="aborted">aborted</option>
-          </select>
-          <div className="max-h-[320px] overflow-y-auto pr-1">
-            {runHistory.length === 0 ? (
-              <p className="m-0 rounded-lg border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-500">
-                {runHistoryLoading ? "Loading run history..." : "No runs matched the current filters."}
-              </p>
-            ) : (
-              <ul className="m-0 flex list-none flex-col gap-2 p-0">
-                {runHistory.map((item) => (
-                  <li key={item.runId} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-slate-900">{item.flowName}</span>
-                      <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
-                        {item.status}
-                      </span>
-                    </div>
-                    <div className="mt-1 font-mono text-xs text-slate-500">Run ID: {item.runId}</div>
-                    <div className="mt-1 text-xs text-slate-500">Created: {new Date(item.createdAt).toLocaleString()}</div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </aside>
-      <main className="flex flex-col min-h-0 p-5">
-        <AgentTree hideAgentConfig />
-      </main>
-    </div>
-  );
-}
