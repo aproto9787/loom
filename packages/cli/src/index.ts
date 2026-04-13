@@ -65,11 +65,16 @@ async function pathExists(targetPath: string): Promise<boolean> {
 }
 
 async function collectYamlFiles(rootDir: string, baseDir = rootDir): Promise<string[]> {
-  const entries = await readdir(rootDir, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await readdir(rootDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
   const nested = await Promise.all(entries.map(async (entry) => {
     const absolutePath = path.join(rootDir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === "node_modules" || entry.name === ".git" || entry.name === "dist") {
+      if (entry.name === "node_modules" || entry.name === ".git" || entry.name === "dist" || entry.name.startsWith(".")) {
         return [];
       }
       return collectYamlFiles(absolutePath, baseDir);
