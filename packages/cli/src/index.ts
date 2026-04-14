@@ -295,8 +295,17 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   const { command, args } = buildSpawnArgs(configuredAgent);
   // Inject flow claudeMd into claude via --append-system-prompt so the real
   // HOME stays untouched (no re-login / onboarding).
-  if (configuredAgent.type === "claude-code" && mergedInstructions.trim().length > 0) {
-    args.push("--append-system-prompt", mergedInstructions);
+  if (configuredAgent.type === "claude-code") {
+    if (mergedInstructions.trim().length > 0) {
+      args.push("--append-system-prompt", mergedInstructions);
+    }
+    // Settings isolation: no global hooks/skills/custom commands inherit.
+    args.push("--settings", "{}");
+    // MCP isolation: only the flow-scoped MCPs (if any), otherwise none.
+    args.push("--strict-mcp-config");
+    if (scopedMcpConfigPath) {
+      args.push("--mcp-config", scopedMcpConfigPath);
+    }
   }
   const litellmEnv = configuredAgent.type === "claude-code" && configuredAgent.model?.startsWith("chatgpt/")
     ? {
