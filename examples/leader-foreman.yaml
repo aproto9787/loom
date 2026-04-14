@@ -61,11 +61,11 @@ orchestrator:
         - to: leader
           when: BRIEFING or REPORT validation is complete.
     - name: foreman
-      type: codex
+      type: claude-code
       team:
         - id: execution
           role: foreman
-      model: gpt-5.4
+      model: chatgpt/gpt-5.4
       system: |
         You are the foreman. Given a BRIEFING, execute autonomously:
         - Investigate with Read/Glob/Grep/Bash

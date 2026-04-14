@@ -260,6 +260,12 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow.flow, isolatedHome);
   const registration = await reportCliRunStart(flow, configuredAgent.type);
   const { command, args } = buildSpawnArgs(configuredAgent);
+  const litellmEnv = configuredAgent.type === "claude-code" && configuredAgent.model?.startsWith("chatgpt/")
+    ? {
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:4000",
+        ANTHROPIC_AUTH_TOKEN: "dummy-token",
+      }
+    : {};
   const child = spawn(command, args, {
     cwd: resolveFlowCwd(flow),
     stdio: "inherit",
@@ -275,6 +281,7 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
       CLAUDE_CODE_TEAMMATE_COMMAND: "/home/argoss/.claude/codex-bridge/codex-bridge.mjs",
       LOOM_FLOW_PATH: flow.absolutePath,
       LOOM_FLOW_NAME: flow.flow.name,
+      ...litellmEnv,
       ...(scopedMcpConfigPath ? { LOOM_MCP_CONFIG_PATH: scopedMcpConfigPath } : {}),
     },
   });
