@@ -141,10 +141,7 @@ function buildSpawnArgs(agent: AgentConfig): { command: string; args: string[] }
     return { command: "claude", args };
   }
 
-  const args = [
-    "--skip-git-repo-check",
-    "--dangerously-bypass-approvals-and-sandbox",
-  ];
+  const args = ["--dangerously-bypass-approvals-and-sandbox"];
   if (agent.model) {
     args.push("-m", agent.model);
   }
