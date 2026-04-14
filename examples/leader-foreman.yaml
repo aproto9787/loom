@@ -101,6 +101,7 @@ teams:
 orchestrator:
   name: leader
   type: claude-code
+  role: orchestrator-lead
   team:
     - id: leadership
       role: orchestrator
@@ -124,6 +125,7 @@ orchestrator:
   agents:
     - name: user-advocate
       type: claude-code
+      role: user-advocate
       team:
         - id: leadership
           role: validator
@@ -140,6 +142,7 @@ orchestrator:
           when: BRIEFING or REPORT validation is complete.
     - name: foreman
       type: claude-code
+      role: foreman
       team:
         - id: execution
           role: foreman
@@ -165,6 +168,7 @@ orchestrator:
       agents:
         - name: codex-impl-1
           type: codex
+          role: backend-dev
           team:
             - id: execution
               role: implementer
@@ -176,6 +180,7 @@ orchestrator:
           effort: high
         - name: codex-impl-2
           type: codex
+          role: backend-dev
           team:
             - id: execution
               role: implementer
@@ -187,6 +192,7 @@ orchestrator:
           effort: high
         - name: codex-reviewer
           type: codex
+          role: code-reviewer
           team:
             - id: review
               role: reviewer
@@ -200,6 +206,7 @@ orchestrator:
           effort: high
         - name: codex-fix
           type: codex
+          role: backend-dev
           team:
             - id: execution
               role: fixer
