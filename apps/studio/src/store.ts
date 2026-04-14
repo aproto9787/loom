@@ -142,7 +142,7 @@ interface StudioState {
   isSaving: boolean;
   saveError?: string;
   loadError?: string;
-  activeTab: 'workflow' | 'runs' | 'roles' | 'custom';
+  activeTab: 'workflow' | 'claudeMd' | 'delegation' | 'runs' | 'roles' | 'custom';
   duplicateName: string;
   runHistory: RunHistoryItem[];
   runHistoryKeyword: string;
@@ -185,7 +185,7 @@ interface StudioState {
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
 
-  setActiveTab: (tab: 'workflow' | 'runs' | 'roles' | 'custom') => void;
+  setActiveTab: (tab: 'workflow' | 'claudeMd' | 'delegation' | 'runs' | 'roles' | 'custom') => void;
   setDuplicateName: (value: string) => void;
   setRunHistoryKeyword: (value: string) => void;
   setRunHistoryStatus: (value: "all" | RunStatus) => void;

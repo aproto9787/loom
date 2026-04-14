@@ -54,7 +54,7 @@ function normalizeDelegationRule(rule: DelegationRule): DelegationRule | null {
   return { to, when };
 }
 
-function DelegationRowEditor({
+export function DelegationRowEditor({
   rules,
   options,
   onChange,

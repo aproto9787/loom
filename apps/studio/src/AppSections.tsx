@@ -9,10 +9,8 @@ import {
   type NodeMouseHandler,
 } from "reactflow";
 import { saveFlow } from "./api.js";
-import { inputDark } from "./panelStyles.js";
 import { SERVER_ORIGIN } from "./sse-run.js";
 import { AgentConfigForm } from "./AgentConfigForm.js";
-import { ClaudeMdLibraryPanel } from "./ClaudeMdLibraryPanel.js";
 import { NodePalette } from "./NodePalette.js";
 import { agentTreeToGraph } from "./flowToGraph.js";
 import {
@@ -156,12 +154,6 @@ export function SaveControls() {
 
 function FlowSettingsForm() {
   const flowDraft = useRunStore((s) => s.flowDraft);
-  const updateFlowDraft = useRunStore((s) => s.updateFlowDraft);
-  const [claudeMd, setClaudeMd] = useState(flowDraft?.claudeMd ?? "");
-
-  useEffect(() => {
-    setClaudeMd(flowDraft?.claudeMd ?? "");
-  }, [flowDraft?.claudeMd]);
 
   if (!flowDraft) {
     return (
@@ -173,25 +165,9 @@ function FlowSettingsForm() {
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
-        <span>Flow CLAUDE.md</span>
-        <textarea
-          className={inputDark}
-          value={claudeMd}
-          placeholder="Flow-wide Claude instructions (applied to every agent)"
-          rows={10}
-          onChange={(e) => setClaudeMd(e.target.value)}
-          onBlur={() => {
-            const next = claudeMd.trim();
-            updateFlowDraft({ claudeMd: next || undefined });
-            setClaudeMd(next);
-          }}
-        />
-        <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
-          Prepended before any agent-specific claudeMdLibrary entry selected by ref.
-        </span>
-      </label>
-      <ClaudeMdLibraryPanel />
+      <p className="m-0 rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-4 py-5 text-sm text-slate-400">
+        Manage flow-level CLAUDE.md in the CLAUDE.md tab.
+      </p>
     </div>
   );
 }

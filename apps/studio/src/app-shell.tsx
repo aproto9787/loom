@@ -1,9 +1,11 @@
 import { type ReactNode } from "react";
 import { CustomPanel } from "./CustomPanel.js";
+import ClaudeMdTab from "./ClaudeMdTab.js";
+import DelegationTab from "./DelegationTab.js";
 import { RolesPanel } from "./RolesPanel.js";
 import { RunsPanel } from "./AppSections.js";
 
-export const TABS = ["workflow", "runs", "roles", "custom"] as const;
+export const TABS = ["workflow", "claudeMd", "delegation", "runs", "roles", "custom"] as const;
 
 export function TabBar({
   activeTab,
@@ -33,6 +35,12 @@ export function TabBar({
 }
 
 export function StaticTabView({ activeTab }: { activeTab: (typeof TABS)[number] }) {
+  if (activeTab === "claudeMd") {
+    return <ClaudeMdTab />;
+  }
+  if (activeTab === "delegation") {
+    return <DelegationTab />;
+  }
   if (activeTab === "runs") {
     return <RunsPanel />;
   }
