@@ -300,6 +300,18 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
         ANTHROPIC_AUTH_TOKEN: "dummy-token",
       }
     : {};
+
+  // Hand the TTY back to the child cleanly: readline may have left stdin
+  // in raw mode with bracketed-paste/mouse tracking off, which breaks
+  // ctrl+v, arrow keys, etc. when claude takes over with stdio:inherit.
+  if (process.stdin.isTTY) {
+    try { process.stdin.setRawMode(false); } catch { /* ignore */ }
+  }
+  process.stdin.pause();
+  if (process.stdout.isTTY && typeof process.stdout.write === "function") {
+    process.stdout.write("\x1b[?2004h"); // re-enable bracketed paste
+  }
+
   const child = spawn(command, args, {
     cwd: resolveFlowCwd(flow),
     stdio: "inherit",
