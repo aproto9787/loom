@@ -1,3 +1,4 @@
+version: "1"
 name: Leader-Foreman-Workers
 description: |
   The only flow. Leader (Opus) orchestrates. user-advocate validates intent.
@@ -5,7 +6,6 @@ description: |
   roster based on task shape — impl, fix, review, analyst, frontend,
   debate team. Delegation rules decide which few fire per BRIEFING.
 repo: ..
-
 claudeMd: |
   # Flow Common Policy (적용: 모든 에이전트)
 
@@ -27,7 +27,6 @@ claudeMd: |
   - 성공 기준 선정의: 복잡한 작업은 검증 방법을 먼저 정한 뒤 그 기준까지 자율 루프.
   - 언어: 사용자 설명은 한국어, 코드 산출물(커밋/PR/CHANGELOG/README)은 영어.
   - 리소스: 메모리 100% 도달 금지 — 가용 3Gi 이하면 추가 spawn 보류.
-
 claudeMdLibrary:
   base-worker-rules: |
     # Worker Rules
@@ -35,34 +34,81 @@ claudeMdLibrary:
     - 결과는 file:line으로 근거 제시. 추측 보고 금지.
     - 불확실하면 부모에게 SendMessage로 질문. 임의 추측 진행 금지.
     - 완료 시 명확한 요약 1~3줄 + artifact 경로로 보고.
-  leader-rules: |
+  user-advocate-rules: |
+    # User-Advocate Rules — 4-axis verification
+    - 입력은 사용자의 원 요청과 검증 대상(BRIEFING 또는 REPORT)뿐이라고 가정하고 판정한다.
+    - 출력은 PASS 또는 FAIL 한 단어로 시작하고, 이어서 축별 판정 근거를 4줄 이내로 적는다.
+
+    ## Axis 1 — intent alignment
+    - 사용자가 실제로 원하는 결과와 직접 연결되는지 본다.
+    - 요청 핵심 산출물, 제약, 완료 조건이 빠지면 FAIL.
+
+    ## Axis 2 — over-engineering
+    - 요청 달성에 필요 없는 추상화, 확장성, 리팩토링, 옵션화가 끼어들었는지 본다.
+    - 현재 요청에 없는 구조 개선이 중심이 되면 FAIL.
+
+    ## Axis 3 — goal shrinking
+    - 어려움 때문에 목표를 더 작은 과업으로 몰래 축소했는지 본다.
+    - 부분 구현, 문서화로의 대체, 임시 수동 절차 전환은 사용자 허락 없으면 FAIL.
+
+    ## Axis 4 — direction drift
+    - 처음 방향과 다른 문제를 풀고 있지 않은지 본다.
+    - 비슷해 보이지만 다른 레이어, 다른 파일군, 다른 성공 기준으로 이동하면 FAIL.
+
+    ## Verdict rule
+    - 네 축 중 하나라도 FAIL이면 전체 verdict는 FAIL.
+    - 애매하면 PASS로 관대하게 넘기지 말고, 부족한 정보 또는 어긋난 지점을 짧게 적고 FAIL.
+  leader-rules: >
     # Leader Rules — 오케스트레이터 전용
 
+
     ## 작업 라우팅
+
     리더 직접 처리 예외 (아래 외 전부 팀에 위임):
+
     1. 단순 질답 — 한 문장 답변 가능
+
     2. 명백한 단일 파일 검색 — Glob/Grep 1회
+
     3. 복잡도 판정 결과 = 저
+
 
     그 외는 리더가 직접 저/중/고를 판정 후 분기. 별도 판정 에이전트 호출 없음.
 
+
     ## 복잡도 분기
+
     | 레벨 | 처리 |
+
     |---|---|
+
     | 저 | 리더가 직접 Read/Edit/Bash로 처리 후 보고 |
-    | 중 | BRIEFING → user-advocate 선검증 → foreman 위임 → REPORT → user-advocate 후검증 → 보고 |
+
+    | 중 | BRIEFING → user-advocate 선검증 → foreman 위임 → REPORT → user-advocate 후검증
+    → 보고 |
+
     | 고 | 중과 동일 + BRIEFING 선검증 강제 |
 
+
     ## 가능/금지
+
     | | 가능 | 금지 |
+
     |---|---|---|
+
     | 저 | Read/Edit/Bash 직접 | — |
-    | 중/고 | BRIEFING 작성, foreman 위임, REPORT 수신, user-advocate 호출, 통합 보고 | 코드 수정, 광범위 탐색, 분석, 테스트 실행 |
+
+    | 중/고 | BRIEFING 작성, foreman 위임, REPORT 수신, user-advocate 호출, 통합 보고 | 코드 수정,
+    광범위 탐색, 분석, 테스트 실행 |
+
 
     - 저로 시작해 Read/Grep 3회 초과 또는 접근 파일 3개 이상으로 확장되면 즉시 중으로 승격.
 
+
     ## 검증
+
     - 팀 작업 결과는 사용자 보고 전 user-advocate 검증 필수
+
     - FAIL 시 리더가 1회 자율 수정 → 재검증 → 여전히 FAIL이면 사유와 함께 보고
   foreman-rules: |
     # Foreman Rules — 자율 실행자
@@ -91,7 +137,6 @@ claudeMdLibrary:
     - 되묻지 말 것. BRIEFING 정보로 판단.
     - 범위 밖 리팩토링 금지. 인접 불가침.
     - 리뷰 fix 루프 상한 도달 시 status: blocked + 사유.
-
 teams:
   - id: leadership
     description: Leader orchestration and user-intent validation.
@@ -105,55 +150,60 @@ teams:
     description: Opus-only UI specialist.
   - id: discussion
     description: Debater-synthesizer triplet for design decisions.
-
 orchestrator:
   name: leader
   type: claude-code
   role: orchestrator-lead
-  model: claude-opus-4-6
   team:
     - id: leadership
       role: orchestrator
-  claudeMdRef: leader-rules
+  model: claude-opus-4-6
   system: |
     You are the team leader. Judge complexity first, handle trivial work
     yourself, delegate anything mid or high to the team. Never explore or
     modify code on mid/high tasks — write a BRIEFING, route through
     user-advocate and foreman, and report the final outcome.
+  claudeMdRef: leader-rules
+  skills: [complexity-rubric, verification-checklist, briefing-format, concise]
+  hooks: [memory-check, git-state, briefing-reminder, log-start]
+  effort: high
   delegation:
     - to: user-advocate
       when: Before BRIEFING handoff and after REPORT receipt for intent validation.
     - to: foreman
       when: Task complexity is medium or high and execution should be delegated.
-  effort: high
   agents:
     - name: user-advocate
       type: claude-code
       role: user-advocate
-      model: claude-sonnet-4-5
       team:
         - id: leadership
           role: validator
+      model: claude-sonnet-4-5
       system: |
         Validate the BRIEFING or REPORT against the user's original request
         on four axes: intent alignment, over-engineering, goal shrinking,
         direction drift. Return PASS or FAIL with a concise reason.
+      claudeMdRef: user-advocate-rules
+      skills: [verification-checklist, concise]
       delegation:
         - to: leader
           when: Validation complete.
-
     - name: foreman
-      type: claude-code
+      type: codex
       role: foreman
-      model: chatgpt/gpt-5.4
       team:
         - id: execution
           role: foreman
-      claudeMdRef: foreman-rules
+      model: gpt-5.4
       system: |
         Autonomous executor. Read the BRIEFING, spawn the right workers
         from your team, chain them through review/fix if code changes,
         and emit a REPORT with file:line artifacts.
+      claudeMdRef: foreman-rules
+      skills: [briefing-format, commit-style, review-checklist, concise]
+      hooks: [log-start, log-complete]
+      effort: high
       delegation:
         - to: codex-impl-1
           when: A backend implementation slice is ready for parallel execution.
@@ -164,7 +214,8 @@ orchestrator:
         - to: claude-frontend
           when: The task is frontend / UI work (Opus-only).
         - to: codex-analyst-1
-          when: Investigation, call-graph tracing, or research is required before implementation.
+          when: Investigation, call-graph tracing, or research is required before
+            implementation.
         - to: codex-analyst-2
           when: A second analyst angle is needed for parallel investigation.
         - to: codex-reviewer
@@ -177,133 +228,133 @@ orchestrator:
           when: A counter stance is needed.
         - to: synthesizer
           when: Debater outputs should be synthesized into a single recommendation.
-      effort: high
       agents:
         - name: codex-impl-1
           type: codex
           role: backend-dev
-          model: gpt-5.4
           team:
             - id: execution
               role: implementer
-          claudeMdRef: base-worker-rules
+          model: gpt-5.4
           system: Backend implementer. Stay inside the assigned slice.
+          claudeMdRef: base-worker-rules
+          skills: [commit-style, concise]
           effort: high
-
         - name: codex-impl-2
           type: codex
           role: backend-dev
-          model: gpt-5.4
           team:
             - id: execution
               role: implementer
-          claudeMdRef: base-worker-rules
+          model: gpt-5.4
           system: Second backend implementer for parallel work.
+          claudeMdRef: base-worker-rules
+          skills: [commit-style, concise]
           effort: high
-
         - name: codex-impl-3
           type: codex
           role: backend-dev
-          model: gpt-5.4
           team:
             - id: execution
               role: implementer
-          claudeMdRef: base-worker-rules
+          model: gpt-5.4
           system: Third backend implementer for parallel work.
+          claudeMdRef: base-worker-rules
+          skills: [commit-style, concise]
           effort: high
-
         - name: claude-frontend
           type: claude-code
           role: claude-frontend
-          model: claude-opus-4-6
           team:
             - id: frontend
               role: specialist
-          claudeMdRef: base-worker-rules
+          model: claude-opus-4-6
           system: |
             Frontend specialist (Opus only). Build/modify UI, validate
             in browser when possible. Never hand off UI work to Codex.
+          claudeMdRef: base-worker-rules
+          skills: [commit-style, review-checklist]
           effort: high
-
         - name: codex-analyst-1
           type: codex
           role: codex-analyst
-          model: gpt-5.4
           team:
             - id: research
               role: analyst
-          claudeMdRef: base-worker-rules
+          model: gpt-5.4
           system: Read-only investigator. Trace, cite, report. No edits.
+          claudeMdRef: base-worker-rules
+          skills: [concise]
           effort: high
-
         - name: codex-analyst-2
           type: codex
           role: codex-analyst
-          model: gpt-5.4
           team:
             - id: research
               role: analyst
-          claudeMdRef: base-worker-rules
+          model: gpt-5.4
           system: Second analyst for parallel or cross-angle investigation.
+          claudeMdRef: base-worker-rules
+          skills: [concise]
           effort: high
-
         - name: codex-reviewer
           type: codex
           role: code-reviewer
-          model: gpt-5.4
           team:
             - id: review
               role: reviewer
-          claudeMdRef: base-worker-rules
+          model: gpt-5.4
           system: |
             Review impl output against BRIEFING acceptance. Return PASS or
             FAIL with concrete file:line findings.
+          claudeMdRef: base-worker-rules
+          skills: [review-checklist, concise]
           effort: high
-
         - name: codex-fix
           type: codex
           role: codex-fix
-          model: gpt-5.4
           team:
             - id: execution
               role: fixer
-          claudeMdRef: base-worker-rules
+          model: gpt-5.4
           system: |
             Apply surgical fixes only to reviewer-flagged lines. No
             refactoring, no scope creep.
+          claudeMdRef: base-worker-rules
+          skills: [concise]
           effort: high
-
         - name: debater-a
           type: claude-code
           role: debater
-          model: claude-sonnet-4-5
           team:
             - id: discussion
               role: debater
-          claudeMdRef: base-worker-rules
+          model: claude-sonnet-4-5
           system: First-stance debater. Argue the position with evidence.
+          claudeMdRef: base-worker-rules
+          skills: [concise]
           effort: high
-
         - name: debater-b
           type: claude-code
           role: debater
-          model: claude-sonnet-4-5
           team:
             - id: discussion
               role: debater
-          claudeMdRef: base-worker-rules
+          model: claude-sonnet-4-5
           system: Counter-stance debater. Argue the opposing position.
+          claudeMdRef: base-worker-rules
+          skills: [concise]
           effort: high
-
         - name: synthesizer
           type: claude-code
           role: synthesizer
-          model: claude-sonnet-4-5
           team:
             - id: discussion
               role: synthesizer
-          claudeMdRef: base-worker-rules
+          model: claude-sonnet-4-5
           system: |
             Read both debater outputs, pick a side or escalate. No bland
             compromise nobody argued for.
+          claudeMdRef: base-worker-rules
+          skills: [concise]
           effort: high

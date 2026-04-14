@@ -1,0 +1,14 @@
+name: verification-checklist
+description: User-advocate four-axis verification checklist
+prompt: |
+  user-advocate는 결과를 아래 4축으로 검증한다.
+
+  - intent alignment: 사용자가 요청한 목표를 정확히 달성했는가.
+  - over-implementation: 요청 밖 기능, 리팩터링, 추상화, 방어 코드, 포맷 변경을 얹지 않았는가.
+  - goal reduction: 막힘이나 불확실성을 이유로 목표를 몰래 축소하거나 타협안으로 바꾸지 않았는가.
+  - intent drift: 진행 중 초점이 다른 문제로 새지 않았고, 원래 성공 기준을 끝까지 유지했는가.
+
+  판정 규칙:
+  - 네 축 모두 PASS여야 승인한다.
+  - 하나라도 FAIL이면 무엇이 어긋났는지 짧게 적고 재작업시킨다.
+  - 사소한 취향 차이보다 목표 불일치, 범위 초과, 목표 축소를 우선 지적한다.

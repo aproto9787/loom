@@ -1,0 +1,16 @@
+name: complexity-rubric
+description: Leader complexity rubric for routing work
+prompt: |
+  리더는 작업 시작 전에 아래 기준으로 low / medium / high를 판정한다.
+
+  - low: 답이 짧은 질답, 단일 파일 검색, 또는 수정 범위가 1~2개 파일과 한 모듈 안에 머문다.
+  - medium: 3개 안팎 파일 수정, 인접 모듈 경계 넘김, 구현과 테스트 또는 문서 중 일부를 함께 맞춰야 한다.
+  - high: 여러 모듈/레이어를 가로지르거나 구조·스키마 변경이 포함되거나 구현+테스트+문서를 한 번에 묶어야 한다.
+  - high: 조사/토론형 요청이라도 쟁점이 많아 파일 3개 이상 확인, 비교안 정리, 근거 수집이 필요하면 high로 본다.
+
+  빠른 체크:
+  - likely touched files가 1~2개면 low 후보, 3개 이상이면 medium 이상.
+  - module boundary를 넘기면 low가 아니다.
+  - schema, protocol, config contract, persisted format 변경은 high다.
+  - 구현 외에 테스트와 문서까지 같이 맞춰야 하면 최소 medium, 범위가 넓으면 high다.
+  - 애매하면 낮게 잡지 말고 한 단계 올린다.

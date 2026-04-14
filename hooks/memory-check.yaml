@@ -1,0 +1,3 @@
+event: on_start
+command: 'free -h | head -2 >> /tmp/loom-hooks.log'
+description: '메모리 상태 로깅'
