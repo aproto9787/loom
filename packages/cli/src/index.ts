@@ -2,7 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -225,6 +225,14 @@ function resolveAgentClaudeMd(flow: LoadedCliFlow, agent: AgentConfig): string |
   return flow.flow.claudeMdLibrary?.[ref];
 }
 
+async function readOptional(filePath: string): Promise<string | undefined> {
+  try {
+    return await readFile(filePath, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
 async function createIsolatedHome(
   systemPrompt: string,
   flowClaudeMd: string | undefined,
@@ -233,19 +241,30 @@ async function createIsolatedHome(
 ): Promise<string> {
   const isolatedHome = await mkdtemp(path.join(os.tmpdir(), "loom-cli-home-"));
   const mergedInstructions = mergeClaudeMd(flowClaudeMd, agentClaudeMd, configuredAgent);
+  const realHome = os.homedir();
 
   if (configuredAgent.type === "claude-code") {
     const claudeDir = path.join(isolatedHome, ".claude");
     await mkdir(claudeDir, { recursive: true });
-    await writeFile(
-      path.join(isolatedHome, ".claude.json"),
-      JSON.stringify({ env: {}, permissions: { allow: [] } }, null, 2),
-      "utf8",
-    );
+    const realClaudeJsonRaw = await readOptional(path.join(realHome, ".claude.json"));
+    let merged: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
+    if (realClaudeJsonRaw) {
+      try {
+        const real = JSON.parse(realClaudeJsonRaw) as Record<string, unknown>;
+        for (const key of ["oauthAccount", "userId", "accessToken", "sessionToken", "email"]) {
+          if (real[key] !== undefined) merged[key] = real[key];
+        }
+      } catch { /* fall back to empty overrides */ }
+    }
+    await writeFile(path.join(isolatedHome, ".claude.json"), JSON.stringify(merged, null, 2), "utf8");
     await writeFile(path.join(claudeDir, "CLAUDE.md"), mergedInstructions, "utf8");
   } else {
     const codexDir = path.join(isolatedHome, ".codex");
     await mkdir(codexDir, { recursive: true });
+    const realAuth = await readOptional(path.join(realHome, ".codex", "auth.json"));
+    if (realAuth) {
+      await writeFile(path.join(codexDir, "auth.json"), realAuth, "utf8");
+    }
     await writeFile(path.join(codexDir, "AGENTS.md"), mergedInstructions, "utf8");
     await writeFile(
       path.join(codexDir, "config.toml"),
