@@ -394,7 +394,7 @@ export function buildServer() {
 
     // ── Claude resources ────────────────────────────────────────
 
-    // MCPs
+    // MCPs — Claude side
     const mcpSources = [
       path.join(homedir(), ".claude.json"),
       path.join(workspaceRoot, ".mcp.json"),
@@ -410,6 +410,22 @@ export function buildServer() {
         }
       } catch { /* skip */ }
     }
+
+    // MCPs — Codex side (~/.codex/config.toml's [mcp_servers.NAME] sections)
+    const codexConfigPath = path.join(homedir(), ".codex", "config.toml");
+    try {
+      const raw = await readFile(codexConfigPath, "utf8");
+      const mcpSectionRegex = /^\[mcp_servers\.([^\]]+)\]/gm;
+      let match;
+      const seen = new Set<string>();
+      while ((match = mcpSectionRegex.exec(raw)) !== null) {
+        const name = match[1].trim();
+        if (!seen.has(name)) {
+          seen.add(name);
+          resources.push({ type: "mcp", name, source: codexConfigPath, platform: "codex" });
+        }
+      }
+    } catch { /* skip */ }
 
     // Hooks
     const hookSources = [

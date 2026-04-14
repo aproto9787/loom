@@ -320,7 +320,11 @@ export function AgentConfigForm({
 
   const resourcePlatform: DiscoveredResource["platform"] = effectiveType === "codex" ? "codex" : "claude";
   const mcpOptions = useMemo(
-    () => uniqueSorted([...availableMcps, ...getDiscoveredNames(discoveredResources, "mcp", resourcePlatform)]),
+    () => {
+      // availableMcps comes from /mcps (Claude-only) — skip it for Codex agents
+      const base = resourcePlatform === "claude" ? availableMcps : [];
+      return uniqueSorted([...base, ...getDiscoveredNames(discoveredResources, "mcp", resourcePlatform)]);
+    },
     [availableMcps, discoveredResources, resourcePlatform],
   );
   const hookOptions = useMemo(
