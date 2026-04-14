@@ -1,9 +1,11 @@
 name: Leader-Foreman-Workers
 description: |
-  Mirrors the current team workflow — a leader orchestrator delegates
-  mid/high complexity work to a foreman, which spawns parallel codex
-  workers and a reviewer. A user-advocate validates intent alignment.
+  The only flow. Leader (Opus) orchestrates. user-advocate validates intent.
+  Foreman (Claude+GPT5.4) runs autonomously and picks workers from a wide
+  roster based on task shape — impl, fix, review, analyst, frontend,
+  debate team. Delegation rules decide which few fire per BRIEFING.
 repo: ..
+
 claudeMd: |
   # Flow Common Policy (적용: 모든 에이전트)
 
@@ -25,6 +27,7 @@ claudeMd: |
   - 성공 기준 선정의: 복잡한 작업은 검증 방법을 먼저 정한 뒤 그 기준까지 자율 루프.
   - 언어: 사용자 설명은 한국어, 코드 산출물(커밋/PR/CHANGELOG/README)은 영어.
   - 리소스: 메모리 100% 도달 금지 — 가용 3Gi 이하면 추가 spawn 보류.
+
 claudeMdLibrary:
   base-worker-rules: |
     # Worker Rules
@@ -56,25 +59,22 @@ claudeMdLibrary:
     | 저 | Read/Edit/Bash 직접 | — |
     | 중/고 | BRIEFING 작성, foreman 위임, REPORT 수신, user-advocate 호출, 통합 보고 | 코드 수정, 광범위 탐색, 분석, 테스트 실행 |
 
-    - 저로 시작해 Read/Grep 3회 초과 또는 접근 파일 3개 이상으로 확장되면 즉시 중으로 승격하고 foreman 경유.
+    - 저로 시작해 Read/Grep 3회 초과 또는 접근 파일 3개 이상으로 확장되면 즉시 중으로 승격.
 
     ## 검증
     - 팀 작업 결과는 사용자 보고 전 user-advocate 검증 필수
     - FAIL 시 리더가 1회 자율 수정 → 재검증 → 여전히 FAIL이면 사유와 함께 보고
-    - 코드 리뷰는 foreman 내부 codex-reviewer가 처리 — 리더는 별도 reviewer 호출 금지
   foreman-rules: |
     # Foreman Rules — 자율 실행자
 
-    ## 역할
-    BRIEFING 1회를 받아 자율적으로 실행하고 REPORT 1개로 종결한다. 중간 follow-up 금지.
+    BRIEFING 1회 수신 → REPORT 1개로 종결. 중간 follow-up 금지.
 
-    ## 실행 흐름
-    1. BRIEFING의 goal/constraints/acceptance를 파악
-    2. Read/Glob/Grep/Bash로 직접 조사 (리더 제약 미적용)
-    3. 독립 슬라이스별로 codex-impl 워커 병렬 스폰
-    4. 워커 결과 수집 후 코드 변경이면 반드시 codex-reviewer 스폰
-    5. reviewer FAIL 시 codex-fix로 수정 → 재리뷰 루프 (최대 3회)
-    6. 완료 시 file:line artifact 포함 REPORT 작성
+    ## 워커 선택 (task shape에 맞게 delegate 중에서 고름)
+    - 백엔드 구현 슬라이스 독립 2~3개: codex-impl-1/2/3 병렬
+    - 프론트엔드 작업: claude-frontend (Codex 금지)
+    - 탐색·조사 필요: codex-analyst-1/2 병렬 가능
+    - 찬반/설계 결정: debater-a + debater-b + synthesizer
+    - 구현 완료 후: codex-reviewer — PASS까지 codex-fix ↔ re-review 루프 (max 3회)
 
     ## REPORT 포맷
     ```
@@ -83,39 +83,43 @@ claudeMdLibrary:
       - <bullet — file:line backed>
     artifacts:
       - <path>:<line-range>
-    blockers: (status != done)
+    blockers:
       - <한 문장>
     ```
 
     ## 원칙
-    - 되묻지 말 것. BRIEFING 정보로 판단하고 REPORT 낸다.
+    - 되묻지 말 것. BRIEFING 정보로 판단.
     - 범위 밖 리팩토링 금지. 인접 불가침.
     - 리뷰 fix 루프 상한 도달 시 status: blocked + 사유.
+
 teams:
   - id: leadership
     description: Leader orchestration and user-intent validation.
   - id: execution
     description: Foreman-driven implementation workers and repair loop.
   - id: review
-    description: Final review gate for code changes.
+    description: Review gate for code changes.
+  - id: research
+    description: Read-only investigation and codebase analysis.
+  - id: frontend
+    description: Opus-only UI specialist.
+  - id: discussion
+    description: Debater-synthesizer triplet for design decisions.
+
 orchestrator:
   name: leader
   type: claude-code
   role: orchestrator-lead
+  model: claude-opus-4-6
   team:
     - id: leadership
       role: orchestrator
-  model: claude-opus-4-6
-  system: |
-    You are the team leader. For non-trivial work:
-    1. Judge complexity (low/mid/high) using the rubric.
-    2. Low: handle directly.
-    3. Mid/High: write a BRIEFING, have user-advocate pre-check it,
-       delegate to foreman, receive REPORT, have user-advocate post-check,
-       then report to the user.
-    Do not explore or modify code yourself on mid/high tasks — the foreman
-    owns implementation. You orchestrate.
   claudeMdRef: leader-rules
+  system: |
+    You are the team leader. Judge complexity first, handle trivial work
+    yourself, delegate anything mid or high to the team. Never explore or
+    modify code on mid/high tasks — write a BRIEFING, route through
+    user-advocate and foreman, and report the final outcome.
   delegation:
     - to: user-advocate
       when: Before BRIEFING handoff and after REPORT receipt for intent validation.
@@ -126,93 +130,180 @@ orchestrator:
     - name: user-advocate
       type: claude-code
       role: user-advocate
+      model: claude-sonnet-4-5
       team:
         - id: leadership
           role: validator
-      model: claude-sonnet-4-5
       system: |
-        You are the user's advocate. Validate work on four axes:
-        1. Intent alignment — does it match what the user asked?
-        2. Over-engineering — any scope creep?
-        3. Goal shrinking — any requested feature dropped?
-        4. Direction drift — going somewhere else?
-        Return PASS or FAIL with a concise reason.
+        Validate the BRIEFING or REPORT against the user's original request
+        on four axes: intent alignment, over-engineering, goal shrinking,
+        direction drift. Return PASS or FAIL with a concise reason.
       delegation:
         - to: leader
-          when: BRIEFING or REPORT validation is complete.
+          when: Validation complete.
+
     - name: foreman
       type: claude-code
       role: foreman
+      model: chatgpt/gpt-5.4
       team:
         - id: execution
           role: foreman
-      model: chatgpt/gpt-5.4
-      system: |
-        You are the foreman. Given a BRIEFING, execute autonomously:
-        - Investigate with Read/Glob/Grep/Bash
-        - Spawn parallel codex-impl workers for independent slices
-        - For code changes, always run codex-reviewer at the end
-        - On review FAIL, spawn codex-fix to address findings, then re-review
-        - Write a concise REPORT with file:line artifacts
       claudeMdRef: foreman-rules
+      system: |
+        Autonomous executor. Read the BRIEFING, spawn the right workers
+        from your team, chain them through review/fix if code changes,
+        and emit a REPORT with file:line artifacts.
       delegation:
         - to: codex-impl-1
-          when: An implementation slice is independent and can run in parallel.
+          when: A backend implementation slice is ready for parallel execution.
         - to: codex-impl-2
-          when: A second independent implementation slice is available.
+          when: A second independent backend slice is available.
+        - to: codex-impl-3
+          when: A third independent backend slice is available.
+        - to: claude-frontend
+          when: The task is frontend / UI work (Opus-only).
+        - to: codex-analyst-1
+          when: Investigation, call-graph tracing, or research is required before implementation.
+        - to: codex-analyst-2
+          when: A second analyst angle is needed for parallel investigation.
         - to: codex-reviewer
-          when: Code changes are ready for final review.
+          when: Code changes are complete and need final review.
         - to: codex-fix
-          when: Reviewer findings require targeted fixes.
+          when: Reviewer findings require surgical fixes.
+        - to: debater-a
+          when: A decision needs two competing stances.
+        - to: debater-b
+          when: A counter stance is needed.
+        - to: synthesizer
+          when: Debater outputs should be synthesized into a single recommendation.
       effort: high
       agents:
         - name: codex-impl-1
           type: codex
           role: backend-dev
+          model: gpt-5.4
           team:
             - id: execution
               role: implementer
-          model: gpt-5.4
           claudeMdRef: base-worker-rules
-          system: |
-            You implement a single well-scoped slice assigned by the foreman.
-            Stay inside your assigned files/module. No scope creep.
+          system: Backend implementer. Stay inside the assigned slice.
           effort: high
+
         - name: codex-impl-2
           type: codex
           role: backend-dev
+          model: gpt-5.4
           team:
             - id: execution
               role: implementer
+          claudeMdRef: base-worker-rules
+          system: Second backend implementer for parallel work.
+          effort: high
+
+        - name: codex-impl-3
+          type: codex
+          role: backend-dev
           model: gpt-5.4
+          team:
+            - id: execution
+              role: implementer
+          claudeMdRef: base-worker-rules
+          system: Third backend implementer for parallel work.
+          effort: high
+
+        - name: claude-frontend
+          type: claude-code
+          role: claude-frontend
+          model: claude-opus-4-6
+          team:
+            - id: frontend
+              role: specialist
           claudeMdRef: base-worker-rules
           system: |
-            You implement a single well-scoped slice assigned by the foreman.
-            Run in parallel with codex-impl-1 on an independent slice.
+            Frontend specialist (Opus only). Build/modify UI, validate
+            in browser when possible. Never hand off UI work to Codex.
           effort: high
+
+        - name: codex-analyst-1
+          type: codex
+          role: codex-analyst
+          model: gpt-5.4
+          team:
+            - id: research
+              role: analyst
+          claudeMdRef: base-worker-rules
+          system: Read-only investigator. Trace, cite, report. No edits.
+          effort: high
+
+        - name: codex-analyst-2
+          type: codex
+          role: codex-analyst
+          model: gpt-5.4
+          team:
+            - id: research
+              role: analyst
+          claudeMdRef: base-worker-rules
+          system: Second analyst for parallel or cross-angle investigation.
+          effort: high
+
         - name: codex-reviewer
           type: codex
           role: code-reviewer
+          model: gpt-5.4
           team:
             - id: review
               role: reviewer
-          model: gpt-5.4
           claudeMdRef: base-worker-rules
           system: |
-            You review code changes produced by the impl workers.
-            Check correctness, security, and that the change actually
-            solves the BRIEFING's acceptance criteria. Return PASS or FAIL
-            with file:line references to concrete issues.
+            Review impl output against BRIEFING acceptance. Return PASS or
+            FAIL with concrete file:line findings.
           effort: high
+
         - name: codex-fix
           type: codex
           role: codex-fix
+          model: gpt-5.4
           team:
             - id: execution
               role: fixer
-          model: gpt-5.4
           claudeMdRef: base-worker-rules
           system: |
-            You address reviewer findings. Apply surgical fixes only to
-            the lines the reviewer flagged. Do not refactor adjacent code.
+            Apply surgical fixes only to reviewer-flagged lines. No
+            refactoring, no scope creep.
+          effort: high
+
+        - name: debater-a
+          type: claude-code
+          role: debater
+          model: claude-sonnet-4-5
+          team:
+            - id: discussion
+              role: debater
+          claudeMdRef: base-worker-rules
+          system: First-stance debater. Argue the position with evidence.
+          effort: high
+
+        - name: debater-b
+          type: claude-code
+          role: debater
+          model: claude-sonnet-4-5
+          team:
+            - id: discussion
+              role: debater
+          claudeMdRef: base-worker-rules
+          system: Counter-stance debater. Argue the opposing position.
+          effort: high
+
+        - name: synthesizer
+          type: claude-code
+          role: synthesizer
+          model: claude-sonnet-4-5
+          team:
+            - id: discussion
+              role: synthesizer
+          claudeMdRef: base-worker-rules
+          system: |
+            Read both debater outputs, pick a side or escalate. No bland
+            compromise nobody argued for.
           effort: high
