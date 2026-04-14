@@ -97,6 +97,7 @@ async function listFlowPaths(cwd: string): Promise<string[]> {
     return files.map((file) => ({
       sortKey: source === cwd ? `0:${file}` : `1:${file}`,
       relativePath: source === cwd ? file : path.join("examples", file),
+      absolutePath: path.resolve(source, file),
     }));
   }));
 
@@ -105,9 +106,8 @@ async function listFlowPaths(cwd: string): Promise<string[]> {
     .flat()
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
     .filter((entry) => {
-      const abs = path.resolve(cwd, entry.relativePath);
-      if (seen.has(abs)) return false;
-      seen.add(abs);
+      if (seen.has(entry.absolutePath)) return false;
+      seen.add(entry.absolutePath);
       return true;
     })
     .map((entry) => entry.relativePath);
