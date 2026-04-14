@@ -142,7 +142,6 @@ function buildSpawnArgs(agent: AgentConfig): { command: string; args: string[] }
   }
 
   const args = [
-    "exec",
     "--skip-git-repo-check",
     "--dangerously-bypass-approvals-and-sandbox",
   ];
@@ -239,7 +238,9 @@ async function createIsolatedHome(
   agentClaudeMd: string | undefined,
   configuredAgent: AgentConfig,
 ): Promise<string> {
-  const isolatedHome = await mkdtemp(path.join(os.tmpdir(), "loom-cli-home-"));
+  const loomHomesRoot = path.join(os.homedir(), ".loom", "homes");
+  await mkdir(loomHomesRoot, { recursive: true });
+  const isolatedHome = await mkdtemp(path.join(loomHomesRoot, "run-"));
   const mergedInstructions = mergeClaudeMd(flowClaudeMd, agentClaudeMd, configuredAgent);
   const realHome = os.homedir();
 
