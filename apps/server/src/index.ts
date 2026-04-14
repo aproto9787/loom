@@ -479,6 +479,36 @@ export function buildServer() {
       }
     } catch { /* skip */ }
 
+    // Loom project skills (workspace/skills/*.yaml) — platform-neutral, surface on both
+    const loomSkillsDir = path.join(workspaceRoot, "skills");
+    try {
+      const entries = await readdir(loomSkillsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
+        const name = entry.name.replace(/\.yaml$/, "");
+        const raw = await readFile(path.join(loomSkillsDir, entry.name), "utf8").catch(() => "");
+        resources.push({ type: "skill", name, source: loomSkillsDir, platform: "claude", prompt: raw.slice(0, 300) });
+        resources.push({ type: "skill", name, source: loomSkillsDir, platform: "codex", prompt: raw.slice(0, 300) });
+      }
+    } catch { /* skip */ }
+
+    // Loom project hooks (workspace/hooks/*.yaml) — platform-neutral
+    const loomHooksDir = path.join(workspaceRoot, "hooks");
+    try {
+      const entries = await readdir(loomHooksDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
+        const name = entry.name.replace(/\.yaml$/, "");
+        const raw = await readFile(path.join(loomHooksDir, entry.name), "utf8").catch(() => "");
+        const eventMatch = raw.match(/^event:\s*(\S+)/m);
+        const commandMatch = raw.match(/^command:\s*(.+)$/m);
+        const event = eventMatch?.[1];
+        const command = commandMatch?.[1]?.trim().replace(/^['"]|['"]$/g, "");
+        resources.push({ type: "hook", name, source: loomHooksDir, platform: "claude", event, command });
+        resources.push({ type: "hook", name, source: loomHooksDir, platform: "codex", event, command });
+      }
+    } catch { /* skip */ }
+
     return { resources };
   });
 
