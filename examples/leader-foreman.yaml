@@ -206,7 +206,7 @@ orchestrator:
           effort: high
         - name: codex-fix
           type: codex
-          role: backend-dev
+          role: codex-fix
           team:
             - id: execution
               role: fixer
