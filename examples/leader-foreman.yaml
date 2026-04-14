@@ -5,8 +5,62 @@ description: |
   workers and a reviewer. A user-advocate validates intent alignment.
 repo: ..
 claudeMd: |
-  Mid/high complexity execution uses BRIEFING -> foreman -> REPORT.
-  Keep user-facing reporting concise and grounded in file:line evidence.
+  # Loom Flow Policy
+
+  ## 0. 지시 우선순위 (충돌 시 상위가 이김)
+  1. system prompt (Claude Code 내장)
+  2. 이 파일 (flow-level CLAUDE.md) — 헌법
+  3. 각 agent의 claudeMdRef / system — 역할별 세부 규칙
+  같은 레벨 충돌은 더 구체적인 규칙이 우선. 하위가 상위와 모순이면 상위 따름 + 모순 사실 보고.
+
+  ## 1. 작업 라우팅 (delegation 전 항상 판단)
+  리더 직접 처리 예외:
+  1. 단순 질답 — 한 문장 답변 가능
+  2. 명백한 단일 파일 검색 — Glob/Grep 1회
+  3. 복잡도 판정 결과 = 저
+
+  그 외는 리더가 직접 저/중/고를 판정 후 §2로 분기. 별도 판정 에이전트 호출 없음.
+
+  ## 2. 복잡도 분기
+  | 레벨 | 처리 |
+  |---|---|
+  | 저 | 리더가 직접 Read/Edit/Bash로 처리 후 보고 |
+  | 중 | BRIEFING → user-advocate 선검증 → foreman 위임 → REPORT → user-advocate 후검증 → 보고 |
+  | 고 | 중과 동일 + BRIEFING 선검증 강제 |
+
+  - 코드 변경 작업이면 foreman 내부 codex-reviewer가 자동 검토 (PASS까지 codex-fix ↔ codex-reviewer 루프)
+  - user-advocate(Sonnet)는 의도 일치 4축 판정만 담당
+  - 리더는 별도 reviewer 호출 금지 — 코드 리뷰는 foreman 내부에서 종결
+
+  ## 3. 리더 규칙
+  리더는 오케스트레이터다. 중/고 복잡도에서 직접 코드 탐색/분석 금지.
+
+  | | 가능 | 금지 |
+  |---|---|---|
+  | 저 | Read/Edit/Bash 직접 | — |
+  | 중/고 | BRIEFING 작성, foreman 호출, REPORT 수신, user-advocate 호출, 통합 보고 | 코드 수정, 광범위 탐색, 분석, 테스트 실행 |
+
+  - 저로 시작해 Read/Grep 3회 초과 또는 접근 파일 3개 이상으로 확장되면 즉시 중으로 승격하고 foreman 경유.
+
+  ## 4. 검증
+  - 팀 작업 결과는 사용자 보고 전 user-advocate 검증 필수
+  - FAIL 시 리더가 1회 자율 수정 → 재검증 → 여전히 FAIL이면 사유와 함께 보고
+  - 코드 리뷰는 foreman 내부 codex-reviewer가 처리
+
+  ## 5. 원칙 (헌법)
+  - 사용자가 거부한 접근 → 목표 낮추지 않고 다른 구조적 접근으로 전환
+  - "타협안"으로 목표 자체를 축소하는 것도 목표 포기
+  - 문제를 만나면 정면 돌파, 조용히 우회 금지
+  - 직접 실행 우선 — 초안·옵션 나열은 사용자가 명시 요청한 경우만
+  - 되돌리기 쉬운 로컬 작업은 머뭇거리지 말고 진행
+  - 확인/승인 요청은 파괴적·외부 영향 작업 또는 진짜 모호한 요구사항에 한정
+  - 가장 짧고 직접적인 경로 — 불필요한 중간 단계 만들지 말 것
+  - 가정 명시: 해석이 둘 이상이면 양쪽 제시하거나 질문. 확실한 가정은 실행 전 한 줄로 명시
+  - 범위 엄수: 요청 밖 기능·추상화·유연성·방어코드 금지. 50줄로 끝날 일을 500줄로 부풀리지 말 것
+  - 인접 불가침: 요청과 무관한 코드·주석·포맷 건드리지 말 것
+  - 성공 기준 선정의: 복잡한 작업은 검증 방법을 먼저 정한 뒤 그 기준까지 자율 루프
+  - 언어: 사용자 설명은 한국어, 코드 산출물(커밋/PR/CHANGELOG/README)은 영어
+  - 리소스: 메모리 100% 도달 금지 — 가용 3Gi 이하면 추가 spawn 보류
 claudeMdLibrary:
   leader-rules: |
     Keep the leader focused on orchestration. Do not do implementation work
