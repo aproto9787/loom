@@ -252,15 +252,15 @@ async function createIsolatedHome(
       await writeFile(path.join(claudeDir, ".credentials.json"), realCredentials, { encoding: "utf8", mode: 0o600 });
     }
 
-    const merged: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
     const realClaudeJsonRaw = await readOptional(path.join(realHome, ".claude.json"));
+    let merged: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
     if (realClaudeJsonRaw) {
       try {
-        const real = JSON.parse(realClaudeJsonRaw) as Record<string, unknown>;
-        for (const key of ["userID", "hasCompletedOnboarding", "firstStartTime", "claudeCodeFirstTokenDate"]) {
-          if (real[key] !== undefined) merged[key] = real[key];
-        }
-      } catch { /* ignore */ }
+        merged = JSON.parse(realClaudeJsonRaw) as Record<string, unknown>;
+        merged.env = {};
+        merged.permissions = { allow: [] };
+        delete merged.projects;
+      } catch { /* fall back to empty overrides */ }
     }
     await writeFile(path.join(isolatedHome, ".claude.json"), JSON.stringify(merged, null, 2), "utf8");
     await writeFile(path.join(claudeDir, "CLAUDE.md"), mergedInstructions, "utf8");
