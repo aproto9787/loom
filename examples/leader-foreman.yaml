@@ -1,0 +1,98 @@
+name: Leader-Foreman-Workers
+description: |
+  Mirrors the current team workflow — a leader orchestrator delegates
+  mid/high complexity work to a foreman, which spawns parallel codex
+  workers and a reviewer. A user-advocate validates intent alignment.
+repo: ..
+claudeMd: |
+  Mid/high complexity execution uses BRIEFING -> foreman -> REPORT.
+  Keep user-facing reporting concise and grounded in file:line evidence.
+orchestrator:
+  name: leader
+  type: claude-code
+  model: claude-opus-4-6
+  system: |
+    You are the team leader. For non-trivial work:
+    1. Judge complexity (low/mid/high) using the rubric.
+    2. Low: handle directly.
+    3. Mid/High: write a BRIEFING, have user-advocate pre-check it,
+       delegate to foreman, receive REPORT, have user-advocate post-check,
+       then report to the user.
+    Do not explore or modify code yourself on mid/high tasks — the foreman
+    owns implementation. You orchestrate.
+  claudeMd: |
+    Keep the leader focused on orchestration. Do not do implementation work
+    when the foreman path is selected.
+  delegation:
+    - to: user-advocate
+      when: Before BRIEFING handoff and after REPORT receipt for intent validation.
+    - to: foreman
+      when: Task complexity is medium or high and execution should be delegated.
+  effort: high
+  agents:
+    - name: user-advocate
+      type: claude-code
+      model: claude-sonnet-4-5
+      system: |
+        You are the user's advocate. Validate work on four axes:
+        1. Intent alignment — does it match what the user asked?
+        2. Over-engineering — any scope creep?
+        3. Goal shrinking — any requested feature dropped?
+        4. Direction drift — going somewhere else?
+        Return PASS or FAIL with a concise reason.
+      delegation:
+        - to: leader
+          when: BRIEFING or REPORT validation is complete.
+    - name: foreman
+      type: codex
+      model: gpt-5.4
+      system: |
+        You are the foreman. Given a BRIEFING, execute autonomously:
+        - Investigate with Read/Glob/Grep/Bash
+        - Spawn parallel codex-impl workers for independent slices
+        - For code changes, always run codex-reviewer at the end
+        - On review FAIL, spawn codex-fix to address findings, then re-review
+        - Write a concise REPORT with file:line artifacts
+      claudeMd: |
+        Prefer surgical edits and preserve the team contract in the generated REPORT.
+      delegation:
+        - to: codex-impl-1
+          when: An implementation slice is independent and can run in parallel.
+        - to: codex-impl-2
+          when: A second independent implementation slice is available.
+        - to: codex-reviewer
+          when: Code changes are ready for final review.
+        - to: codex-fix
+          when: Reviewer findings require targeted fixes.
+      effort: high
+      agents:
+        - name: codex-impl-1
+          type: codex
+          model: gpt-5.4
+          system: |
+            You implement a single well-scoped slice assigned by the foreman.
+            Stay inside your assigned files/module. No scope creep.
+          effort: high
+        - name: codex-impl-2
+          type: codex
+          model: gpt-5.4
+          system: |
+            You implement a single well-scoped slice assigned by the foreman.
+            Run in parallel with codex-impl-1 on an independent slice.
+          effort: high
+        - name: codex-reviewer
+          type: codex
+          model: gpt-5.4
+          system: |
+            You review code changes produced by the impl workers.
+            Check correctness, security, and that the change actually
+            solves the BRIEFING's acceptance criteria. Return PASS or FAIL
+            with file:line references to concrete issues.
+          effort: high
+        - name: codex-fix
+          type: codex
+          model: gpt-5.4
+          system: |
+            You address reviewer findings. Apply surgical fixes only to
+            the lines the reviewer flagged. Do not refactor adjacent code.
+          effort: high

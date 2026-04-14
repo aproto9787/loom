@@ -17,6 +17,30 @@ function formatCapabilitiesHint(values: string[] | undefined): string {
   return values?.join(", ") ?? "";
 }
 
+function formatDelegation(value: AgentConfig["delegation"] | undefined): string {
+  return (value ?? []).map((entry) => `${entry.to}: ${entry.when}`).join("\n");
+}
+
+function parseDelegation(value: string): NonNullable<AgentConfig["delegation"]> {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separator = line.indexOf(":");
+      if (separator === -1) {
+        return null;
+      }
+      const to = line.slice(0, separator).trim();
+      const when = line.slice(separator + 1).trim();
+      if (!to || !when) {
+        return null;
+      }
+      return { to, when };
+    })
+    .filter((entry): entry is NonNullable<AgentConfig["delegation"]>[number] => entry !== null);
+}
+
 function formatIsolatedHint(value: boolean | undefined): string {
   if (value === undefined) {
     return "";
@@ -64,15 +88,17 @@ export function AgentConfigForm({
   const [type, setType] = useState(agent.type);
   const [model, setModel] = useState(agent.model ?? "");
   const [effort, setEffort] = useState(agent.effort ?? "");
-  const [capabilities, setCapabilities] = useState((agent.capabilities ?? []).join(", "));
+  const [claudeMd, setClaudeMd] = useState(agent.claudeMd ?? "");
+  const [delegation, setDelegation] = useState(formatDelegation(agent.delegation));
 
   useEffect(() => {
     setName(agent.name);
     setType(agent.type);
     setModel(agent.model ?? "");
     setEffort(agent.effort ?? "");
-    setCapabilities((agent.capabilities ?? []).join(", "));
-  }, [agent.name, agent.type, agent.model, agent.effort, agent.capabilities]);
+    setClaudeMd(agent.claudeMd ?? "");
+    setDelegation(formatDelegation(agent.delegation));
+  }, [agent.name, agent.type, agent.model, agent.effort, agent.claudeMd, agent.delegation]);
 
   const role = useMemo(() => roles.find((entry) => entry.name === agent.role), [agent.role, roles]);
 
@@ -261,28 +287,37 @@ export function AgentConfigForm({
             )}
           </label>
           <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            <span>Capabilities</span>
-            <input
-              type="text"
+            <span>CLAUDE.md</span>
+            <textarea
               className={inputDark}
-              value={capabilities}
-              placeholder={agent.capabilities?.length ? "code review, api design" : buildRoleHint(role, "capabilities") || "code review, api design"}
-              title={buildRoleHint(role, "capabilities") || undefined}
-              onChange={(e) => setCapabilities(e.target.value)}
+              value={claudeMd}
+              placeholder="Optional per-agent Claude instructions"
+              rows={5}
+              onChange={(e) => setClaudeMd(e.target.value)}
               onBlur={() => {
-                const next = capabilities
-                  .split(",")
-                  .map((entry) => entry.trim())
-                  .filter(Boolean);
-                updateAgent(path, { capabilities: next.length > 0 ? next : undefined });
-                setCapabilities(next.join(", "));
+                const next = claudeMd.trim();
+                updateAgent(path, { claudeMd: next || undefined });
+                setClaudeMd(next);
               }}
             />
-            {!agent.capabilities?.length && role?.capabilities?.length ? (
-              <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
-                Role default: {formatCapabilitiesHint(role.capabilities)}
-              </span>
-            ) : null}
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <span>Delegation</span>
+            <textarea
+              className={inputDark}
+              value={delegation}
+              placeholder={"child-agent: when to delegate\nreviewer: after implementation"}
+              rows={4}
+              onChange={(e) => setDelegation(e.target.value)}
+              onBlur={() => {
+                const next = parseDelegation(delegation);
+                updateAgent(path, { delegation: next.length > 0 ? next : undefined });
+                setDelegation(formatDelegation(next));
+              }}
+            />
+            <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
+              One rule per line in the form <code>agent-name: condition</code>
+            </span>
           </label>
           <ResourceToggles
             agent={agent}

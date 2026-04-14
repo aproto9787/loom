@@ -274,6 +274,7 @@ export async function* streamRunFlow(
       userPrompt,
       output: result.output,
       status: result.error ? "failed" : "success",
+      source: "server",
       agentResults: state.agentResults,
     });
 
@@ -292,7 +293,8 @@ export async function* streamRunFlow(
         userPrompt,
         output: "",
         status: "aborted",
-        agentResults: state.agentResults,
+        source: "server",
+      agentResults: state.agentResults,
       });
       yield { type: "run_aborted", runId };
       return;
@@ -306,6 +308,7 @@ export async function* streamRunFlow(
       userPrompt,
       output: "",
       status: "failed",
+      source: "server",
       agentResults: state.agentResults,
     });
     yield { type: "run_error", error: message };
@@ -348,6 +351,7 @@ export async function runFlow(
       userPrompt,
       output: result.output,
       status: result.error ? "failed" : "success",
+      source: "server",
       agentResults: state.agentResults,
     });
 

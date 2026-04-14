@@ -17,12 +17,14 @@ function appendSkillPrompt(sections: string[], skill: SkillDefinition): void {
   sections.push(`[Skill: ${skill.name}]${skill.description ? ` — ${skill.description}` : ""}\n${skill.prompt}`);
 }
 
-function formatCapabilities(value: string[] | undefined): string {
+function formatDelegation(value: AgentConfig["delegation"]): string {
   if (!value || value.length === 0) {
     return "[]";
   }
 
-  return `[${value.map((entry) => JSON.stringify(entry)).join(", ")}]`;
+  return value
+    .map((entry) => `- to: ${entry.to}\n  when: ${entry.when}`)
+    .join("\n");
 }
 
 function mergeRoleIntoAgent(agent: AgentConfig, roles: Map<string, RoleDefinition>): AgentConfig {
@@ -41,7 +43,7 @@ function mergeRoleIntoAgent(agent: AgentConfig, roles: Map<string, RoleDefinitio
     type: agent.type ?? role.type,
     description: agent.description ?? role.description,
     system: agent.system ?? role.system,
-    capabilities: agent.capabilities ?? role.capabilities,
+    claudeMd: agent.claudeMd ?? role.system,
     isolated: agent.isolated ?? role.isolated,
     role: agent.role,
   };
@@ -57,6 +59,14 @@ export function buildAgentPrompt(
 
   if (agent.system?.trim()) {
     sections.push(agent.system.trim());
+  }
+
+  if (flow.claudeMd?.trim()) {
+    sections.push(`[Flow CLAUDE.md]\n${flow.claudeMd.trim()}`);
+  }
+
+  if (agent.claudeMd?.trim()) {
+    sections.push(`[Agent CLAUDE.md]\n${agent.claudeMd.trim()}`);
   }
 
   const scopedResources = resolveAgentResources(agent, flow);
@@ -81,13 +91,16 @@ export function buildAgentPrompt(
     const children = agent.agents.map((child) => [
       `- name: ${child.name}`,
       `  type: ${child.type}`,
-      `  capabilities: ${formatCapabilities(child.capabilities)}`,
+      `  delegation: ${formatDelegation(child.delegation)}`,
       `  description: ${child.system?.trim() || ""}`,
     ].join("\n"));
     sections.push([
       "You can delegate tasks to these agents:",
       ...children,
-      "First analyze the task, then delegate to the most appropriate child based on its capabilities, description, and role.",
+      agent.delegation?.length
+        ? `Delegation rules for this agent:\n${formatDelegation(agent.delegation)}`
+        : "No explicit delegation rules are configured.",
+      "First analyze the task, then delegate to the most appropriate child based on the delegation rules, description, and role.",
       "If you need to delegate, respond with exactly one line in this format:",
       "DELEGATE <child-agent-name>: <subtask for the child>",
       "Do not add any extra text when delegating.",
