@@ -49,15 +49,6 @@ function collectRelatedAgentNames(root: AgentConfig, path: string[]): string[] {
   return uniqueSorted([...siblings, ...children].filter((name) => name !== currentName));
 }
 
-function normalizeDelegationRule(rule: DelegationRule): DelegationRule | null {
-  const to = rule.to.trim();
-  const when = rule.when.trim();
-  if (!to || !when) {
-    return null;
-  }
-  return { to, when };
-}
-
 export function DelegationRowEditor({
   rules,
   options,
@@ -67,12 +58,9 @@ export function DelegationRowEditor({
   options: string[];
   onChange: (rules: DelegationRule[] | undefined) => void;
 }) {
-  const commit = useCallback(
+  const emit = useCallback(
     (nextRules: DelegationRule[]) => {
-      const normalized = nextRules
-        .map((rule) => normalizeDelegationRule(rule))
-        .filter((rule): rule is DelegationRule => rule !== null);
-      onChange(normalized.length > 0 ? normalized : undefined);
+      onChange(nextRules.length > 0 ? nextRules : undefined);
     },
     [onChange],
   );
@@ -82,16 +70,16 @@ export function DelegationRowEditor({
       const nextRules = rules.map((rule, ruleIndex) =>
         ruleIndex === index ? { ...rule, [field]: value } : rule,
       );
-      commit(nextRules);
+      emit(nextRules);
     },
-    [commit, rules],
+    [emit, rules],
   );
 
   const removeRule = useCallback(
     (index: number) => {
-      commit(rules.filter((_, ruleIndex) => ruleIndex !== index));
+      emit(rules.filter((_, ruleIndex) => ruleIndex !== index));
     },
-    [commit, rules],
+    [emit, rules],
   );
 
   const addRule = useCallback(() => {
@@ -99,8 +87,8 @@ export function DelegationRowEditor({
       return;
     }
     const fallback = options.find((option) => !rules.some((rule) => rule.to === option)) ?? options[0];
-    commit([...rules, { to: fallback, when: "" }]);
-  }, [commit, options, rules]);
+    emit([...rules, { to: fallback, when: "" }]);
+  }, [emit, options, rules]);
 
   return (
     <div className="flex flex-col gap-3">
