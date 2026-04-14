@@ -288,10 +288,16 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   });
   const systemPrompt = configuredAgent.system ?? "";
   const agentClaudeMd = resolveAgentClaudeMd(flow, configuredAgent);
+  const mergedInstructions = mergeClaudeMd(flow.flow.claudeMd, agentClaudeMd, configuredAgent);
   const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, agentClaudeMd, configuredAgent);
   const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow.flow, isolatedHome);
   const registration = await reportCliRunStart(flow, configuredAgent.type);
   const { command, args } = buildSpawnArgs(configuredAgent);
+  // Inject flow claudeMd into claude via --append-system-prompt so the real
+  // HOME stays untouched (no re-login / onboarding).
+  if (configuredAgent.type === "claude-code" && mergedInstructions.trim().length > 0) {
+    args.push("--append-system-prompt", mergedInstructions);
+  }
   const litellmEnv = configuredAgent.type === "claude-code" && configuredAgent.model?.startsWith("chatgpt/")
     ? {
         ANTHROPIC_BASE_URL: "http://127.0.0.1:4000",
@@ -315,12 +321,6 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
     stdio: "inherit",
     env: {
       ...process.env,
-      HOME: isolatedHome,
-      USERPROFILE: isolatedHome,
-      XDG_CONFIG_HOME: path.join(isolatedHome, ".config"),
-      CLAUDE_CONFIG_DIR: path.join(isolatedHome, ".claude"),
-      CODEX_HOME: path.join(isolatedHome, ".codex"),
-      CODEX_CONFIG_DIR: path.join(isolatedHome, ".codex"),
       CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
       CLAUDE_CODE_TEAMMATE_COMMAND: "/home/argoss/.claude/codex-bridge/codex-bridge.mjs",
       LOOM_FLOW_PATH: flow.absolutePath,
