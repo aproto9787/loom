@@ -246,15 +246,21 @@ async function createIsolatedHome(
   if (configuredAgent.type === "claude-code") {
     const claudeDir = path.join(isolatedHome, ".claude");
     await mkdir(claudeDir, { recursive: true });
+
+    const realCredentials = await readOptional(path.join(realHome, ".claude", ".credentials.json"));
+    if (realCredentials) {
+      await writeFile(path.join(claudeDir, ".credentials.json"), realCredentials, "utf8");
+    }
+
+    const merged: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
     const realClaudeJsonRaw = await readOptional(path.join(realHome, ".claude.json"));
-    let merged: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
     if (realClaudeJsonRaw) {
       try {
         const real = JSON.parse(realClaudeJsonRaw) as Record<string, unknown>;
-        for (const key of ["oauthAccount", "userId", "accessToken", "sessionToken", "email"]) {
+        for (const key of ["userID", "hasCompletedOnboarding", "firstStartTime", "claudeCodeFirstTokenDate"]) {
           if (real[key] !== undefined) merged[key] = real[key];
         }
-      } catch { /* fall back to empty overrides */ }
+      } catch { /* ignore */ }
     }
     await writeFile(path.join(isolatedHome, ".claude.json"), JSON.stringify(merged, null, 2), "utf8");
     await writeFile(path.join(claudeDir, "CLAUDE.md"), mergedInstructions, "utf8");
