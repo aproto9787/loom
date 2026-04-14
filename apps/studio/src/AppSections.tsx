@@ -371,7 +371,7 @@ export function RunsPanel() {
   useEffect(() => {
     const interval = setInterval(() => fetchRunHistory(SERVER_ORIGIN), 5000);
     return () => clearInterval(interval);
-  }, [fetchRunHistory, keyword, statusFilter]);
+  }, [fetchRunHistory]);
 
   return (
     <div className="flex h-full flex-col gap-5 p-5">

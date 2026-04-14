@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { inputDark } from "./panelStyles.js";
+import { darkButton, darkCardMuted, inputDark } from "./panelStyles.js";
 import { useRunStore } from "./store.js";
 
 function sanitizeKey(value: string): string {
@@ -102,7 +102,7 @@ export function ClaudeMdLibraryPanel() {
   };
 
   return (
-    <section className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+    <section className={`flex flex-col gap-4 p-4 ${darkCardMuted}`}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
@@ -114,7 +114,7 @@ export function ClaudeMdLibraryPanel() {
         </div>
         <button
           type="button"
-          className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-semibold text-blue-200 transition-colors hover:bg-blue-500/20"
+          className={darkButton}
           onClick={handleAdd}
         >
           + Add entry

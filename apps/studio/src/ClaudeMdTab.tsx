@@ -33,6 +33,9 @@ export default function ClaudeMdTab() {
             placeholder="Flow-wide Claude instructions (applied to every agent)"
             rows={10}
             onChange={(event) => {
+              setClaudeMd(event.target.value);
+            }}
+            onBlur={(event) => {
               const next = event.target.value;
               setClaudeMd(next);
               updateFlowDraft({ claudeMd: next.trim() || undefined });

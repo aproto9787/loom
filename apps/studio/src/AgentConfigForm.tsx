@@ -4,6 +4,10 @@ import { SERVER_ORIGIN } from "./sse-run.js";
 import { darkButtonLink, darkCardMuted, inputDark, selectDark } from "./panelStyles.js";
 import { getAgentAtPath, useRunStore, type DiscoveredResource } from "./store.js";
 
+function toTabId(tab: "claudeMd" | "delegation"): AgentConfigTab {
+  return tab === "claudeMd" ? "claude-md" : "delegation";
+}
+
 type ResourceField = "mcps" | "hooks" | "skills";
 type AgentConfigTab = "basic" | "claude-md" | "delegation" | "resources";
 
@@ -289,6 +293,7 @@ export function AgentConfigForm({
   const [teamId, setTeamId] = useState(agent.team?.[0]?.id ?? "none");
   const [claudeMdRef, setClaudeMdRef] = useState(agent.claudeMdRef ?? "none");
   const [activeTab, setActiveTab] = useState<AgentConfigTab>("basic");
+  const setStudioTab = useRunStore((s) => s.setActiveTab);
   const [resourceSearch, setResourceSearch] = useState<Record<ResourceField, string>>({
     mcps: "",
     hooks: "",
@@ -341,12 +346,7 @@ export function AgentConfigForm({
 
   const teamOptions = useMemo(() => flowDraft?.teams ?? [], [flowDraft?.teams]);
   const libraryEntries = useMemo(() => Object.entries(flowDraft?.claudeMdLibrary ?? {}), [flowDraft?.claudeMdLibrary]);
-  const selectedLibraryPreview = useMemo(() => {
-    if (claudeMdRef === "none") {
-      return "No library entry selected.";
-    }
-    return (flowDraft?.claudeMdLibrary ?? {})[claudeMdRef] ?? "Selected library entry is missing.";
-  }, [claudeMdRef, flowDraft?.claudeMdLibrary]);
+  const hasClaudeMdSelection = claudeMdRef !== "none";
   const delegationRules = agent.delegation ?? [];
 
   const toggleResource = useCallback(
@@ -404,11 +404,22 @@ export function AgentConfigForm({
                   type="text"
                   className={inputDark}
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setName(next);
+                    const trimmed = next.trim();
+                    if (trimmed) {
+                      updateAgent(path, { name: trimmed });
+                    }
+                  }}
                   onBlur={() => {
                     const trimmed = name.trim();
-                    if (trimmed && trimmed !== agent.name) updateAgent(path, { name: trimmed });
-                    else if (!trimmed) setName(agent.name);
+                    if (trimmed) {
+                      setName(trimmed);
+                      updateAgent(path, { name: trimmed });
+                    } else {
+                      setName(agent.name);
+                    }
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -445,6 +456,7 @@ export function AgentConfigForm({
                     setModel(val);
                     updateAgent(path, { model: val || undefined });
                   }}
+                  onBlur={() => updateAgent(path, { model: model || undefined })}
                 >
                   <option value="">Default</option>
                   {modelOptions.map((m) => (
@@ -469,6 +481,7 @@ export function AgentConfigForm({
                       setEffort(agent.effort ?? "");
                       updateAgent(path, { role: value });
                     }}
+                    onBlur={(e) => updateAgent(path, { role: e.target.value || undefined })}
                   >
                     <option value="">No role</option>
                     {roles.map((r) => (
@@ -498,6 +511,7 @@ export function AgentConfigForm({
                     setEffort(val);
                     updateAgent(path, { effort: (val || undefined) as AgentConfig["effort"] });
                   }}
+                  onBlur={() => updateAgent(path, { effort: (effort || undefined) as AgentConfig["effort"] })}
                 >
                   <option value="">Default</option>
                   <option value="low">low</option>
@@ -522,6 +536,11 @@ export function AgentConfigForm({
                       team: value === "none" ? undefined : [{ id: value }],
                     });
                   }}
+                  onBlur={() =>
+                    updateAgent(path, {
+                      team: teamId === "none" ? undefined : [{ id: teamId }],
+                    })
+                  }
                 >
                   <option value="none">none</option>
                   {teamOptions.map((team) => (
@@ -560,22 +579,19 @@ export function AgentConfigForm({
                   ))}
                 </select>
               </label>
-              <div className={`p-4 ${darkCardMuted}`}>
-                <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                  <p className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                    Library Preview
-                  </p>
-                  <span className="rounded-full border border-slate-700 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    {claudeMdRef}
-                  </span>
-                </div>
-                <pre className="m-0 mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-slate-300 dark-scroll">
-                  {selectedLibraryPreview}
-                </pre>
-              </div>
-              <a href="#claude-md" className={`${darkButtonLink} self-start no-underline`}>
-                Manage library in the CLAUDE.md tab
-              </a>
+              <p className="m-0 text-xs leading-5 text-slate-500">
+                Pick a library entry here, then manage its content in the global CLAUDE.md tab.
+              </p>
+              <button
+                type="button"
+                className={`${darkButtonLink} self-start`}
+                onClick={() => {
+                  setStudioTab("claudeMd");
+                  setActiveTab(toTabId("claudeMd"));
+                }}
+              >
+                {hasClaudeMdSelection ? "Open selected entry in CLAUDE.md tab" : "Open CLAUDE.md tab"}
+              </button>
             </div>
           ) : null}
 
@@ -590,9 +606,16 @@ export function AgentConfigForm({
                     Delegation is configured in the global Delegation tab.
                   </p>
                 </div>
-                <a href="#delegation" className={`${darkButtonLink} no-underline`}>
+                <button
+                  type="button"
+                  className={darkButtonLink}
+                  onClick={() => {
+                    setStudioTab("delegation");
+                    setActiveTab(toTabId("delegation"));
+                  }}
+                >
                   Edit in Delegation tab
-                </a>
+                </button>
               </div>
               {delegationRules.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-4 py-5 text-sm text-slate-500">

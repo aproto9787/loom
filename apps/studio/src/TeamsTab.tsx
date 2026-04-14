@@ -257,14 +257,44 @@ export default function TeamsTab() {
                     value={draft.claudeMdRef}
                     onChange={(event) => {
                       const claudeMdRef = event.target.value;
+                      const nextDraft = teamValues[team.id] ?? {
+                        id: team.id,
+                        description: team.description ?? "",
+                        claudeMdRef: team.claudeMdRef ?? "none",
+                      };
+                      const nextId = nextDraft.id.trim();
+                      if (!nextId) {
+                        return;
+                      }
+                      if (nextId !== team.id && teams.some((entry) => entry.id === nextId)) {
+                        return;
+                      }
                       setTeamValues((state) => ({
                         ...state,
                         [team.id]: {
-                          ...draft,
+                          ...nextDraft,
                           claudeMdRef,
                         },
                       }));
-                      queueMicrotask(() => commitTeam(team.id));
+                      setTeams(
+                        teams.map((entry) =>
+                          entry.id === team.id
+                            ? {
+                                id: nextId,
+                                description: nextDraft.description.trim() || undefined,
+                                claudeMdRef: claudeMdRef === "none" ? undefined : claudeMdRef,
+                              }
+                            : entry,
+                        ),
+                      );
+                      if (nextId !== team.id) {
+                        for (const agentEntry of agentEntries) {
+                          const nextTeam = replaceAgentTeamTags(agentEntry.agent.team, team.id, nextId);
+                          if (nextTeam !== agentEntry.agent.team) {
+                            updateAgent(agentEntry.path, { team: nextTeam });
+                          }
+                        }
+                      }
                     }}
                   >
                     <option value="none">none</option>
