@@ -192,6 +192,7 @@ interface StudioState {
 
   deleteFlow: (origin: string, flowPath: string) => Promise<void>;
   duplicateFlow: (origin: string, sourcePath: string, name: string) => Promise<void>;
+  createFlow: (origin: string, name: string) => Promise<void>;
   fetchRunHistory: (origin: string) => Promise<void>;
 
   fetchRoles: (origin: string) => Promise<void>;
@@ -593,6 +594,24 @@ export const useRunStore = create<StudioState>((set) => ({
 
   duplicateFlow: async (origin, sourcePath, name) => {
     const { flowPath } = await duplicateFlowRequest(origin, sourcePath, name);
+    const listRes = await fetch(`${origin}/flows`);
+    if (listRes.ok) {
+      const data = (await listRes.json()) as { flows: string[] };
+      set({ availableFlows: data.flows, flowPath });
+    }
+  },
+
+  createFlow: async (origin, name) => {
+    const res = await fetch(`${origin}/flows/new`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(typeof err.error === "string" ? err.error : "Failed to create flow");
+    }
+    const { flowPath } = (await res.json()) as { flowPath: string };
     const listRes = await fetch(`${origin}/flows`);
     if (listRes.ok) {
       const data = (await listRes.json()) as { flows: string[] };

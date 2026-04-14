@@ -242,6 +242,18 @@ export function WorkflowTab() {
     [duplicateFlow],
   );
 
+  const createFlow = useRunStore((s) => s.createFlow);
+  const handleCreateFlow = useCallback(async () => {
+    const entered = window.prompt("New flow name");
+    const name = entered?.trim();
+    if (!name) return;
+    try {
+      await createFlow(SERVER_ORIGIN, name);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to create flow");
+    }
+  }, [createFlow]);
+
   const selectedAgentName =
     selectedAgentPath.length > 0
       ? selectedAgentPath[selectedAgentPath.length - 1]
@@ -257,6 +269,13 @@ export function WorkflowTab() {
         <p className="mt-2 text-sm text-slate-600 leading-relaxed">
           Pick a flow, configure the agent hierarchy, and run the orchestrator live.
         </p>
+        <button
+          type="button"
+          className="mt-3 w-full px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 transition-colors"
+          onClick={handleCreateFlow}
+        >
+          + New flow
+        </button>
         <ul className="mt-5 list-none p-0 space-y-1.5">
           {availableFlows.length === 0 ? (
             <li className="text-sm text-slate-500">Loading flows from server...</li>

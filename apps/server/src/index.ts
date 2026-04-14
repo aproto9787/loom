@@ -205,6 +205,47 @@ export function buildServer() {
     return reply.code(201).send({ flowPath: candidatePath, flow: duplicatedFlow });
   });
 
+  app.post("/flows/new", async (request, reply) => {
+    const body = request.body as { name?: string } | null;
+    const name = (body?.name ?? "").trim();
+    if (!name) return reply.code(400).send({ error: "name is required" });
+
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `flow-${Date.now()}`;
+    let candidatePath = `examples/${slug}.yaml`;
+    let suffix = 2;
+    while (true) {
+      try {
+        await readFile(path.resolve(workspaceRoot, candidatePath), "utf8");
+        candidatePath = `examples/${slug}-${suffix}.yaml`;
+        suffix += 1;
+      } catch {
+        break;
+      }
+    }
+
+    const skeleton = {
+      name,
+      description: "TODO: describe this flow.\n",
+      repo: ".",
+      claudeMd: "# Flow Common Policy\n- 범위 엄수. 인접 불가침. 가정 명시.\n",
+      claudeMdLibrary: {},
+      orchestrator: {
+        name: "leader",
+        type: "claude-code" as const,
+        model: "claude-opus-4-6",
+        system: `You are the orchestrator for ${name}. Delegate work to your team.\n`,
+        effort: "high" as const,
+        delegation: [],
+        agents: [],
+      },
+    };
+    const tempPath = path.join(allowedFlowDir, `.${path.basename(candidatePath)}.tmp`);
+    const absolutePath = path.resolve(workspaceRoot, candidatePath);
+    await writeFile(tempPath, stringifyFlow(skeleton), "utf8");
+    await rename(tempPath, absolutePath);
+    return reply.code(201).send({ flowPath: candidatePath, flow: skeleton });
+  });
+
   app.delete("/flows/:path", async (request, reply) => {
     const { path: flowPath } = request.params as { path: string };
     const fullPath = `examples/${flowPath}`;
