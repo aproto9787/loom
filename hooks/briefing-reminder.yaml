@@ -1,3 +1,4 @@
+name: briefing-reminder
 event: on_start
 command: 'echo "[HINT] mid/high 복잡도면 BRIEFING 작성부터" >> /tmp/loom-hooks.log'
-description: '리더에게 워크플로우 리마인더'
+description: 리더에게 워크플로우 리마인더

@@ -165,7 +165,7 @@ orchestrator:
     user-advocate and foreman, and report the final outcome.
   claudeMdRef: leader-rules
   skills: [complexity-rubric, verification-checklist, briefing-format, concise]
-  hooks: [memory-check, git-state, briefing-reminder, log-start]
+  hooks: [memory-check, git-state, briefing-reminder, rtk-reminder, log-start]
   effort: high
   delegation:
     - to: user-advocate
