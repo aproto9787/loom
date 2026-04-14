@@ -249,7 +249,7 @@ async function createIsolatedHome(
 
     const realCredentials = await readOptional(path.join(realHome, ".claude", ".credentials.json"));
     if (realCredentials) {
-      await writeFile(path.join(claudeDir, ".credentials.json"), realCredentials, "utf8");
+      await writeFile(path.join(claudeDir, ".credentials.json"), realCredentials, { encoding: "utf8", mode: 0o600 });
     }
 
     const merged: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
@@ -320,9 +320,9 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
       HOME: isolatedHome,
       USERPROFILE: isolatedHome,
       XDG_CONFIG_HOME: path.join(isolatedHome, ".config"),
-      CLAUDE_CONFIG_DIR: isolatedHome,
-      CODEX_HOME: isolatedHome,
-      CODEX_CONFIG_DIR: isolatedHome,
+      CLAUDE_CONFIG_DIR: path.join(isolatedHome, ".claude"),
+      CODEX_HOME: path.join(isolatedHome, ".codex"),
+      CODEX_CONFIG_DIR: path.join(isolatedHome, ".codex"),
       CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
       CLAUDE_CODE_TEAMMATE_COMMAND: "/home/argoss/.claude/codex-bridge/codex-bridge.mjs",
       LOOM_FLOW_PATH: flow.absolutePath,
