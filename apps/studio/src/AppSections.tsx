@@ -9,6 +9,7 @@ import {
   type NodeMouseHandler,
 } from "reactflow";
 import { saveFlow } from "./api.js";
+import { inputDark } from "./panelStyles.js";
 import { SERVER_ORIGIN } from "./sse-run.js";
 import { AgentConfigForm } from "./AgentConfigForm.js";
 import { NodePalette } from "./NodePalette.js";
@@ -152,6 +153,47 @@ export function SaveControls() {
   );
 }
 
+function FlowSettingsForm() {
+  const flowDraft = useRunStore((s) => s.flowDraft);
+  const updateFlowDraft = useRunStore((s) => s.updateFlowDraft);
+  const [claudeMd, setClaudeMd] = useState(flowDraft?.claudeMd ?? "");
+
+  useEffect(() => {
+    setClaudeMd(flowDraft?.claudeMd ?? "");
+  }, [flowDraft?.claudeMd]);
+
+  if (!flowDraft) {
+    return (
+      <p className="m-0 px-4 py-6 text-sm text-slate-400 italic text-center">
+        Load a flow to edit its settings.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <span>Flow CLAUDE.md</span>
+        <textarea
+          className={inputDark}
+          value={claudeMd}
+          placeholder="Flow-wide Claude instructions (applied to every agent)"
+          rows={10}
+          onChange={(e) => setClaudeMd(e.target.value)}
+          onBlur={() => {
+            const next = claudeMd.trim();
+            updateFlowDraft({ claudeMd: next || undefined });
+            setClaudeMd(next);
+          }}
+        />
+        <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
+          Merged with each agent's CLAUDE.md when the CLI spawns the isolated agent.
+        </span>
+      </label>
+    </div>
+  );
+}
+
 export function AgentConfigPanel() {
   const flowDraft = useRunStore((s) => s.flowDraft);
   const selectedAgentPath = useRunStore((s) => s.selectedAgentPath);
@@ -165,7 +207,7 @@ export function AgentConfigPanel() {
   return (
     <section className="flex flex-col rounded-xl border border-slate-700 bg-slate-900 overflow-hidden min-h-0 overflow-y-auto dark-scroll">
       <p className="m-0 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-400 border-b border-slate-800 shrink-0">
-        Agent Config
+        {selectedAgent ? "Agent Config" : "Flow Settings"}
       </p>
       {selectedAgent ? (
         <AgentConfigForm
@@ -176,9 +218,7 @@ export function AgentConfigPanel() {
           key={selectedAgentPath.join("/")}
         />
       ) : (
-        <p className="m-0 px-4 py-6 text-sm text-slate-400 italic text-center">
-          Select an agent in the tree to edit its configuration.
-        </p>
+        <FlowSettingsForm />
       )}
     </section>
   );

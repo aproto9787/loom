@@ -173,6 +173,7 @@ interface StudioState {
 
   selectAgent: (path: string[]) => void;
   updateAgent: (path: string[], config: Partial<AgentConfig>) => void;
+  updateFlowDraft: (partial: Partial<FlowDefinition>) => void;
   addAgent: (parentPath: string[], type: AgentType) => void;
   removeAgent: (path: string[]) => void;
 
@@ -255,6 +256,16 @@ export const useRunStore = create<StudioState>((set) => ({
   setLoadError: (message) => set({ loadError: message }),
 
   selectAgent: (path) => set({ selectedAgentPath: path }),
+
+  updateFlowDraft: (partial) =>
+    set((state) => {
+      if (!state.flowDraft) return state;
+      const draft: FlowDefinition = { ...cloneFlow(state.flowDraft), ...partial };
+      return {
+        flowDraft: draft,
+        isDirty: !flowsAreEqual(draft, state.loadedFlow),
+      };
+    }),
 
   updateAgent: (path, config) =>
     set((state) => {
