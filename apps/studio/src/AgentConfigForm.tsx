@@ -22,8 +22,14 @@ function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
-function getDiscoveredNames(resources: DiscoveredResource[], type: DiscoveredResource["type"]): string[] {
-  return resources.filter((resource) => resource.type === type).map((resource) => resource.name);
+function getDiscoveredNames(
+  resources: DiscoveredResource[],
+  type: DiscoveredResource["type"],
+  platform?: DiscoveredResource["platform"],
+): string[] {
+  return resources
+    .filter((resource) => resource.type === type && (!platform || resource.platform === platform))
+    .map((resource) => resource.name);
 }
 
 function buildRoleHint(role: RoleDefinition | undefined, field: "type" | "system"): string {
@@ -312,17 +318,18 @@ export function AgentConfigForm({
     discoverResources(SERVER_ORIGIN);
   }, [discoverResources, fetchMcps]);
 
+  const resourcePlatform: DiscoveredResource["platform"] = effectiveType === "codex" ? "codex" : "claude";
   const mcpOptions = useMemo(
-    () => uniqueSorted([...availableMcps, ...getDiscoveredNames(discoveredResources, "mcp")]),
-    [availableMcps, discoveredResources],
+    () => uniqueSorted([...availableMcps, ...getDiscoveredNames(discoveredResources, "mcp", resourcePlatform)]),
+    [availableMcps, discoveredResources, resourcePlatform],
   );
   const hookOptions = useMemo(
-    () => uniqueSorted(getDiscoveredNames(discoveredResources, "hook")),
-    [discoveredResources],
+    () => uniqueSorted(getDiscoveredNames(discoveredResources, "hook", resourcePlatform)),
+    [discoveredResources, resourcePlatform],
   );
   const skillOptions = useMemo(
-    () => uniqueSorted(getDiscoveredNames(discoveredResources, "skill")),
-    [discoveredResources],
+    () => uniqueSorted(getDiscoveredNames(discoveredResources, "skill", resourcePlatform)),
+    [discoveredResources, resourcePlatform],
   );
 
   const relatedAgentOptions = useMemo(() => {

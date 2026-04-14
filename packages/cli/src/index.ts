@@ -2,7 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -232,18 +232,27 @@ async function createIsolatedHome(
   configuredAgent: AgentConfig,
 ): Promise<string> {
   const isolatedHome = await mkdtemp(path.join(os.tmpdir(), "loom-cli-home-"));
-  const mergedClaudeMd = mergeClaudeMd(flowClaudeMd, agentClaudeMd, configuredAgent);
-  await writeFile(
-    path.join(isolatedHome, ".claude.json"),
-    JSON.stringify({ env: {}, permissions: { allow: [] } }, null, 2),
-    "utf8",
-  );
-  await writeFile(path.join(isolatedHome, ".claude.md"), mergedClaudeMd, "utf8");
-  await writeFile(
-    path.join(isolatedHome, ".codexrc"),
-    JSON.stringify({ instructions: systemPrompt }, null, 2),
-    "utf8",
-  );
+  const mergedInstructions = mergeClaudeMd(flowClaudeMd, agentClaudeMd, configuredAgent);
+
+  if (configuredAgent.type === "claude-code") {
+    const claudeDir = path.join(isolatedHome, ".claude");
+    await mkdir(claudeDir, { recursive: true });
+    await writeFile(
+      path.join(isolatedHome, ".claude.json"),
+      JSON.stringify({ env: {}, permissions: { allow: [] } }, null, 2),
+      "utf8",
+    );
+    await writeFile(path.join(claudeDir, "CLAUDE.md"), mergedInstructions, "utf8");
+  } else {
+    const codexDir = path.join(isolatedHome, ".codex");
+    await mkdir(codexDir, { recursive: true });
+    await writeFile(path.join(codexDir, "AGENTS.md"), mergedInstructions, "utf8");
+    await writeFile(
+      path.join(codexDir, "config.toml"),
+      `# Loom-generated Codex config (isolated)\n`,
+      "utf8",
+    );
+  }
   return isolatedHome;
 }
 
