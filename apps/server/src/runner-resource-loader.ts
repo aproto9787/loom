@@ -116,7 +116,7 @@ export async function createScopedMcpConfig(agent: AgentConfig, flow: FlowDefini
   }
 
   const sources = [
-    ...(agent.isolated ? [] : [path.join(homeDir ?? os.homedir(), ".claude.json")]),
+    path.join(homeDir ?? os.homedir(), ".claude.json"),
     path.join(workspaceRoot, ".mcp.json"),
   ];
   const mergedServers: Record<string, unknown> = {};

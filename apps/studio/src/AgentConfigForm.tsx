@@ -13,10 +13,6 @@ function getDiscoveredNames(resources: DiscoveredResource[], type: DiscoveredRes
   return resources.filter((resource) => resource.type === type).map((resource) => resource.name);
 }
 
-function formatCapabilitiesHint(values: string[] | undefined): string {
-  return values?.join(", ") ?? "";
-}
-
 function formatDelegation(value: AgentConfig["delegation"] | undefined): string {
   return (value ?? []).map((entry) => `${entry.to}: ${entry.when}`).join("\n");
 }
@@ -41,14 +37,7 @@ function parseDelegation(value: string): NonNullable<AgentConfig["delegation"]> 
     .filter((entry): entry is NonNullable<AgentConfig["delegation"]>[number] => entry !== null);
 }
 
-function formatIsolatedHint(value: boolean | undefined): string {
-  if (value === undefined) {
-    return "";
-  }
-  return value ? "Role default: enabled" : "Role default: disabled";
-}
-
-function buildRoleHint(role: RoleDefinition | undefined, field: "type" | "system" | "capabilities" | "isolated"): string {
+function buildRoleHint(role: RoleDefinition | undefined, field: "type" | "system"): string {
   if (!role) {
     return "";
   }
@@ -58,10 +47,6 @@ function buildRoleHint(role: RoleDefinition | undefined, field: "type" | "system
       return `Role default: ${role.type}`;
     case "system":
       return role.system ? `Role default: ${role.system}` : "";
-    case "capabilities":
-      return formatCapabilitiesHint(role.capabilities);
-    case "isolated":
-      return formatIsolatedHint(role.isolated);
   }
 }
 
@@ -88,7 +73,7 @@ export function AgentConfigForm({
   const [type, setType] = useState(agent.type);
   const [model, setModel] = useState(agent.model ?? "");
   const [effort, setEffort] = useState(agent.effort ?? "");
-  const [claudeMd, setClaudeMd] = useState(agent.claudeMd ?? "");
+  const [claudeMdRef, setClaudeMdRef] = useState(agent.claudeMdRef ?? "");
   const [delegation, setDelegation] = useState(formatDelegation(agent.delegation));
 
   useEffect(() => {
@@ -96,9 +81,9 @@ export function AgentConfigForm({
     setType(agent.type);
     setModel(agent.model ?? "");
     setEffort(agent.effort ?? "");
-    setClaudeMd(agent.claudeMd ?? "");
+    setClaudeMdRef(agent.claudeMdRef ?? "");
     setDelegation(formatDelegation(agent.delegation));
-  }, [agent.name, agent.type, agent.model, agent.effort, agent.claudeMd, agent.delegation]);
+  }, [agent.name, agent.type, agent.model, agent.effort, agent.claudeMdRef, agent.delegation]);
 
   const role = useMemo(() => roles.find((entry) => entry.name === agent.role), [agent.role, roles]);
 
@@ -239,8 +224,6 @@ export function AgentConfigForm({
                   <div>Type default: {role.type}</div>
                   {role.model ? <div>Model default: {role.model}</div> : null}
                   {role.effort ? <div>Effort default: {role.effort}</div> : null}
-                  {role.capabilities?.length ? <div>Capabilities default: {formatCapabilitiesHint(role.capabilities)}</div> : null}
-                  {role.isolated !== undefined ? <div>{formatIsolatedHint(role.isolated)}</div> : null}
                 </div>
               ) : null}
             </label>
@@ -273,31 +256,18 @@ export function AgentConfigForm({
               Role system: {role.system}
             </p>
           )}
-          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400" title={buildRoleHint(role, "isolated") || undefined}>
-            <input
-              type="checkbox"
-              checked={agent.isolated ?? role?.isolated ?? false}
-              onChange={(e) => updateAgent(path, { isolated: e.target.checked || undefined })}
-            />
-            <span>Isolated</span>
-            {!agent.isolated && role?.isolated !== undefined && (
-              <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
-                {buildRoleHint(role, "isolated")}
-              </span>
-            )}
-          </label>
           <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            <span>CLAUDE.md</span>
-            <textarea
+            <span>CLAUDE.md Ref</span>
+            <input
+              type="text"
               className={inputDark}
-              value={claudeMd}
-              placeholder="Optional per-agent Claude instructions"
-              rows={5}
-              onChange={(e) => setClaudeMd(e.target.value)}
+              value={claudeMdRef}
+              placeholder="Optional claudeMdLibrary key"
+              onChange={(e) => setClaudeMdRef(e.target.value)}
               onBlur={() => {
-                const next = claudeMd.trim();
-                updateAgent(path, { claudeMd: next || undefined });
-                setClaudeMd(next);
+                const next = claudeMdRef.trim();
+                updateAgent(path, { claudeMdRef: next || undefined });
+                setClaudeMdRef(next);
               }}
             />
           </label>

@@ -7,6 +7,12 @@ repo: ..
 claudeMd: |
   Mid/high complexity execution uses BRIEFING -> foreman -> REPORT.
   Keep user-facing reporting concise and grounded in file:line evidence.
+claudeMdLibrary:
+  leader-rules: |
+    Keep the leader focused on orchestration. Do not do implementation work
+    when the foreman path is selected.
+  foreman-rules: |
+    Prefer surgical edits and preserve the team contract in the generated REPORT.
 orchestrator:
   name: leader
   type: claude-code
@@ -20,9 +26,7 @@ orchestrator:
        then report to the user.
     Do not explore or modify code yourself on mid/high tasks — the foreman
     owns implementation. You orchestrate.
-  claudeMd: |
-    Keep the leader focused on orchestration. Do not do implementation work
-    when the foreman path is selected.
+  claudeMdRef: leader-rules
   delegation:
     - to: user-advocate
       when: Before BRIEFING handoff and after REPORT receipt for intent validation.
@@ -53,8 +57,7 @@ orchestrator:
         - For code changes, always run codex-reviewer at the end
         - On review FAIL, spawn codex-fix to address findings, then re-review
         - Write a concise REPORT with file:line artifacts
-      claudeMd: |
-        Prefer surgical edits and preserve the team contract in the generated REPORT.
+      claudeMdRef: foreman-rules
       delegation:
         - to: codex-impl-1
           when: An implementation slice is independent and can run in parallel.

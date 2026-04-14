@@ -69,7 +69,7 @@ test("createScopedMcpConfig writes a filtered config for requested servers", asy
   }
 });
 
-test("createScopedMcpConfig ignores global MCP config for isolated agents", async () => {
+test("createScopedMcpConfig reads home MCP config for requested servers", async () => {
   const tempHome = await mkdtemp(path.join(os.tmpdir(), "loom-home-"));
   const originalHome = process.env.HOME;
   process.env.HOME = tempHome;
@@ -87,13 +87,15 @@ test("createScopedMcpConfig ignores global MCP config for isolated agents", asyn
   const agent: AgentConfig = {
     name: "child",
     type: "claude-code",
-    isolated: true,
     mcps: ["alpha"],
   };
 
   try {
     const configPath = await createScopedMcpConfig(agent, flow, tempHome);
-    assert.equal(configPath, undefined);
+    assert.ok(configPath);
+    const raw = await readFile(configPath, "utf8");
+    assert.deepEqual(JSON.parse(raw), { mcpServers: { alpha: { command: "a" } } });
+    await rm(path.dirname(configPath), { recursive: true, force: true });
   } finally {
     if (originalHome === undefined) {
       delete process.env.HOME;

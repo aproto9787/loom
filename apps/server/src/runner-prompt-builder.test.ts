@@ -24,24 +24,17 @@ const resources: RunResources = {
 };
 
 test("buildAgentPrompt includes resource context and delegation instructions", () => {
-  const flowWithClaudeMd: FlowDefinition = {
-    ...flow,
-    claudeMd: "Flow-wide instruction.",
-  };
   const agent: AgentConfig = {
     name: "lead",
     type: "claude-code",
     system: "You are lead.",
-    claudeMd: "Agent-specific instruction.",
     delegation: [{ to: "child", when: "When code review is needed." }],
     agents: [{ name: "child", type: "codex", delegation: [{ to: "none", when: "Never" }], system: "Reviews code changes." }],
   };
 
-  const prompt = buildAgentPrompt(agent, flowWithClaudeMd, "/repo", resources);
+  const prompt = buildAgentPrompt(agent, flow, "/repo", resources);
 
   assert.match(prompt, /You are lead\./);
-  assert.match(prompt, /\[Flow CLAUDE\.md\]\nFlow-wide instruction\./);
-  assert.match(prompt, /\[Agent CLAUDE\.md\]\nAgent-specific instruction\./);
   assert.match(prompt, /\[Skill: brief\] — team habit/);
   assert.match(prompt, /Shared flow repo: \/repo/);
   assert.match(prompt, /MCP servers available to you: figma/);
@@ -70,7 +63,7 @@ test("buildConfiguredAgent adds parallel child guidance when parallel is enabled
   assert.match(configured.system, /child-a, child-b/);
 });
 
-test("buildConfiguredAgent inherits role system into agent claudeMd when absent", () => {
+test("buildConfiguredAgent inherits role defaults when agent fields are absent", () => {
   const agent: AgentConfig = {
     name: "frontend",
     type: "claude-code",
@@ -83,16 +76,14 @@ test("buildConfiguredAgent inherits role system into agent claudeMd when absent"
         name: "frontend-dev",
         type: "claude-code",
         system: "Build UI.",
-        capabilities: ["react", "typescript"],
-        isolated: true,
+        description: "Role description.",
       },
     ],
   ]);
 
   const configured = buildConfiguredAgent(agent, flow, "/repo", resources, roles);
 
-  assert.equal(configured.claudeMd, "Build UI.");
-  assert.equal(configured.isolated, true);
+  assert.equal(configured.description, "Role description.");
   assert.match(configured.system ?? "", /Build UI\./);
 });
 
@@ -102,9 +93,7 @@ test("buildConfiguredAgent lets agent values override role values", () => {
     type: "codex",
     role: "frontend-dev",
     system: "Own prompt.",
-    claudeMd: "Own claude md.",
     description: "Own description.",
-    isolated: false,
   };
   const roles: Map<string, RoleDefinition> = new Map([
     [
@@ -114,8 +103,6 @@ test("buildConfiguredAgent lets agent values override role values", () => {
         type: "claude-code",
         system: "Build UI.",
         description: "Role description.",
-        capabilities: ["react", "typescript"],
-        isolated: true,
       },
     ],
   ]);
@@ -124,8 +111,6 @@ test("buildConfiguredAgent lets agent values override role values", () => {
 
   assert.equal(configured.type, "codex");
   assert.equal(configured.description, "Own description.");
-  assert.equal(configured.claudeMd, "Own claude md.");
-  assert.equal(configured.isolated, false);
   assert.match(configured.system ?? "", /Own prompt\./);
   assert.doesNotMatch(configured.system ?? "", /Build UI\./);
 });

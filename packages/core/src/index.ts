@@ -53,12 +53,11 @@ export interface AgentConfig {
   role?: string;
   model?: string;
   system?: string;
-  claudeMd?: string;
+  claudeMdRef?: string;
   description?: string;
   effort?: 'low' | 'medium' | 'high';
   timeout?: number;
   parallel?: boolean;
-  isolated?: boolean;
   delegation?: DelegationRule[];
   mcps?: string[];
   hooks?: string[];
@@ -72,12 +71,11 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   role: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
-  claudeMd: z.string().min(1).optional(),
+  claudeMdRef: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
   effort: z.enum(['low', 'medium', 'high']).optional(),
   timeout: z.number().int().positive().optional(),
   parallel: z.boolean().optional(),
-  isolated: z.boolean().optional(),
   delegation: z.array(delegationRuleSchema).optional(),
   mcps: z.array(z.string().min(1)).optional(),
   hooks: z.array(z.string().min(1)).optional(),
@@ -91,6 +89,7 @@ export interface FlowDefinition {
   description?: string;
   repo: string;
   claudeMd?: string;
+  claudeMdLibrary?: Record<string, string>;
   orchestrator: AgentConfig;
   resources?: {
     mcps?: string[];
@@ -105,6 +104,7 @@ export const flowDefinitionSchema: z.ZodType<FlowDefinition> = z.object({
   description: z.string().min(1).optional(),
   repo: z.string().min(1),
   claudeMd: z.string().min(1).optional(),
+  claudeMdLibrary: z.record(z.string(), z.string()).optional(),
   orchestrator: agentConfigSchema,
   resources: z.object({
     mcps: z.array(z.string().min(1)).optional(),
@@ -122,8 +122,6 @@ export interface RoleDefinition {
   system: string;
   effort?: 'low' | 'medium' | 'high';
   description?: string;
-  isolated?: boolean;
-  capabilities?: string[];
   mcps?: string[];
 }
 
@@ -134,8 +132,6 @@ export const roleDefinitionSchema: z.ZodType<RoleDefinition> = z.object({
   system: z.string().min(1),
   effort: z.enum(['low', 'medium', 'high']).optional(),
   description: z.string().min(1).optional(),
-  isolated: z.boolean().optional(),
-  capabilities: z.array(z.string().min(1)).optional(),
   mcps: z.array(z.string().min(1)).optional(),
 });
 

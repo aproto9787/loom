@@ -74,7 +74,7 @@ async function* executeAgent(
   const resultAgentName = nextResultAgentName(agent.name, state);
   const startedAt = new Date().toISOString();
   const scopedResources = resolveAgentResources(agent, flow);
-  const isolatedHome = agent.isolated ? await mkdtemp(path.join(os.tmpdir(), "loom-agent-home-")) : undefined;
+  const isolatedHome = await mkdtemp(path.join(os.tmpdir(), "loom-agent-home-"));
   const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow, isolatedHome);
   const hookEnv = {
     LOOM_AGENT: agent.name,

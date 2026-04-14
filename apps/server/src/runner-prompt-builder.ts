@@ -43,8 +43,6 @@ function mergeRoleIntoAgent(agent: AgentConfig, roles: Map<string, RoleDefinitio
     type: agent.type ?? role.type,
     description: agent.description ?? role.description,
     system: agent.system ?? role.system,
-    claudeMd: agent.claudeMd ?? role.system,
-    isolated: agent.isolated ?? role.isolated,
     role: agent.role,
   };
 }
@@ -59,14 +57,6 @@ export function buildAgentPrompt(
 
   if (agent.system?.trim()) {
     sections.push(agent.system.trim());
-  }
-
-  if (flow.claudeMd?.trim()) {
-    sections.push(`[Flow CLAUDE.md]\n${flow.claudeMd.trim()}`);
-  }
-
-  if (agent.claudeMd?.trim()) {
-    sections.push(`[Agent CLAUDE.md]\n${agent.claudeMd.trim()}`);
   }
 
   const scopedResources = resolveAgentResources(agent, flow);

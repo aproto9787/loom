@@ -202,6 +202,14 @@ function mergeClaudeMd(flowClaudeMd: string | undefined, agentClaudeMd: string |
   return [flowClaudeMd?.trim(), agentClaudeMd?.trim()].filter(Boolean).join("\n\n");
 }
 
+function resolveAgentClaudeMd(flow: LoadedCliFlow, agent: AgentConfig): string | undefined {
+  const ref = agent.claudeMdRef?.trim();
+  if (!ref) {
+    return undefined;
+  }
+  return flow.flow.claudeMdLibrary?.[ref];
+}
+
 async function createIsolatedHome(systemPrompt: string, flowClaudeMd: string | undefined, agentClaudeMd: string | undefined): Promise<string> {
   const isolatedHome = await mkdtemp(path.join(os.tmpdir(), "loom-cli-home-"));
   const mergedClaudeMd = mergeClaudeMd(flowClaudeMd, agentClaudeMd);
@@ -220,14 +228,15 @@ async function createIsolatedHome(systemPrompt: string, flowClaudeMd: string | u
 }
 
 async function launchAgent(flow: LoadedCliFlow): Promise<number> {
-  const agent: AgentConfig = { ...flow.flow.orchestrator, isolated: true };
+  const agent: AgentConfig = { ...flow.flow.orchestrator } as AgentConfig & { isolated: true };
   const configuredAgent = buildConfiguredAgent(agent, flow.flow, flow.flow.repo, {
     roles: new Map(),
     hooks: new Map(),
     skills: new Map(),
   });
   const systemPrompt = configuredAgent.system ?? "";
-  const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, configuredAgent.claudeMd);
+  const agentClaudeMd = resolveAgentClaudeMd(flow, configuredAgent);
+  const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, agentClaudeMd);
   const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow.flow, isolatedHome);
   const registration = await reportCliRunStart(flow, configuredAgent.type);
   const { command, args } = buildSpawnArgs(configuredAgent);

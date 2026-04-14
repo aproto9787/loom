@@ -187,7 +187,7 @@ function FlowSettingsForm() {
           }}
         />
         <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
-          Merged with each agent's CLAUDE.md when the CLI spawns the isolated agent.
+          Prepended before any agent-specific claudeMdLibrary entry selected by ref.
         </span>
       </label>
     </div>
