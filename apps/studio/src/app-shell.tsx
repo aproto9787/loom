@@ -4,9 +4,8 @@ import ClaudeMdTab from "./ClaudeMdTab.js";
 import DelegationTab from "./DelegationTab.js";
 import { RolesPanel } from "./RolesPanel.js";
 import { RunsPanel } from "./AppSections.js";
-import TeamsTab from "./TeamsTab.js";
 
-export const TABS = ["workflow", "claudeMd", "delegation", "teams", "runs", "roles", "custom"] as const;
+export const TABS = ["workflow", "claudeMd", "delegation", "runs", "roles", "custom"] as const;
 
 export function TabBar({
   activeTab,
@@ -41,9 +40,6 @@ export function StaticTabView({ activeTab }: { activeTab: (typeof TABS)[number] 
   }
   if (activeTab === "delegation") {
     return <DelegationTab />;
-  }
-  if (activeTab === "teams") {
-    return <TeamsTab />;
   }
   if (activeTab === "runs") {
     return <RunsPanel />;

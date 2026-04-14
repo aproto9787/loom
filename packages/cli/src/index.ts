@@ -198,8 +198,23 @@ async function reportCliRunStart(flow: LoadedCliFlow, agentType: AgentType): Pro
   };
 }
 
-function mergeClaudeMd(flowClaudeMd: string | undefined, agentClaudeMd: string | undefined): string {
-  return [flowClaudeMd?.trim(), agentClaudeMd?.trim()].filter(Boolean).join("\n\n");
+function summarizeTeamMembers(agent: AgentConfig): string {
+  const children = agent.agents ?? [];
+  if (children.length === 0) {
+    return "";
+  }
+
+  const lines = [
+    "# Team members available",
+    "<!-- Use TeamCreate / Agent(name=<member>) to delegate. -->",
+    ...children.map((child) => `- ${child.name} (${child.type}): ${child.system ?? ""}`.trimEnd()),
+  ];
+
+  return lines.join("\n");
+}
+
+function mergeClaudeMd(flowClaudeMd: string | undefined, agentClaudeMd: string | undefined, configuredAgent: AgentConfig): string {
+  return [flowClaudeMd?.trim(), agentClaudeMd?.trim(), summarizeTeamMembers(configuredAgent)].filter(Boolean).join("\n\n");
 }
 
 function resolveAgentClaudeMd(flow: LoadedCliFlow, agent: AgentConfig): string | undefined {
@@ -210,9 +225,14 @@ function resolveAgentClaudeMd(flow: LoadedCliFlow, agent: AgentConfig): string |
   return flow.flow.claudeMdLibrary?.[ref];
 }
 
-async function createIsolatedHome(systemPrompt: string, flowClaudeMd: string | undefined, agentClaudeMd: string | undefined): Promise<string> {
+async function createIsolatedHome(
+  systemPrompt: string,
+  flowClaudeMd: string | undefined,
+  agentClaudeMd: string | undefined,
+  configuredAgent: AgentConfig,
+): Promise<string> {
   const isolatedHome = await mkdtemp(path.join(os.tmpdir(), "loom-cli-home-"));
-  const mergedClaudeMd = mergeClaudeMd(flowClaudeMd, agentClaudeMd);
+  const mergedClaudeMd = mergeClaudeMd(flowClaudeMd, agentClaudeMd, configuredAgent);
   await writeFile(
     path.join(isolatedHome, ".claude.json"),
     JSON.stringify({ env: {}, permissions: { allow: [] } }, null, 2),
@@ -236,7 +256,7 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   });
   const systemPrompt = configuredAgent.system ?? "";
   const agentClaudeMd = resolveAgentClaudeMd(flow, configuredAgent);
-  const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, agentClaudeMd);
+  const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, agentClaudeMd, configuredAgent);
   const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow.flow, isolatedHome);
   const registration = await reportCliRunStart(flow, configuredAgent.type);
   const { command, args } = buildSpawnArgs(configuredAgent);
@@ -251,6 +271,8 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
       CLAUDE_CONFIG_DIR: isolatedHome,
       CODEX_HOME: isolatedHome,
       CODEX_CONFIG_DIR: isolatedHome,
+      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
+      CLAUDE_CODE_TEAMMATE_COMMAND: "/home/argoss/.claude/codex-bridge/codex-bridge.mjs",
       LOOM_FLOW_PATH: flow.absolutePath,
       LOOM_FLOW_NAME: flow.flow.name,
       ...(scopedMcpConfigPath ? { LOOM_MCP_CONFIG_PATH: scopedMcpConfigPath } : {}),
