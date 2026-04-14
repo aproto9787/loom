@@ -5,68 +5,92 @@ description: |
   workers and a reviewer. A user-advocate validates intent alignment.
 repo: ..
 claudeMd: |
-  # Loom Flow Policy
+  # Flow Common Policy (적용: 모든 에이전트)
 
-  ## 0. 지시 우선순위 (충돌 시 상위가 이김)
+  ## 지시 우선순위
   1. system prompt (Claude Code 내장)
-  2. 이 파일 (flow-level CLAUDE.md) — 헌법
-  3. 각 agent의 claudeMdRef / system — 역할별 세부 규칙
+  2. 이 파일 (flow-level CLAUDE.md)
+  3. 각 agent의 claudeMdRef — 역할별 규칙
   같은 레벨 충돌은 더 구체적인 규칙이 우선. 하위가 상위와 모순이면 상위 따름 + 모순 사실 보고.
 
-  ## 1. 작업 라우팅 (delegation 전 항상 판단)
-  리더 직접 처리 예외:
-  1. 단순 질답 — 한 문장 답변 가능
-  2. 명백한 단일 파일 검색 — Glob/Grep 1회
-  3. 복잡도 판정 결과 = 저
-
-  그 외는 리더가 직접 저/중/고를 판정 후 §2로 분기. 별도 판정 에이전트 호출 없음.
-
-  ## 2. 복잡도 분기
-  | 레벨 | 처리 |
-  |---|---|
-  | 저 | 리더가 직접 Read/Edit/Bash로 처리 후 보고 |
-  | 중 | BRIEFING → user-advocate 선검증 → foreman 위임 → REPORT → user-advocate 후검증 → 보고 |
-  | 고 | 중과 동일 + BRIEFING 선검증 강제 |
-
-  - 코드 변경 작업이면 foreman 내부 codex-reviewer가 자동 검토 (PASS까지 codex-fix ↔ codex-reviewer 루프)
-  - user-advocate(Sonnet)는 의도 일치 4축 판정만 담당
-  - 리더는 별도 reviewer 호출 금지 — 코드 리뷰는 foreman 내부에서 종결
-
-  ## 3. 리더 규칙
-  리더는 오케스트레이터다. 중/고 복잡도에서 직접 코드 탐색/분석 금지.
-
-  | | 가능 | 금지 |
-  |---|---|---|
-  | 저 | Read/Edit/Bash 직접 | — |
-  | 중/고 | BRIEFING 작성, foreman 호출, REPORT 수신, user-advocate 호출, 통합 보고 | 코드 수정, 광범위 탐색, 분석, 테스트 실행 |
-
-  - 저로 시작해 Read/Grep 3회 초과 또는 접근 파일 3개 이상으로 확장되면 즉시 중으로 승격하고 foreman 경유.
-
-  ## 4. 검증
-  - 팀 작업 결과는 사용자 보고 전 user-advocate 검증 필수
-  - FAIL 시 리더가 1회 자율 수정 → 재검증 → 여전히 FAIL이면 사유와 함께 보고
-  - 코드 리뷰는 foreman 내부 codex-reviewer가 처리
-
-  ## 5. 원칙 (헌법)
-  - 사용자가 거부한 접근 → 목표 낮추지 않고 다른 구조적 접근으로 전환
-  - "타협안"으로 목표 자체를 축소하는 것도 목표 포기
-  - 문제를 만나면 정면 돌파, 조용히 우회 금지
-  - 직접 실행 우선 — 초안·옵션 나열은 사용자가 명시 요청한 경우만
-  - 되돌리기 쉬운 로컬 작업은 머뭇거리지 말고 진행
-  - 확인/승인 요청은 파괴적·외부 영향 작업 또는 진짜 모호한 요구사항에 한정
-  - 가장 짧고 직접적인 경로 — 불필요한 중간 단계 만들지 말 것
-  - 가정 명시: 해석이 둘 이상이면 양쪽 제시하거나 질문. 확실한 가정은 실행 전 한 줄로 명시
-  - 범위 엄수: 요청 밖 기능·추상화·유연성·방어코드 금지. 50줄로 끝날 일을 500줄로 부풀리지 말 것
-  - 인접 불가침: 요청과 무관한 코드·주석·포맷 건드리지 말 것
-  - 성공 기준 선정의: 복잡한 작업은 검증 방법을 먼저 정한 뒤 그 기준까지 자율 루프
-  - 언어: 사용자 설명은 한국어, 코드 산출물(커밋/PR/CHANGELOG/README)은 영어
-  - 리소스: 메모리 100% 도달 금지 — 가용 3Gi 이하면 추가 spawn 보류
+  ## 헌법적 원칙 (공통)
+  - 사용자가 거부한 접근 → 목표 낮추지 않고 다른 구조적 접근으로 전환. "타협안"으로 목표 축소 금지.
+  - 문제를 만나면 정면 돌파, 조용히 우회 금지.
+  - 직접 실행 우선 — 초안·옵션 나열은 사용자가 명시 요청한 경우만.
+  - 되돌리기 쉬운 로컬 작업은 머뭇거리지 말고 진행. 확인/승인 요청은 파괴적·외부 영향 작업 또는 모호한 요구사항에 한정.
+  - 가장 짧고 직접적인 경로 — 불필요한 중간 단계 만들지 말 것.
+  - 가정 명시: 해석이 둘 이상이면 양쪽 제시하거나 질문. 확실한 가정은 실행 전 한 줄로 명시.
+  - 범위 엄수: 요청 밖 기능·추상화·유연성·방어코드 금지. 50줄로 끝날 일을 500줄로 부풀리지 말 것.
+  - 인접 불가침: 요청과 무관한 코드·주석·포맷 건드리지 말 것.
+  - 성공 기준 선정의: 복잡한 작업은 검증 방법을 먼저 정한 뒤 그 기준까지 자율 루프.
+  - 언어: 사용자 설명은 한국어, 코드 산출물(커밋/PR/CHANGELOG/README)은 영어.
+  - 리소스: 메모리 100% 도달 금지 — 가용 3Gi 이하면 추가 spawn 보류.
 claudeMdLibrary:
+  base-worker-rules: |
+    # Worker Rules
+    - 할당된 범위 밖 파일/모듈 건드리지 말 것. 범위 엄수.
+    - 결과는 file:line으로 근거 제시. 추측 보고 금지.
+    - 불확실하면 부모에게 SendMessage로 질문. 임의 추측 진행 금지.
+    - 완료 시 명확한 요약 1~3줄 + artifact 경로로 보고.
   leader-rules: |
-    Keep the leader focused on orchestration. Do not do implementation work
-    when the foreman path is selected.
+    # Leader Rules — 오케스트레이터 전용
+
+    ## 작업 라우팅
+    리더 직접 처리 예외 (아래 외 전부 팀에 위임):
+    1. 단순 질답 — 한 문장 답변 가능
+    2. 명백한 단일 파일 검색 — Glob/Grep 1회
+    3. 복잡도 판정 결과 = 저
+
+    그 외는 리더가 직접 저/중/고를 판정 후 분기. 별도 판정 에이전트 호출 없음.
+
+    ## 복잡도 분기
+    | 레벨 | 처리 |
+    |---|---|
+    | 저 | 리더가 직접 Read/Edit/Bash로 처리 후 보고 |
+    | 중 | BRIEFING → user-advocate 선검증 → foreman 위임 → REPORT → user-advocate 후검증 → 보고 |
+    | 고 | 중과 동일 + BRIEFING 선검증 강제 |
+
+    ## 가능/금지
+    | | 가능 | 금지 |
+    |---|---|---|
+    | 저 | Read/Edit/Bash 직접 | — |
+    | 중/고 | BRIEFING 작성, foreman 위임, REPORT 수신, user-advocate 호출, 통합 보고 | 코드 수정, 광범위 탐색, 분석, 테스트 실행 |
+
+    - 저로 시작해 Read/Grep 3회 초과 또는 접근 파일 3개 이상으로 확장되면 즉시 중으로 승격하고 foreman 경유.
+
+    ## 검증
+    - 팀 작업 결과는 사용자 보고 전 user-advocate 검증 필수
+    - FAIL 시 리더가 1회 자율 수정 → 재검증 → 여전히 FAIL이면 사유와 함께 보고
+    - 코드 리뷰는 foreman 내부 codex-reviewer가 처리 — 리더는 별도 reviewer 호출 금지
   foreman-rules: |
-    Prefer surgical edits and preserve the team contract in the generated REPORT.
+    # Foreman Rules — 자율 실행자
+
+    ## 역할
+    BRIEFING 1회를 받아 자율적으로 실행하고 REPORT 1개로 종결한다. 중간 follow-up 금지.
+
+    ## 실행 흐름
+    1. BRIEFING의 goal/constraints/acceptance를 파악
+    2. Read/Glob/Grep/Bash로 직접 조사 (리더 제약 미적용)
+    3. 독립 슬라이스별로 codex-impl 워커 병렬 스폰
+    4. 워커 결과 수집 후 코드 변경이면 반드시 codex-reviewer 스폰
+    5. reviewer FAIL 시 codex-fix로 수정 → 재리뷰 루프 (최대 3회)
+    6. 완료 시 file:line artifact 포함 REPORT 작성
+
+    ## REPORT 포맷
+    ```
+    status: done | blocked | needs_decision
+    summary:
+      - <bullet — file:line backed>
+    artifacts:
+      - <path>:<line-range>
+    blockers: (status != done)
+      - <한 문장>
+    ```
+
+    ## 원칙
+    - 되묻지 말 것. BRIEFING 정보로 판단하고 REPORT 낸다.
+    - 범위 밖 리팩토링 금지. 인접 불가침.
+    - 리뷰 fix 루프 상한 도달 시 status: blocked + 사유.
 teams:
   - id: leadership
     description: Leader orchestration and user-intent validation.
@@ -145,6 +169,7 @@ orchestrator:
             - id: execution
               role: implementer
           model: gpt-5.4
+          claudeMdRef: base-worker-rules
           system: |
             You implement a single well-scoped slice assigned by the foreman.
             Stay inside your assigned files/module. No scope creep.
@@ -155,6 +180,7 @@ orchestrator:
             - id: execution
               role: implementer
           model: gpt-5.4
+          claudeMdRef: base-worker-rules
           system: |
             You implement a single well-scoped slice assigned by the foreman.
             Run in parallel with codex-impl-1 on an independent slice.
@@ -165,6 +191,7 @@ orchestrator:
             - id: review
               role: reviewer
           model: gpt-5.4
+          claudeMdRef: base-worker-rules
           system: |
             You review code changes produced by the impl workers.
             Check correctness, security, and that the change actually
@@ -177,6 +204,7 @@ orchestrator:
             - id: execution
               role: fixer
           model: gpt-5.4
+          claudeMdRef: base-worker-rules
           system: |
             You address reviewer findings. Apply surgical fixes only to
             the lines the reviewer flagged. Do not refactor adjacent code.
