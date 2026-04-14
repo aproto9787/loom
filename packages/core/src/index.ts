@@ -47,10 +47,21 @@ export const delegationRuleSchema: z.ZodType<DelegationRule> = z.object({
   when: z.string().min(1),
 });
 
+export interface AgentTeamTag {
+  id: string;
+  role?: string;
+}
+
+export const agentTeamTagSchema: z.ZodType<AgentTeamTag> = z.object({
+  id: z.string().min(1),
+  role: z.string().min(1).optional(),
+});
+
 export interface AgentConfig {
   name: string;
   type: AgentType;
   role?: string;
+  team?: AgentTeamTag[];
   model?: string;
   system?: string;
   claudeMdRef?: string;
@@ -69,6 +80,7 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   name: z.string().min(1),
   type: agentTypeSchema,
   role: z.string().min(1).optional(),
+  team: z.array(agentTeamTagSchema).optional(),
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
   claudeMdRef: z.string().min(1).optional(),
@@ -83,6 +95,18 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   agents: z.array(agentConfigSchema).optional(),
 }));
 
+export interface TeamDefinition {
+  id: string;
+  description?: string;
+  claudeMdRef?: string;
+}
+
+export const teamDefinitionSchema: z.ZodType<TeamDefinition> = z.object({
+  id: z.string().min(1),
+  description: z.string().min(1).optional(),
+  claudeMdRef: z.string().min(1).optional(),
+});
+
 export interface FlowDefinition {
   version?: string;
   name: string;
@@ -90,6 +114,7 @@ export interface FlowDefinition {
   repo: string;
   claudeMd?: string;
   claudeMdLibrary?: Record<string, string>;
+  teams?: TeamDefinition[];
   orchestrator: AgentConfig;
   resources?: {
     mcps?: string[];
@@ -105,6 +130,7 @@ export const flowDefinitionSchema: z.ZodType<FlowDefinition> = z.object({
   repo: z.string().min(1),
   claudeMd: z.string().min(1).optional(),
   claudeMdLibrary: z.record(z.string(), z.string()).optional(),
+  teams: z.array(teamDefinitionSchema).optional(),
   orchestrator: agentConfigSchema,
   resources: z.object({
     mcps: z.array(z.string().min(1)).optional(),

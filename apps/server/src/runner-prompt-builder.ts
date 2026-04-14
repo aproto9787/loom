@@ -27,6 +27,16 @@ function formatDelegation(value: AgentConfig["delegation"]): string {
     .join("\n");
 }
 
+function formatTeams(value: AgentConfig["team"]): string {
+  if (!value || value.length === 0) {
+    return "[]";
+  }
+
+  return value
+    .map((entry) => `- id: ${entry.id}${entry.role ? `\n  role: ${entry.role}` : ""}`)
+    .join("\n");
+}
+
 function mergeRoleIntoAgent(agent: AgentConfig, roles: Map<string, RoleDefinition>): AgentConfig {
   if (!agent.role) {
     return agent;
@@ -81,16 +91,20 @@ export function buildAgentPrompt(
     const children = agent.agents.map((child) => [
       `- name: ${child.name}`,
       `  type: ${child.type}`,
+      `  team: ${formatTeams(child.team)}`,
       `  delegation: ${formatDelegation(child.delegation)}`,
       `  description: ${child.system?.trim() || ""}`,
     ].join("\n"));
     sections.push([
       "You can delegate tasks to these agents:",
       ...children,
+      agent.team?.length
+        ? `Team tags for this agent:\n${formatTeams(agent.team)}`
+        : "No team tags are configured for this agent.",
       agent.delegation?.length
         ? `Delegation rules for this agent:\n${formatDelegation(agent.delegation)}`
         : "No explicit delegation rules are configured.",
-      "First analyze the task, then delegate to the most appropriate child based on the delegation rules, description, and role.",
+      "First analyze the task, then delegate to the most appropriate child based on the delegation rules, description, role, and team tags.",
       "If you need to delegate, respond with exactly one line in this format:",
       "DELEGATE <child-agent-name>: <subtask for the child>",
       "Do not add any extra text when delegating.",

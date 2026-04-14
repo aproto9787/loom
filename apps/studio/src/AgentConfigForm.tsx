@@ -286,6 +286,7 @@ export function AgentConfigForm({
   const [type, setType] = useState(agent.type);
   const [model, setModel] = useState(agent.model ?? "");
   const [effort, setEffort] = useState(agent.effort ?? "");
+  const [teamId, setTeamId] = useState(agent.team?.[0]?.id ?? "none");
   const [claudeMdRef, setClaudeMdRef] = useState(agent.claudeMdRef ?? "none");
   const [activeTab, setActiveTab] = useState<AgentConfigTab>("basic");
   const [resourceSearch, setResourceSearch] = useState<Record<ResourceField, string>>({
@@ -299,10 +300,11 @@ export function AgentConfigForm({
     setType(agent.type);
     setModel(agent.model ?? "");
     setEffort(agent.effort ?? "");
+    setTeamId(agent.team?.[0]?.id ?? "none");
     setClaudeMdRef(agent.claudeMdRef ?? "none");
     setActiveTab("basic");
     setResourceSearch({ mcps: "", hooks: "", skills: "" });
-  }, [agent.name, agent.type, agent.model, agent.effort, agent.claudeMdRef, agent.delegation]);
+  }, [agent.name, agent.type, agent.model, agent.effort, agent.team, agent.claudeMdRef, agent.delegation]);
 
   const role = useMemo(() => roles.find((entry) => entry.name === agent.role), [agent.role, roles]);
 
@@ -337,6 +339,7 @@ export function AgentConfigForm({
     return collectRelatedAgentNames(flowDraft.orchestrator, path);
   }, [flowDraft, path]);
 
+  const teamOptions = useMemo(() => flowDraft?.teams ?? [], [flowDraft?.teams]);
   const libraryEntries = useMemo(() => Object.entries(flowDraft?.claudeMdLibrary ?? {}), [flowDraft?.claudeMdLibrary]);
   const selectedLibraryPreview = useMemo(() => {
     if (claudeMdRef === "none") {
@@ -506,6 +509,27 @@ export function AgentConfigForm({
                     Role default: {role.effort}
                   </span>
                 )}
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                <span>Team</span>
+                <select
+                  className={selectDark}
+                  value={teamId}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setTeamId(value);
+                    updateAgent(path, {
+                      team: value === "none" ? undefined : [{ id: value }],
+                    });
+                  }}
+                >
+                  <option value="none">none</option>
+                  {teamOptions.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.id}
+                    </option>
+                  ))}
+                </select>
               </label>
               {role?.system && !agent.system && (
                 <p className="m-0 text-[10px] leading-4 text-slate-500">

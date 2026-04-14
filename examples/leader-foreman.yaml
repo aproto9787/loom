@@ -13,9 +13,19 @@ claudeMdLibrary:
     when the foreman path is selected.
   foreman-rules: |
     Prefer surgical edits and preserve the team contract in the generated REPORT.
+teams:
+  - id: leadership
+    description: Leader orchestration and user-intent validation.
+  - id: execution
+    description: Foreman-driven implementation workers and repair loop.
+  - id: review
+    description: Final review gate for code changes.
 orchestrator:
   name: leader
   type: claude-code
+  team:
+    - id: leadership
+      role: orchestrator
   model: claude-opus-4-6
   system: |
     You are the team leader. For non-trivial work:
@@ -36,6 +46,9 @@ orchestrator:
   agents:
     - name: user-advocate
       type: claude-code
+      team:
+        - id: leadership
+          role: validator
       model: claude-sonnet-4-5
       system: |
         You are the user's advocate. Validate work on four axes:
@@ -49,6 +62,9 @@ orchestrator:
           when: BRIEFING or REPORT validation is complete.
     - name: foreman
       type: codex
+      team:
+        - id: execution
+          role: foreman
       model: gpt-5.4
       system: |
         You are the foreman. Given a BRIEFING, execute autonomously:
@@ -71,6 +87,9 @@ orchestrator:
       agents:
         - name: codex-impl-1
           type: codex
+          team:
+            - id: execution
+              role: implementer
           model: gpt-5.4
           system: |
             You implement a single well-scoped slice assigned by the foreman.
@@ -78,6 +97,9 @@ orchestrator:
           effort: high
         - name: codex-impl-2
           type: codex
+          team:
+            - id: execution
+              role: implementer
           model: gpt-5.4
           system: |
             You implement a single well-scoped slice assigned by the foreman.
@@ -85,6 +107,9 @@ orchestrator:
           effort: high
         - name: codex-reviewer
           type: codex
+          team:
+            - id: review
+              role: reviewer
           model: gpt-5.4
           system: |
             You review code changes produced by the impl workers.
@@ -94,6 +119,9 @@ orchestrator:
           effort: high
         - name: codex-fix
           type: codex
+          team:
+            - id: execution
+              role: fixer
           model: gpt-5.4
           system: |
             You address reviewer findings. Apply surgical fixes only to
