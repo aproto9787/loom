@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentConfig, DelegationRule, RoleDefinition } from "@loom/core";
 import { SERVER_ORIGIN } from "./sse-run.js";
-import { inputDark, selectDark } from "./panelStyles.js";
+import { darkButtonLink, darkCardMuted, inputDark, selectDark } from "./panelStyles.js";
 import { getAgentAtPath, useRunStore, type DiscoveredResource } from "./store.js";
 
 type ResourceField = "mcps" | "hooks" | "skills";
@@ -344,6 +344,7 @@ export function AgentConfigForm({
     }
     return (flowDraft?.claudeMdLibrary ?? {})[claudeMdRef] ?? "Selected library entry is missing.";
   }, [claudeMdRef, flowDraft?.claudeMdLibrary]);
+  const delegationRules = agent.delegation ?? [];
 
   const toggleResource = useCallback(
     (field: ResourceField, value: string) => {
@@ -515,7 +516,7 @@ export function AgentConfigForm({
           ) : null}
 
           {activeTab === "claude-md" ? (
-            <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className={`flex flex-col gap-3 p-4 ${darkCardMuted}`}>
               <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
                 <span>CLAUDE.md Ref</span>
                 <select
@@ -535,7 +536,7 @@ export function AgentConfigForm({
                   ))}
                 </select>
               </label>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+              <div className={`p-4 ${darkCardMuted}`}>
                 <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3">
                   <p className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                     Library Preview
@@ -548,29 +549,51 @@ export function AgentConfigForm({
                   {selectedLibraryPreview}
                 </pre>
               </div>
-              {libraryEntries.length === 0 ? (
-                <p className="m-0 text-[11px] leading-4 text-amber-300">
-                  Add entries in the flow-level CLAUDE.md library to make reusable prompts selectable here.
-                </p>
-              ) : null}
+              <a href="#claude-md" className={`${darkButtonLink} self-start no-underline`}>
+                Manage library in the CLAUDE.md tab
+              </a>
             </div>
           ) : null}
 
           {activeTab === "delegation" ? (
-            <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-              <div>
-                <p className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  Delegation Rules
-                </p>
-                <p className="m-0 mt-1 text-xs leading-5 text-slate-500">
-                  Route work to sibling or child agents with explicit conditions.
-                </p>
+            <div className={`flex flex-col gap-3 p-4 ${darkCardMuted}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Delegation Rules
+                  </p>
+                  <p className="m-0 mt-1 text-xs leading-5 text-slate-500">
+                    Delegation is configured in the global Delegation tab.
+                  </p>
+                </div>
+                <a href="#delegation" className={`${darkButtonLink} no-underline`}>
+                  Edit in Delegation tab
+                </a>
               </div>
-              <DelegationRowEditor
-                rules={agent.delegation ?? []}
-                options={relatedAgentOptions}
-                onChange={(rules) => updateAgent(path, { delegation: rules })}
-              />
+              {delegationRules.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-4 py-5 text-sm text-slate-500">
+                  No rules - add them in the Delegation tab.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {delegationRules.map((rule, index) => (
+                    <article
+                      key={`${rule.to}-${rule.when}-${index}`}
+                      className="rounded-xl border border-slate-700 bg-slate-900/70 p-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="rounded-full border border-blue-500/40 bg-blue-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-200">
+                          {rule.to}
+                        </span>
+                        <span className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                          Rule {index + 1}
+                        </span>
+                      </div>
+                      <p className="m-0 mt-3 text-sm leading-6 text-slate-200">{rule.when}</p>
+                    </article>
+                  ))}
+                </div>
+              )}
             </div>
           ) : null}
 

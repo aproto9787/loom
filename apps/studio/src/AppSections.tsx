@@ -19,6 +19,7 @@ import {
   type AgentRuntime,
   type RunHistoryItem,
 } from "./store.js";
+import { darkCard, inputDark, selectDark } from "./panelStyles.js";
 
 function applyAgentRuntimeState(
   nodes: Node[],
@@ -332,6 +333,28 @@ export function WorkflowTab() {
   );
 }
 
+function runStatusClasses(status: RunHistoryItem["status"]): string {
+  switch (status) {
+    case "running":
+      return "border-blue-500/40 bg-blue-500/10 text-blue-200";
+    case "done":
+      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+    default:
+      return "border-red-500/40 bg-red-500/10 text-red-200";
+  }
+}
+
+function runStatusDot(status: RunHistoryItem["status"]): string {
+  switch (status) {
+    case "running":
+      return "bg-blue-400 animate-pulse";
+    case "done":
+      return "bg-emerald-400";
+    default:
+      return "bg-red-400";
+  }
+}
+
 export function RunsPanel() {
   const runHistory = useRunStore((s) => s.runHistory);
   const keyword = useRunStore((s) => s.runHistoryKeyword);
@@ -351,19 +374,19 @@ export function RunsPanel() {
   }, [fetchRunHistory, keyword, statusFilter]);
 
   return (
-    <div className="flex flex-col h-full p-5 gap-4">
-      <div className="flex items-center gap-3">
+    <div className="flex h-full flex-col gap-5 p-5">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
         <input
           type="text"
           placeholder="Search runs..."
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          className="flex-1 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={`w-full ${inputDark}`}
         />
         <select
           value={statusFilter}
           onChange={(e) => setStatus(e.target.value as typeof statusFilter)}
-          className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm"
+          className={selectDark}
         >
           <option value="all">All</option>
           <option value="running">Running</option>
@@ -372,31 +395,23 @@ export function RunsPanel() {
         </select>
       </div>
       {loading && runHistory.length === 0 ? (
-        <p className="text-slate-400 text-sm">Loading...</p>
+        <div className={`px-4 py-5 text-sm text-slate-400 ${darkCard}`}>Loading...</div>
       ) : runHistory.length === 0 ? (
-        <p className="text-slate-400 text-sm">No runs found</p>
+        <div className={`px-4 py-5 text-sm text-slate-400 ${darkCard}`}>No runs found</div>
       ) : (
-        <ul className="flex flex-col gap-2 overflow-y-auto">
+        <ul className="flex flex-col gap-3 overflow-y-auto">
           {runHistory.map((run: RunHistoryItem) => (
-            <li
-              key={run.runId}
-              className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white"
-            >
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-slate-900">{run.flowName}</span>
-                <span className="text-xs text-slate-500">
+            <li key={run.runId} className={`flex items-center justify-between gap-4 px-5 py-4 ${darkCard}`}>
+              <div className="min-w-0 flex flex-col gap-1">
+                <span className="truncate text-sm font-semibold text-slate-100">{run.flowName}</span>
+                <span className="text-xs text-slate-400">
                   {run.source === "cli" ? "CLI" : "Studio"} · {new Date(run.createdAt).toLocaleString()}
                 </span>
               </div>
               <span
-                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                  run.status === "running"
-                    ? "bg-blue-100 text-blue-700"
-                    : run.status === "done"
-                      ? "bg-green-100 text-green-700"
-                      : "bg-red-100 text-red-700"
-                }`}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${runStatusClasses(run.status)}`}
               >
+                <span className={`h-2.5 w-2.5 rounded-full ${runStatusDot(run.status)}`} />
                 {run.status}
               </span>
             </li>
