@@ -12,6 +12,7 @@ import { saveFlow } from "./api.js";
 import { inputDark } from "./panelStyles.js";
 import { SERVER_ORIGIN } from "./sse-run.js";
 import { AgentConfigForm } from "./AgentConfigForm.js";
+import { ClaudeMdLibraryPanel } from "./ClaudeMdLibraryPanel.js";
 import { NodePalette } from "./NodePalette.js";
 import { agentTreeToGraph } from "./flowToGraph.js";
 import {
@@ -190,6 +191,7 @@ function FlowSettingsForm() {
           Prepended before any agent-specific claudeMdLibrary entry selected by ref.
         </span>
       </label>
+      <ClaudeMdLibraryPanel />
     </div>
   );
 }
