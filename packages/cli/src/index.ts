@@ -261,6 +261,25 @@ async function createIsolatedHome(
       } catch { /* fall back to empty overrides */ }
     }
     await writeFile(path.join(isolatedHome, ".claude.json"), JSON.stringify(merged, null, 2), "utf8");
+
+    // settings.json filtered: drop hooks/plugins/marketplaces, keep UI prefs.
+    const realSettingsRaw = await readOptional(path.join(realHome, ".claude", "settings.json"));
+    const filteredSettings: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
+    if (realSettingsRaw) {
+      try {
+        const real = JSON.parse(realSettingsRaw) as Record<string, unknown>;
+        for (const key of ["statusLine", "language", "effortLevel", "autoDreamEnabled", "skipDangerousModePermissionPrompt"]) {
+          if (real[key] !== undefined) filteredSettings[key] = real[key];
+        }
+      } catch { /* ignore */ }
+    }
+    await writeFile(path.join(claudeDir, "settings.json"), JSON.stringify(filteredSettings, null, 2), "utf8");
+
+    const realDashboard = await readOptional(path.join(realHome, ".claude", "claude-dashboard.local.json"));
+    if (realDashboard) {
+      await writeFile(path.join(claudeDir, "claude-dashboard.local.json"), realDashboard, "utf8");
+    }
+
     await writeFile(path.join(claudeDir, "CLAUDE.md"), mergedInstructions, "utf8");
   } else {
     const codexDir = path.join(isolatedHome, ".codex");
@@ -299,8 +318,6 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
     if (mergedInstructions.trim().length > 0) {
       args.push("--append-system-prompt", mergedInstructions);
     }
-    // Settings isolation: no global hooks/skills/custom commands inherit.
-    args.push("--settings", "{}");
     // MCP isolation: only the flow-scoped MCPs (if any), otherwise none.
     args.push("--strict-mcp-config");
     if (scopedMcpConfigPath) {
@@ -330,6 +347,12 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
     stdio: "inherit",
     env: {
       ...process.env,
+      HOME: isolatedHome,
+      USERPROFILE: isolatedHome,
+      XDG_CONFIG_HOME: path.join(isolatedHome, ".config"),
+      CLAUDE_CONFIG_DIR: path.join(isolatedHome, ".claude"),
+      CODEX_HOME: path.join(isolatedHome, ".codex"),
+      CODEX_CONFIG_DIR: path.join(isolatedHome, ".codex"),
       CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
       CLAUDE_CODE_TEAMMATE_COMMAND: "/home/argoss/.claude/codex-bridge/codex-bridge.mjs",
       LOOM_FLOW_PATH: flow.absolutePath,
