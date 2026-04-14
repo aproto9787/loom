@@ -1,0 +1,25 @@
+name: Discussion Team
+description: Two debaters present opposing stances and a synthesizer decides.
+repo: ..
+claudeMd: |
+  Discussion policy — both debaters must cite evidence, synthesizer picks a side or escalates
+teams:
+  - id: discussion
+    description: Two debaters and a synthesizer
+orchestrator:
+  name: synthesizer
+  type: claude-code
+  role: synthesizer
+  system: Claude Opus synthesizer가 debater 2명을 호출해 토론 시킨 뒤 최종 결론 제시
+  agents:
+    - name: debater-a
+      type: claude-code
+      role: debater
+    - name: debater-b
+      type: claude-code
+      role: debater
+  delegation:
+    - to: debater-a
+      when: First stance needed
+    - to: debater-b
+      when: Counter stance needed

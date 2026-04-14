@@ -1,0 +1,34 @@
+name: briefing-format
+description: BRIEFING template for delegated execution work
+prompt: |
+  Structure BRIEFING messages with these sections:
+
+  ## Goal
+  - State the target outcome in one or two sentences.
+
+  ## Constraints
+  - List scope limits, safety rules, repository conventions, and anything that must not change.
+
+  ## Acceptance
+  - Define the observable checks that determine success.
+
+  ## Budget
+  - State available time, tool, or token budget constraints when relevant.
+
+  Template:
+
+  ```markdown
+  ## Goal
+  - <desired outcome>
+
+  ## Constraints
+  - <scope limit>
+  - <must preserve>
+
+  ## Acceptance
+  - <verification step>
+  - <expected result>
+
+  ## Budget
+  - <time/tool/token guardrails>
+  ```

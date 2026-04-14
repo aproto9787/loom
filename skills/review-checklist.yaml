@@ -1,0 +1,12 @@
+name: review-checklist
+description: Code review checklist for implementation changes
+prompt: |
+  Use this checklist during code review:
+
+  - Correctness: Verify behavior matches the requested outcome and edge cases still work.
+  - Security: Check for unsafe input handling, auth regressions, secret exposure, and injection risks.
+  - Performance: Look for unnecessary queries, blocking work, wasteful renders, and unbounded loops.
+  - Tests: Confirm existing tests still cover the change and add or update tests when behavior changed.
+  - Style: Ensure the change follows repository conventions, keeps scope tight, and avoids unnecessary abstractions.
+
+  Review findings should prioritize real bugs, regressions, and missing verification over minor polish.

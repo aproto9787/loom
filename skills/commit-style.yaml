@@ -1,0 +1,22 @@
+name: commit-style
+description: Commit message guidelines for repository changes
+prompt: |
+  Follow this commit message style:
+
+  - Use imperative mood in the subject line.
+  - Keep the subject line at 50 characters or fewer.
+  - Prefer explaining why the change matters over listing implementation details.
+  - Use a short body when extra context helps reviewers.
+  - Include the required co-author trailer when creating commits:
+    `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
+
+  Example:
+
+  ```text
+  fix runner timeout handling
+
+  Prevent hung sessions from blocking queued work by
+  enforcing cancellation at the process boundary.
+
+  Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+  ```

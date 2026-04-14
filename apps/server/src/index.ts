@@ -463,30 +463,6 @@ export function buildServer() {
       }
     } catch { /* skip */ }
 
-    // ── Codex resources ─────────────────────────────────────────
-
-    // Codex skills — ~/.codex/skills/*.toml
-    const codexSkillsDir = path.join(homedir(), ".codex", "skills");
-    try {
-      const entries = await readdir(codexSkillsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isFile()) continue;
-        const name = entry.name.replace(/\.(toml|md|yaml)$/, "");
-        resources.push({ type: "skill", name, source: codexSkillsDir, platform: "codex" });
-      }
-    } catch { /* skip */ }
-
-    // Codex agents — ~/.codex/agents/*.toml
-    const codexAgentsDir = path.join(homedir(), ".codex", "agents");
-    try {
-      const entries = await readdir(codexAgentsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isFile()) continue;
-        const name = entry.name.replace(/\.(toml|md|yaml)$/, "");
-        resources.push({ type: "skill", name: `agent:${name}`, source: codexAgentsDir, platform: "codex" });
-      }
-    } catch { /* skip */ }
-
     return { resources };
   });
 
