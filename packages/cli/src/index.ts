@@ -334,19 +334,71 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   });
 }
 
-async function promptForSelection(flows: LoadedCliFlow[]): Promise<SelectionResult> {
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function buildFlowTemplate(name: string): string {
+  return `name: ${name}
+description: |
+  TODO: describe this flow.
+repo: .
+claudeMd: |
+  # Flow Common Policy
+  - 범위 엄수. 인접 불가침. 가정 명시.
+claudeMdLibrary: {}
+orchestrator:
+  name: leader
+  type: claude-code
+  model: claude-opus-4-6
+  system: |
+    You are the orchestrator for ${name}. Delegate work to your team.
+  effort: high
+  delegation: []
+  agents: []
+`;
+}
+
+async function createNewFlowInteractive(rl: readline.Interface): Promise<string> {
+  const rawName = (await rl.question("New flow name: ")).trim();
+  if (!rawName) throw new Error("Flow name is required");
+  const slug = slugify(rawName) || `flow-${Date.now()}`;
+  const targetDir = path.join(workspaceRoot, "examples");
+  await mkdir(targetDir, { recursive: true });
+  const targetPath = path.join(targetDir, `${slug}.yaml`);
+  if (await pathExists(targetPath)) {
+    throw new Error(`${targetPath} already exists`);
+  }
+  await writeFile(targetPath, buildFlowTemplate(rawName), "utf8");
+  return targetPath;
+}
+
+type SelectionAction =
+  | { kind: "flow"; flow: LoadedCliFlow }
+  | { kind: "created"; absolutePath: string };
+
+async function promptForSelection(flows: LoadedCliFlow[]): Promise<SelectionAction> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
     console.log("Available flows:\n");
     flows.forEach((flow, index) => {
       console.log(`  ${index + 1}. ${flow.flow.name} (${flow.relativePath})`);
     });
-    const answer = await rl.question("\nSelect a flow number: ");
+    console.log("  n. Create new flow");
+    const answer = (await rl.question("\nSelect a flow number (or 'n'): ")).trim();
+    if (answer.toLowerCase() === "n") {
+      const created = await createNewFlowInteractive(rl);
+      return { kind: "created", absolutePath: created };
+    }
     const selection = Number.parseInt(answer, 10);
     if (!Number.isInteger(selection) || selection < 1 || selection > flows.length) {
       throw new Error("Invalid selection");
     }
-    return { flow: flows[selection - 1]! };
+    return { kind: "flow", flow: flows[selection - 1]! };
   } finally {
     rl.close();
   }
@@ -367,9 +419,14 @@ async function main(): Promise<void> {
   );
   const flows = loadResults.filter((f): f is LoadedCliFlow => f !== null);
   if (flows.length === 0) {
-    throw new Error("No valid flow YAML files found in the current directory or examples/");
+    console.log("No flow YAML files found. Launching flow-creation prompt.\n");
   }
   const selection = await promptForSelection(flows);
+  if (selection.kind === "created") {
+    console.log(`\nCreated ${selection.absolutePath}`);
+    console.log("Edit the flow YAML then run 'loom' again to launch it.");
+    return;
+  }
   const exitCode = await launchAgent(selection.flow);
   process.exitCode = exitCode;
 }
