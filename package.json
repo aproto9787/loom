@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.7.1",
   "scripts": {
+    "dev": "pnpm -r --parallel --stream run dev",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {

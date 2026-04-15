@@ -9,8 +9,8 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import type { AgentConfig, AgentType } from "@loom/core";
-import { loadFlow, createScopedMcpConfig } from "../../../apps/server/src/runner.js";
-import { buildConfiguredAgent } from "../../../apps/server/src/runner-prompt-builder.js";
+import { loadFlow, createScopedMcpConfig } from "../../../apps/server/dist/runner.js";
+import { buildConfiguredAgent } from "../../../apps/server/dist/runner-prompt-builder.js";
 
 const VERSION = "0.1.0";
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
