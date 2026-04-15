@@ -229,6 +229,40 @@ async function readOptional(filePath: string): Promise<string | undefined> {
   }
 }
 
+const CLAUDE_GLOBAL_CUSTOM_KEYS = new Set<string>([
+  "mcpServers",
+  "projects",
+  "skillUsage",
+  "officialMarketplaceAutoInstallAttempted",
+  "officialMarketplaceAutoInstalled",
+  "githubRepoPaths",
+]);
+
+const CLAUDE_SETTINGS_CARRYOVER_KEYS = [
+  "statusLine",
+  "language",
+  "effortLevel",
+  "autoDreamEnabled",
+  "skipDangerousModePermissionPrompt",
+] as const;
+
+const CLAUDE_DEFAULT_THEME = "dark";
+
+function stripGlobalCustomKeys(source: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(source).filter(([key]) => !CLAUDE_GLOBAL_CUSTOM_KEYS.has(key)));
+}
+
+function copyDefinedKeys(
+  source: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const copied: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (source[key] !== undefined) copied[key] = source[key];
+  }
+  return copied;
+}
+
 async function createIsolatedHome(
   systemPrompt: string,
   flowClaudeMd: string | undefined,
@@ -251,16 +285,30 @@ async function createIsolatedHome(
     }
 
     const realClaudeJsonRaw = await readOptional(path.join(realHome, ".claude.json"));
-    let merged: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
+    let filteredClaudeJson: Record<string, unknown> = {
+      env: {},
+      permissions: { allow: [] },
+      theme: CLAUDE_DEFAULT_THEME,
+    };
     if (realClaudeJsonRaw) {
       try {
-        merged = JSON.parse(realClaudeJsonRaw) as Record<string, unknown>;
-        merged.env = {};
-        merged.permissions = { allow: [] };
-        delete merged.projects;
-      } catch { /* fall back to empty overrides */ }
+        const realClaudeJson = JSON.parse(realClaudeJsonRaw) as Record<string, unknown>;
+        filteredClaudeJson = {
+          ...stripGlobalCustomKeys(realClaudeJson),
+          theme: typeof realClaudeJson.theme === "string" ? realClaudeJson.theme : CLAUDE_DEFAULT_THEME,
+          ...copyDefinedKeys(realClaudeJson, ["syntaxHighlightingDisabled"]),
+          env: {},
+          permissions: { allow: [] },
+        };
+      } catch {
+        filteredClaudeJson = {
+          env: {},
+          permissions: { allow: [] },
+          theme: CLAUDE_DEFAULT_THEME,
+        };
+      }
     }
-    await writeFile(path.join(isolatedHome, ".claude.json"), JSON.stringify(merged, null, 2), "utf8");
+    await writeFile(path.join(isolatedHome, ".claude.json"), JSON.stringify(filteredClaudeJson, null, 2), { encoding: "utf8", mode: 0o600 });
 
     // settings.json filtered: drop hooks/plugins/marketplaces, keep UI prefs.
     const realSettingsRaw = await readOptional(path.join(realHome, ".claude", "settings.json"));
@@ -268,9 +316,7 @@ async function createIsolatedHome(
     if (realSettingsRaw) {
       try {
         const real = JSON.parse(realSettingsRaw) as Record<string, unknown>;
-        for (const key of ["statusLine", "language", "effortLevel", "autoDreamEnabled", "skipDangerousModePermissionPrompt"]) {
-          if (real[key] !== undefined) filteredSettings[key] = real[key];
-        }
+        Object.assign(filteredSettings, copyDefinedKeys(real, CLAUDE_SETTINGS_CARRYOVER_KEYS));
       } catch { /* ignore */ }
     }
     await writeFile(path.join(claudeDir, "settings.json"), JSON.stringify(filteredSettings, null, 2), "utf8");
