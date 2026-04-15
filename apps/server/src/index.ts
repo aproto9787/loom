@@ -5,10 +5,19 @@ import Fastify from "fastify";
 import { z } from "zod";
 import YAML from "yaml";
 import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@loom/core";
+import type { PersistedRunEvent } from "./trace-store.js";
 import { validateFlow } from "@loom/nodes";
 import { abortRun, runFlow, streamRunFlow } from "./runner.js";
 import { stringifyFlow } from "./flow-writer.js";
-import { createRunRecord, getRun, listRuns, updateRunRecord } from "./trace-store.js";
+import {
+  appendRunEvent,
+  createRunRecord,
+  getRun,
+  listRunEvents,
+  listRuns,
+  markStaleRuns,
+  updateRunRecord,
+} from "./trace-store.js";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
 const allowedFlowDir = path.join(workspaceRoot, "examples");
@@ -52,7 +61,7 @@ const runsListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   keyword: z.string().trim().optional(),
-  status: z.enum(["success", "failed", "aborted", "running", "done", "error"]).optional(),
+  status: z.enum(["success", "failed", "aborted", "running", "done", "error", "stale"]).optional(),
 });
 
 const registerRunSchema = z.object({
@@ -62,12 +71,24 @@ const registerRunSchema = z.object({
   agentType: z.enum(["claude-code", "codex"]),
   startTime: z.string().datetime(),
   source: z.literal("cli"),
+  cwd: z.string().optional(),
 });
 
 const updateRunStatusSchema = z.object({
   endTime: z.string().datetime(),
   exitCode: z.number().int(),
   status: z.enum(["done", "error"]),
+});
+
+const runEventSchema = z.object({
+  runId: z.string().min(1),
+  ts: z.number().finite(),
+  type: z.enum(["user", "assistant", "tool_use", "tool_result", "error"]),
+  summary: z.string().min(1).optional(),
+  toolName: z.string().min(1).optional(),
+  agentName: z.string().min(1).optional(),
+  agentDepth: z.number().int().optional(),
+  raw: z.unknown().optional(),
 });
 
 const duplicateFlowSchema = z.object({
@@ -83,13 +104,43 @@ const flowQuerySchema = z.object({
   path: flowPathSchema,
 });
 
+const runEventRequestSchema = runEventSchema.omit({ runId: true });
+
 const saveFlowSchema = z.object({
   flowPath: flowPathSchema,
   flow: flowSchema,
 });
 
+const staleThresholdMs = 10 * 60 * 1000;
+
+function toRunEvent(runId: string, payload: z.infer<typeof runEventRequestSchema>): PersistedRunEvent {
+  return {
+    runId,
+    ts: payload.ts,
+    type: payload.type,
+    summary: payload.summary,
+    toolName: payload.toolName,
+    agentName: payload.agentName,
+    agentDepth: payload.agentDepth,
+    raw: payload.raw,
+  };
+}
+
+function ensureStaleRunsMarked(): void {
+  markStaleRuns();
+}
+
 export function buildServer() {
+  ensureStaleRunsMarked();
   const app = Fastify({ logger: true });
+  const runEventStreams = new Map<string, Set<(event: PersistedRunEvent) => void>>();
+
+  const emitRunEvent = (event: PersistedRunEvent) => {
+    appendRunEvent(event);
+    for (const listener of runEventStreams.get(event.runId) ?? []) {
+      listener(event);
+    }
+  };
 
   app.addHook("onSend", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
@@ -264,6 +315,7 @@ export function buildServer() {
   });
 
   app.get("/runs", async (request, reply) => {
+    ensureStaleRunsMarked();
     const parsed = runsListQuerySchema.safeParse(request.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
@@ -333,6 +385,7 @@ export function buildServer() {
       status: "running",
       source: parsed.data.source,
       startedAt: parsed.data.startTime,
+      cwd: parsed.data.cwd ?? "",
       agentResults: [
         {
           agentName: parsed.data.agentType,
@@ -342,6 +395,87 @@ export function buildServer() {
       ],
     });
     return reply.code(201).send({ runId: parsed.data.runId });
+  });
+
+  app.post("/runs/:id/events", async (request, reply) => {
+    const params = runParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: flattenValidationError(params.error) });
+    }
+
+    const parsed = runEventRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    const run = getRun(params.data.id);
+    if (!run) {
+      return reply.code(404).send({ error: { message: "run not found" } });
+    }
+
+    emitRunEvent(toRunEvent(params.data.id, parsed.data));
+    return reply.code(201).send({ runId: params.data.id });
+  });
+
+  app.get("/runs/:id/events", async (request, reply) => {
+    const params = runParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: flattenValidationError(params.error) });
+    }
+
+    const run = getRun(params.data.id);
+    if (!run) {
+      return reply.code(404).send({ error: { message: "run not found" } });
+    }
+
+    return reply.code(200).send({ runId: params.data.id, events: listRunEvents(params.data.id) });
+  });
+
+  app.get("/runs/:id/stream", async (request, reply) => {
+    const params = runParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: flattenValidationError(params.error) });
+    }
+
+    const run = getRun(params.data.id);
+    if (!run) {
+      return reply.code(404).send({ error: { message: "run not found" } });
+    }
+
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    const write = (event: PersistedRunEvent) => {
+      reply.raw.write("event: run_event\n");
+      reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+
+    const listener = (event: PersistedRunEvent) => {
+      write(event);
+    };
+
+    const listeners = runEventStreams.get(params.data.id) ?? new Set();
+    listeners.add(listener);
+    runEventStreams.set(params.data.id, listeners);
+
+    const heartbeat = setInterval(() => {
+      reply.raw.write(": keep-alive\n\n");
+    }, Math.min(staleThresholdMs, 15_000));
+
+    request.raw.on("close", () => {
+      clearInterval(heartbeat);
+      const currentListeners = runEventStreams.get(params.data.id);
+      currentListeners?.delete(listener);
+      if (currentListeners && currentListeners.size === 0) {
+        runEventStreams.delete(params.data.id);
+      }
+    });
+
+    return reply;
   });
 
   app.patch("/runs/:id/status", async (request, reply) => {

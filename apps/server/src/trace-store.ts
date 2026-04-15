@@ -3,6 +3,19 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { RunRecord, RunSource, RunStatus, RunSummary } from "@loom/core";
 
+export type PersistedRunEventType = "user" | "assistant" | "tool_use" | "tool_result" | "error";
+
+export interface PersistedRunEvent {
+  runId: string;
+  ts: number;
+  type: PersistedRunEventType;
+  summary?: string;
+  toolName?: string;
+  agentName?: string;
+  agentDepth?: number;
+  raw?: unknown;
+}
+
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
 const traceDir = path.join(workspaceRoot, ".loom");
 const traceDbPath = path.join(traceDir, "traces.db");
@@ -23,6 +36,20 @@ database.exec(`
     started_at TEXT,
     ended_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    summary TEXT,
+    tool_name TEXT,
+    agent_name TEXT,
+    agent_depth INTEGER,
+    raw TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (run_id) REFERENCES runs (run_id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS node_results (
@@ -54,6 +81,7 @@ for (const statement of [
   "ALTER TABLE runs ADD COLUMN exit_code INTEGER",
   "ALTER TABLE runs ADD COLUMN started_at TEXT",
   "ALTER TABLE runs ADD COLUMN ended_at TEXT",
+  "ALTER TABLE runs ADD COLUMN cwd TEXT",
 ]) {
   try {
     database.exec(statement);
@@ -66,6 +94,7 @@ for (const statement of [
 }
 
 export interface PersistedRun extends Omit<RunRecord, "createdAt" | "agentResults"> {
+  cwd?: string | null;
   agentResults: Array<{
     agentName: string;
     output: string;
@@ -85,6 +114,7 @@ export interface PersistedAgentResult {
 
 export interface PersistedRunDetail extends Omit<RunRecord, "agentResults"> {
   createdAt: string;
+  cwd: string | null;
   agentResults: PersistedAgentResult[];
 }
 
@@ -94,8 +124,8 @@ export function getTraceDbPath(): string {
 
 export function persistRun(run: PersistedRun): void {
   const insertRun = database.prepare(`
-    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, cwd)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertAgentResult = database.prepare(`
     INSERT INTO node_results (run_id, node_id, output, started_at, finished_at)
@@ -116,6 +146,7 @@ export function persistRun(run: PersistedRun): void {
       run.exitCode ?? null,
       run.startedAt ?? null,
       run.endedAt ?? null,
+      run.cwd ?? null,
     );
 
     for (const agentResult of run.agentResults) {
@@ -137,8 +168,8 @@ export function persistRun(run: PersistedRun): void {
 
 export function createRunRecord(run: PersistedRun): void {
   const statement = database.prepare(`
-    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, cwd)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   statement.run(
     run.runId,
@@ -151,6 +182,7 @@ export function createRunRecord(run: PersistedRun): void {
     run.exitCode ?? null,
     run.startedAt ?? null,
     run.endedAt ?? null,
+    run.cwd ?? null,
   );
 }
 
@@ -161,10 +193,11 @@ export function updateRunRecord(
     output?: string;
     exitCode?: number;
     endedAt?: string;
+    cwd?: string | null;
   },
 ): boolean {
   const current = database.prepare(`
-    SELECT outputs, status, source, exit_code, started_at, ended_at
+    SELECT outputs, status, source, exit_code, started_at, ended_at, cwd
     FROM runs
     WHERE run_id = ?
   `).get(runId) as Record<string, unknown> | undefined;
@@ -177,20 +210,36 @@ export function updateRunRecord(
   const nextStatus = updates.status ?? String(current.status) as RunStatus;
   const nextExitCode = updates.exitCode ?? (current.exit_code == null ? null : Number(current.exit_code));
   const nextEndedAt = updates.endedAt ?? (current.ended_at == null ? null : String(current.ended_at));
+  const nextCwd = updates.cwd ?? (current.cwd == null ? null : String(current.cwd));
 
   database.prepare(`
     UPDATE runs
-    SET outputs = ?, status = ?, exit_code = ?, ended_at = ?
+    SET outputs = ?, status = ?, exit_code = ?, ended_at = ?, cwd = ?
     WHERE run_id = ?
-  `).run(JSON.stringify(nextOutput), nextStatus, nextExitCode, nextEndedAt, runId);
+  `).run(JSON.stringify(nextOutput), nextStatus, nextExitCode, nextEndedAt, nextCwd, runId);
 
   return true;
+}
+
+const staleThresholdMs = 10 * 60 * 1000;
+
+export function markStaleRuns(now = Date.now()): number {
+  const threshold = new Date(now - staleThresholdMs).toISOString();
+  const result = database.prepare(`
+    UPDATE runs
+    SET status = 'stale'
+    WHERE status = 'running'
+      AND COALESCE(ended_at, started_at, created_at) < ?
+      AND COALESCE(started_at, created_at) < ?
+  `).run(threshold, threshold);
+
+  return Number(result.changes ?? 0);
 }
 
 export function listRuns(
   page: number,
   pageSize: number,
-  filters?: { keyword?: string; status?: RunStatus },
+  filters?: { keyword?: string; status?: RunStatus | "stale" },
 ): RunSummary[] {
   const offset = (page - 1) * pageSize;
   const conditions: string[] = [];
@@ -236,7 +285,7 @@ export function listRuns(
 
 export function getRun(runId: string): PersistedRunDetail | null {
   const runStatement = database.prepare(`
-    SELECT run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, created_at
+    SELECT run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, created_at, cwd
     FROM runs
     WHERE run_id = ?
   `);
@@ -252,6 +301,12 @@ export function getRun(runId: string): PersistedRunDetail | null {
     WHERE run_id = ?
     ORDER BY created_at ASC, node_id ASC
   `);
+  const eventsStatement = database.prepare(`
+    SELECT run_id, ts, type, summary, tool_name, agent_name, agent_depth, raw
+    FROM events
+    WHERE run_id = ?
+    ORDER BY ts ASC, id ASC
+  `);
   const agentResults = agentResultsStatement.all(runId).map((row) => {
     const typedRow = row as Record<string, unknown>;
     return {
@@ -261,6 +316,19 @@ export function getRun(runId: string): PersistedRunDetail | null {
       finishedAt: typedRow.finished_at == null ? null : String(typedRow.finished_at),
       createdAt: String(typedRow.created_at),
     };
+  });
+  const events = eventsStatement.all(runId).map((row) => {
+    const typedRow = row as Record<string, unknown>;
+    return {
+      runId: String(typedRow.run_id),
+      ts: Number(typedRow.ts),
+      type: String(typedRow.type) as PersistedRunEventType,
+      summary: typedRow.summary == null ? undefined : String(typedRow.summary),
+      toolName: typedRow.tool_name == null ? undefined : String(typedRow.tool_name),
+      agentName: typedRow.agent_name == null ? undefined : String(typedRow.agent_name),
+      agentDepth: typedRow.agent_depth == null ? undefined : Number(typedRow.agent_depth),
+      raw: typedRow.raw == null ? undefined : JSON.parse(String(typedRow.raw)) as unknown,
+    } satisfies PersistedRunEvent;
   });
 
   return {
@@ -275,10 +343,49 @@ export function getRun(runId: string): PersistedRunDetail | null {
     startedAt: runRow.started_at == null ? undefined : String(runRow.started_at),
     endedAt: runRow.ended_at == null ? undefined : String(runRow.ended_at),
     createdAt: String(runRow.created_at),
+    cwd: runRow.cwd == null ? null : String(runRow.cwd),
     agentResults,
-  };
+    events,
+  } as PersistedRunDetail & { events: PersistedRunEvent[] };
+}
+
+export function listRunEvents(runId: string): PersistedRunEvent[] {
+  return database.prepare(`
+    SELECT run_id, ts, type, summary, tool_name, agent_name, agent_depth, raw
+    FROM events
+    WHERE run_id = ?
+    ORDER BY ts ASC, id ASC
+  `).all(runId).map((row) => {
+    const typedRow = row as Record<string, unknown>;
+    return {
+      runId: String(typedRow.run_id),
+      ts: Number(typedRow.ts),
+      type: String(typedRow.type) as PersistedRunEventType,
+      summary: typedRow.summary == null ? undefined : String(typedRow.summary),
+      toolName: typedRow.tool_name == null ? undefined : String(typedRow.tool_name),
+      agentName: typedRow.agent_name == null ? undefined : String(typedRow.agent_name),
+      agentDepth: typedRow.agent_depth == null ? undefined : Number(typedRow.agent_depth),
+      raw: typedRow.raw == null ? undefined : JSON.parse(String(typedRow.raw)) as unknown,
+    } satisfies PersistedRunEvent;
+  });
+}
+
+export function appendRunEvent(event: PersistedRunEvent): void {
+  database.prepare(`
+    INSERT INTO events (run_id, ts, type, summary, tool_name, agent_name, agent_depth, raw)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    event.runId,
+    event.ts,
+    event.type,
+    event.summary ?? null,
+    event.toolName ?? null,
+    event.agentName ?? null,
+    event.agentDepth ?? null,
+    event.raw === undefined ? null : JSON.stringify(event.raw),
+  );
 }
 
 export function resetTraceStore(): void {
-  database.exec("DELETE FROM node_results; DELETE FROM runs;");
+  database.exec("DELETE FROM events; DELETE FROM node_results; DELETE FROM runs;");
 }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import type { FlowDefinition } from "@loom/core";
 import { buildServer } from "./index.js";
-import { resetTraceStore } from "./trace-store.js";
+import { markStaleRuns, resetTraceStore } from "./trace-store.js";
 
 function loomTest(
   name: string,
@@ -247,6 +247,120 @@ loomTest("GET /runs/:id returns 404 for a missing run", async (t) => {
 
   assert.equal(response.statusCode, 404);
   assert.deepEqual(response.json(), { error: { message: "run not found" } });
+});
+
+loomTest("runs register, events, stale transitions, and per-run SSE work together", async (t) => {
+  const app = createTestApp(t);
+  const runId = "run-events-smoke";
+  const now = Date.now();
+  const staleStart = new Date(now - (11 * 60 * 1000)).toISOString();
+
+  const registerResponse = await app.inject({
+    method: "POST",
+    url: "/runs/register",
+    payload: {
+      runId,
+      flowPath: "examples/simple.yaml",
+      flowName: "Simple Agent Orchestration",
+      agentType: "claude-code",
+      startTime: new Date(now).toISOString(),
+      source: "cli",
+      cwd: "/tmp/workspace",
+    },
+  });
+
+  assert.equal(registerResponse.statusCode, 201);
+  assert.deepEqual(registerResponse.json(), { runId });
+
+  const staleRegisterResponse = await app.inject({
+    method: "POST",
+    url: "/runs/register",
+    payload: {
+      runId: "stale-run",
+      flowPath: "examples/simple.yaml",
+      flowName: "Stale Flow",
+      agentType: "claude-code",
+      startTime: staleStart,
+      source: "cli",
+    },
+  });
+  assert.equal(staleRegisterResponse.statusCode, 201);
+
+  const ssePromise = app.inject({
+    method: "GET",
+    url: `/runs/${runId}/stream`,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 25));
+
+  const postSecondResponse = await app.inject({
+    method: "POST",
+    url: `/runs/${runId}/events`,
+    payload: {
+      ts: now + 2000,
+      type: "assistant",
+      summary: "assistant reply",
+      agentName: "lead",
+      raw: { text: "world" },
+    },
+  });
+  assert.equal(postSecondResponse.statusCode, 201);
+
+  const postFirstResponse = await app.inject({
+    method: "POST",
+    url: `/runs/${runId}/events`,
+    payload: {
+      ts: now + 1000,
+      type: "user",
+      summary: "user prompt",
+      raw: { text: "hello" },
+    },
+  });
+  assert.equal(postFirstResponse.statusCode, 201);
+
+  const eventsResponse = await app.inject({
+    method: "GET",
+    url: `/runs/${runId}/events`,
+  });
+  assert.equal(eventsResponse.statusCode, 200);
+  const eventsBody = eventsResponse.json();
+  assert.equal(eventsBody.runId, runId);
+  assert.equal(eventsBody.events.length, 2);
+  assert.deepEqual(eventsBody.events.map((event: { ts: number }) => event.ts), [now + 1000, now + 2000]);
+  assert.equal(eventsBody.events[0].type, "user");
+  assert.equal(eventsBody.events[1].type, "assistant");
+
+  const listResponse = await app.inject({
+    method: "GET",
+    url: "/runs?page=1&pageSize=10",
+  });
+  assert.equal(listResponse.statusCode, 200);
+  const listBody = listResponse.json();
+  const staleRun = listBody.runs.find((run: { runId: string }) => run.runId === "stale-run");
+  assert.ok(staleRun);
+  assert.equal(staleRun.status, "stale");
+
+  const detailResponse = await app.inject({
+    method: "GET",
+    url: `/runs/${runId}`,
+  });
+  assert.equal(detailResponse.statusCode, 200);
+  const detailBody = detailResponse.json();
+  assert.equal(detailBody.cwd, "/tmp/workspace");
+
+  const sseResponse = await Promise.race([
+    ssePromise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out waiting for SSE stream")), 1000)),
+  ]);
+  assert.equal(sseResponse.statusCode, 200);
+  assert.match(String(sseResponse.headers["content-type"]), /^text\/event-stream/);
+  const sseEvents = parseSseBody(sseResponse.body);
+  assert.equal(sseEvents.length, 2);
+  assert.deepEqual(sseEvents.map((event) => event.event), ["run_event", "run_event"]);
+  assert.deepEqual((sseEvents[0]?.data as { ts: number }).ts, now + 2000);
+  assert.deepEqual((sseEvents[1]?.data as { ts: number }).ts, now + 1000);
+
+  assert.equal(markStaleRuns(now + (11 * 60 * 1000)), 1);
 });
 
 loomTest("POST /runs/:id/abort returns 404 when the run does not exist", async (t) => {
