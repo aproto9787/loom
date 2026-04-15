@@ -8,8 +8,14 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig, AgentType } from "@loom/core";
-import { loadFlow, createScopedMcpConfig } from "../../../apps/server/dist/runner.js";
+import type { AgentConfig, AgentType, HookDefinition, SkillDefinition } from "@loom/core";
+import {
+  loadFlow,
+  createScopedMcpConfig,
+  loadHookDefinitions,
+  loadSkillDefinitions,
+  resolveAgentResources,
+} from "../../../apps/server/dist/runner.js";
 import { buildConfiguredAgent } from "../../../apps/server/dist/runner-prompt-builder.js";
 
 const VERSION = "0.1.0";
@@ -249,6 +255,13 @@ const CLAUDE_SETTINGS_CARRYOVER_KEYS = [
 const CLAUDE_DEFAULT_THEME = "dark";
 const CLAUDE_ONBOARDING_VERSION_LOCK = "99.99.99";
 
+const CLAUDE_HOOK_EVENT_MAP: Record<HookDefinition["event"], string> = {
+  on_start: "SessionStart",
+  on_complete: "Stop",
+  on_error: "SubagentStop",
+  on_delegate: "Notification",
+};
+
 function stripGlobalCustomKeys(source: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(source).filter(([key]) => !CLAUDE_GLOBAL_CUSTOM_KEYS.has(key)));
 }
@@ -264,11 +277,39 @@ function copyDefinedKeys(
   return copied;
 }
 
+async function writeClaudeSkillFiles(claudeDir: string, skills: SkillDefinition[]): Promise<void> {
+  if (skills.length === 0) {
+    return;
+  }
+  const skillsRoot = path.join(claudeDir, "skills");
+  await mkdir(skillsRoot, { recursive: true });
+  await Promise.all(skills.map(async (skill) => {
+    const skillDir = path.join(skillsRoot, skill.name);
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(path.join(skillDir, "SKILL.md"), skill.prompt, "utf8");
+  }));
+}
+
+function buildClaudeHooksConfig(hooks: HookDefinition[]): Record<string, Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>> {
+  const grouped: Record<string, Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>> = {};
+  for (const hook of hooks) {
+    const event = CLAUDE_HOOK_EVENT_MAP[hook.event];
+    grouped[event] ??= [];
+    grouped[event].push({
+      matcher: "",
+      hooks: [{ type: "command", command: hook.command }],
+    });
+  }
+  return grouped;
+}
+
 async function createIsolatedHome(
   systemPrompt: string,
   flowClaudeMd: string | undefined,
   agentClaudeMd: string | undefined,
   configuredAgent: AgentConfig,
+  scopedHooks: HookDefinition[],
+  scopedSkills: SkillDefinition[],
 ): Promise<string> {
   const loomHomesRoot = path.join(os.homedir(), ".loom", "homes");
   await mkdir(loomHomesRoot, { recursive: true });
@@ -314,7 +355,7 @@ async function createIsolatedHome(
     }
     await writeFile(path.join(isolatedHome, ".claude.json"), JSON.stringify(filteredClaudeJson, null, 2), { encoding: "utf8", mode: 0o600 });
 
-    // settings.json filtered: drop hooks/plugins/marketplaces, keep UI prefs.
+    // settings.json filtered: drop global hooks/plugins/marketplaces, then inject only flow-scoped hooks.
     const realSettingsRaw = await readOptional(path.join(realHome, ".claude", "settings.json"));
     const filteredSettings: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
     if (realSettingsRaw) {
@@ -323,7 +364,12 @@ async function createIsolatedHome(
         Object.assign(filteredSettings, copyDefinedKeys(real, CLAUDE_SETTINGS_CARRYOVER_KEYS));
       } catch { /* ignore */ }
     }
+    if (scopedHooks.length > 0) {
+      filteredSettings.hooks = buildClaudeHooksConfig(scopedHooks);
+    }
     await writeFile(path.join(claudeDir, "settings.json"), JSON.stringify(filteredSettings, null, 2), "utf8");
+
+    await writeClaudeSkillFiles(claudeDir, scopedSkills);
 
     const realDashboard = await readOptional(path.join(realHome, ".claude", "claude-dashboard.local.json"));
     if (realDashboard) {
@@ -350,15 +396,26 @@ async function createIsolatedHome(
 
 async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   const agent: AgentConfig = { ...flow.flow.orchestrator } as AgentConfig & { isolated: true };
+  const [hookDefinitions, skillDefinitions] = await Promise.all([
+    loadHookDefinitions(),
+    loadSkillDefinitions(),
+  ]);
+  const scopedResources = resolveAgentResources(agent, flow.flow);
+  const scopedHooks = scopedResources.hooks
+    .map((name) => hookDefinitions.get(name))
+    .filter((hook): hook is HookDefinition => Boolean(hook));
+  const scopedSkills = scopedResources.skills
+    .map((name) => skillDefinitions.get(name))
+    .filter((skill): skill is SkillDefinition => Boolean(skill));
   const configuredAgent = buildConfiguredAgent(agent, flow.flow, flow.flow.repo, {
     roles: new Map(),
-    hooks: new Map(),
-    skills: new Map(),
+    hooks: new Map(scopedHooks.map((hook) => [hook.name, hook])),
+    skills: new Map(scopedSkills.map((skill) => [skill.name, skill])),
   });
   const systemPrompt = configuredAgent.system ?? "";
   const agentClaudeMd = resolveAgentClaudeMd(flow, configuredAgent);
   const mergedInstructions = mergeClaudeMd(flow.flow.claudeMd, agentClaudeMd, configuredAgent);
-  const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, agentClaudeMd, configuredAgent);
+  const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, agentClaudeMd, configuredAgent, scopedHooks, scopedSkills);
   const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow.flow, isolatedHome);
   const registration = await reportCliRunStart(flow, configuredAgent.type);
   const { command, args } = buildSpawnArgs(configuredAgent);
