@@ -247,6 +247,7 @@ const CLAUDE_SETTINGS_CARRYOVER_KEYS = [
 ] as const;
 
 const CLAUDE_DEFAULT_THEME = "dark";
+const CLAUDE_ONBOARDING_VERSION_LOCK = "99.99.99";
 
 function stripGlobalCustomKeys(source: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(source).filter(([key]) => !CLAUDE_GLOBAL_CUSTOM_KEYS.has(key)));
@@ -289,6 +290,7 @@ async function createIsolatedHome(
       env: {},
       permissions: { allow: [] },
       theme: CLAUDE_DEFAULT_THEME,
+      lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
     };
     if (realClaudeJsonRaw) {
       try {
@@ -299,12 +301,14 @@ async function createIsolatedHome(
           ...copyDefinedKeys(realClaudeJson, ["syntaxHighlightingDisabled"]),
           env: {},
           permissions: { allow: [] },
+          lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
         };
       } catch {
         filteredClaudeJson = {
           env: {},
           permissions: { allow: [] },
           theme: CLAUDE_DEFAULT_THEME,
+          lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
         };
       }
     }
@@ -396,7 +400,6 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
       HOME: isolatedHome,
       USERPROFILE: isolatedHome,
       XDG_CONFIG_HOME: path.join(isolatedHome, ".config"),
-      CLAUDE_CONFIG_DIR: path.join(isolatedHome, ".claude"),
       CODEX_HOME: path.join(isolatedHome, ".codex"),
       CODEX_CONFIG_DIR: path.join(isolatedHome, ".codex"),
       CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
