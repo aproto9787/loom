@@ -5,7 +5,7 @@ description: |
   Conductor (Claude+GPT5.4) runs autonomously and picks workers from a wide
   roster based on task shape — impl, fix, review, analyst, frontend,
   debate team. Delegation rules decide which few fire per BRIEFING.
-repo: ..
+repo: .
 claudeMd: |
   # Flow Common Policy (적용: 모든 에이전트)
 

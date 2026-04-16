@@ -156,7 +156,9 @@ async function loadCliFlow(flowPath: string, cwd: string): Promise<LoadedCliFlow
 }
 
 function resolveFlowCwd(flow: LoadedCliFlow): string {
-  return path.isAbsolute(flow.flow.repo) ? flow.flow.repo : path.resolve(flow.flowDir, flow.flow.repo);
+  const repo = flow.flow.repo;
+  if (!repo) return process.cwd();
+  return path.isAbsolute(repo) ? repo : path.resolve(process.cwd(), repo);
 }
 
 function buildSpawnArgs(agent: AgentConfig): { command: string; args: string[] } {
