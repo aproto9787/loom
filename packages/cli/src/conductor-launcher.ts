@@ -16,10 +16,12 @@ const DEFAULT_REPORT_DIR = path.join(os.tmpdir(), "loom-conductor");
 const RUN_ID = process.env.LOOM_RUN_ID;
 const SERVER_ORIGIN = process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
 
+type LoomEventType = "tool_use" | "tool_result" | "user" | "assistant" | "error";
+
 async function postProgress(
-  type: "tool_use" | "tool_result" | "user" | "assistant" | "error",
+  type: LoomEventType,
   summary: string,
-  extra: { toolName?: string } = {},
+  extra: { toolName?: string; agentDepth?: number } = {},
 ): Promise<void> {
   if (!RUN_ID) return;
   try {
@@ -33,12 +35,49 @@ async function postProgress(
           summary,
           toolName: extra.toolName,
           agentName: "conductor",
-          agentDepth: 1,
+          agentDepth: extra.agentDepth ?? 1,
         }],
       }),
     });
   } catch {
     // best effort
+  }
+}
+
+function truncate(value: string, max = 140): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
+}
+
+function mapCodexItem(item: Record<string, unknown>): { type: LoomEventType; summary: string; toolName?: string } | null {
+  const itemType = typeof item.type === "string" ? item.type : undefined;
+  if (!itemType) return null;
+  switch (itemType) {
+    case "agent_message": {
+      const text = typeof item.text === "string" ? item.text : "";
+      if (!text.trim()) return null;
+      return { type: "assistant", summary: truncate(text) };
+    }
+    case "reasoning": {
+      const text = typeof item.text === "string" ? item.text : "";
+      if (!text.trim()) return null;
+      return { type: "assistant", summary: truncate(`reasoning: ${text}`), toolName: "reasoning" };
+    }
+    case "command_execution": {
+      const cmd = typeof item.command === "string" ? item.command : "command";
+      return { type: "tool_use", summary: truncate(cmd), toolName: "Bash" };
+    }
+    case "file_change": {
+      const pathStr = typeof item.path === "string" ? item.path : "";
+      const op = typeof item.operation === "string" ? item.operation : "edit";
+      return { type: "tool_result", summary: truncate(`${op} ${pathStr}`), toolName: "Edit" };
+    }
+    default: {
+      const summary = typeof (item as { summary?: unknown }).summary === "string"
+        ? (item as { summary: string }).summary
+        : itemType;
+      return { type: "tool_use", summary: truncate(summary), toolName: itemType };
+    }
   }
 }
 
@@ -103,22 +142,60 @@ async function runCodex(prompt: string, reportPath: string): Promise<number> {
   return await new Promise<number>((resolve) => {
     const child = spawn("codex", [
       "exec",
+      "--json",
       "--model", MODEL,
       "--dangerously-bypass-approvals-and-sandbox",
       "--skip-git-repo-check",
       prompt,
     ], {
-      stdio: ["ignore", "inherit", "inherit"],
+      stdio: ["ignore", "pipe", "inherit"],
       env: {
         ...process.env,
         LOOM_CONDUCTOR_REPORT_FILE: reportPath,
       },
     });
+
+    let buffer = "";
+    const flushLines = (chunk: string) => {
+      buffer += chunk;
+      let newlineIndex = buffer.indexOf("\n");
+      while (newlineIndex !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (line) {
+          handleLine(line).catch(() => undefined);
+        }
+        newlineIndex = buffer.indexOf("\n");
+      }
+    };
+
+    const handleLine = async (line: string) => {
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        const frameType = typeof parsed.type === "string" ? parsed.type : undefined;
+        if (frameType !== "item.completed") return;
+        const item = parsed.item;
+        if (!item || typeof item !== "object") return;
+        const mapped = mapCodexItem(item as Record<string, unknown>);
+        if (!mapped) return;
+        await postProgress(mapped.type, mapped.summary, { toolName: mapped.toolName, agentDepth: 2 });
+      } catch {
+        // ignore non-JSON frames
+      }
+    };
+
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => flushLines(chunk));
+
     const killer = setTimeout(() => {
       child.kill("SIGTERM");
     }, MAX_SECONDS * 1000);
     child.once("exit", (code) => {
       clearTimeout(killer);
+      if (buffer.trim()) {
+        handleLine(buffer.trim()).catch(() => undefined);
+        buffer = "";
+      }
       resolve(code ?? 1);
     });
     child.once("error", () => {
