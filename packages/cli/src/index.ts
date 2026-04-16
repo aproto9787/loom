@@ -474,8 +474,13 @@ async function createTranscriptTail(runId: string, isolatedHome: string, cwd: st
     const chunk = content.slice(startOffset);
     const trailingNewline = chunk.endsWith("\n");
     const lines = chunk.split("\n");
-    const completeLines = trailingNewline ? lines : lines.slice(0, -1);
-    const consumedLength = completeLines.reduce((total, entry) => total + entry.length + 1, 0);
+    // split("\n") always emits a trailing "" when the chunk ends with "\n",
+    // and a real partial segment when it doesn't. Either way the last element
+    // is NOT a complete line we should process.
+    const completeLines = lines.slice(0, -1);
+    const consumedLength = trailingNewline
+      ? chunk.length
+      : completeLines.reduce((total, entry) => total + entry.length + 1, 0);
     const mappedEvents = completeLines
       .map((entry) => mapTranscriptLine(runId, entry))
       .filter((entry): entry is LoomRunEvent => entry !== null);
