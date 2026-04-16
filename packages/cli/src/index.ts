@@ -620,11 +620,20 @@ const CLAUDE_SETTINGS_CARRYOVER_KEYS = [
 ] as const;
 
 const CLAUDE_PROJECT_STATE_KEYS = [
-  "hasTrustDialogAccepted",
-  "projectOnboardingSeenCount",
-  "hasClaudeMdExternalIncludesApproved",
-  "hasClaudeMdExternalIncludesWarningShown",
   "exampleFiles",
+] as const;
+
+const CLAUDE_GLOBAL_ONBOARDING_KEYS = [
+  "hasCompletedOnboarding",
+  "numStartups",
+  "installMethod",
+  "autoUpdates",
+  "autoUpdatesProtectedForNative",
+  "lastReleaseNotesSeen",
+  "clientDataCache",
+  "additionalModelOptionsCache",
+  "additionalModelCostsCache",
+  "penguinModeOrgEnabled",
 ] as const;
 
 const CLAUDE_DEFAULT_THEME = "dark";
@@ -708,6 +717,15 @@ async function createIsolatedHome(
       permissions: { allow: [] },
       theme: CLAUDE_DEFAULT_THEME,
       lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
+      hasCompletedOnboarding: true,
+      projects: {
+        [flowCwd]: {
+          hasTrustDialogAccepted: true,
+          projectOnboardingSeenCount: 2,
+          hasClaudeMdExternalIncludesApproved: true,
+          hasClaudeMdExternalIncludesWarningShown: true,
+        },
+      },
     };
     if (realClaudeJsonRaw) {
       try {
@@ -720,16 +738,22 @@ async function createIsolatedHome(
           : undefined;
         filteredClaudeJson = {
           ...stripGlobalCustomKeys(realClaudeJson),
+          ...copyDefinedKeys(realClaudeJson, CLAUDE_GLOBAL_ONBOARDING_KEYS),
           theme: typeof realClaudeJson.theme === "string" ? realClaudeJson.theme : CLAUDE_DEFAULT_THEME,
           ...copyDefinedKeys(realClaudeJson, ["syntaxHighlightingDisabled"]),
           env: {},
           permissions: { allow: [] },
           lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
-          projects: sourceProject
-            ? {
-                [flowCwd]: copyDefinedKeys(sourceProject, CLAUDE_PROJECT_STATE_KEYS),
-              }
-            : {},
+          hasCompletedOnboarding: true,
+          projects: {
+            [flowCwd]: {
+              hasTrustDialogAccepted: true,
+              projectOnboardingSeenCount: 2,
+              hasClaudeMdExternalIncludesApproved: true,
+              hasClaudeMdExternalIncludesWarningShown: true,
+              ...copyDefinedKeys(sourceProject ?? {}, CLAUDE_PROJECT_STATE_KEYS),
+            },
+          },
         };
       } catch {
         filteredClaudeJson = {
@@ -737,6 +761,15 @@ async function createIsolatedHome(
           permissions: { allow: [] },
           theme: CLAUDE_DEFAULT_THEME,
           lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
+          hasCompletedOnboarding: true,
+          projects: {
+            [flowCwd]: {
+              hasTrustDialogAccepted: true,
+              projectOnboardingSeenCount: 2,
+              hasClaudeMdExternalIncludesApproved: true,
+              hasClaudeMdExternalIncludesWarningShown: true,
+            },
+          },
         };
       }
     }
