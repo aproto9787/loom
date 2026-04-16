@@ -797,6 +797,14 @@ async function createIsolatedHome(
     }
 
     await writeFile(path.join(claudeDir, "CLAUDE.md"), mergedInstructions, "utf8");
+
+    // Subagents (user-advocate, codex-*, etc.) need their definitions in the
+    // isolated HOME so the orchestrator's Agent(name=X) tool can spawn them.
+    await copyHostAgentDefinitions(isolatedHome, flowCwd);
+
+    // Also seed a minimal codex side so loom-conductor (Bash helper) can run
+    // `codex exec` against GPT-5.4 without prompting for login.
+    await seedCodexSide(isolatedHome, realHome);
   } else {
     const codexDir = path.join(isolatedHome, ".codex");
     await mkdir(codexDir, { recursive: true });
@@ -812,6 +820,44 @@ async function createIsolatedHome(
     );
   }
   return isolatedHome;
+}
+
+async function copyHostAgentDefinitions(isolatedHome: string, flowCwd: string): Promise<void> {
+  void flowCwd;
+  const realHome = os.homedir();
+  const srcDir = path.join(realHome, ".claude", "agents");
+  let entries: string[] = [];
+  try {
+    entries = (await readdir(srcDir, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+      .map((entry) => entry.name);
+  } catch {
+    return;
+  }
+  if (entries.length === 0) return;
+  const destDir = path.join(isolatedHome, ".claude", "agents");
+  await mkdir(destDir, { recursive: true });
+  await Promise.all(entries.map(async (fileName) => {
+    const content = await readOptional(path.join(srcDir, fileName));
+    if (content !== undefined) {
+      await writeFile(path.join(destDir, fileName), content, "utf8");
+    }
+  }));
+}
+
+async function seedCodexSide(isolatedHome: string, realHome: string): Promise<void> {
+  const codexDir = path.join(isolatedHome, ".codex");
+  await mkdir(codexDir, { recursive: true });
+  const realAuth = await readOptional(path.join(realHome, ".codex", "auth.json"));
+  if (realAuth) {
+    await writeFile(path.join(codexDir, "auth.json"), realAuth, { encoding: "utf8", mode: 0o600 });
+  }
+  const realConfig = await readOptional(path.join(realHome, ".codex", "config.toml"));
+  if (realConfig) {
+    await writeFile(path.join(codexDir, "config.toml"), realConfig, "utf8");
+  } else {
+    await writeFile(path.join(codexDir, "config.toml"), "# Loom-seeded (empty)\n", "utf8");
+  }
 }
 
 async function launchAgent(flow: LoadedCliFlow): Promise<number> {
