@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { watch } from "node:fs";
 import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -59,6 +60,26 @@ interface SelectionResult {
 interface RunRegistration {
   runId: string;
   cleanup: (exitCode: number) => Promise<void>;
+  postEvents: (events: LoomRunEvent[]) => Promise<void>;
+}
+
+interface LoomRunEvent {
+  runId: string;
+  ts: number;
+  type: "user" | "assistant" | "tool_use" | "tool_result" | "error";
+  summary?: string;
+  toolName?: string;
+  agentName?: string;
+  agentDepth?: number;
+  raw: unknown;
+}
+
+interface TranscriptTailState {
+  readonly transcriptDir: string;
+  readonly discoveredFiles: ReadonlySet<string>;
+  readonly eventCount: number;
+  close: () => Promise<void>;
+  flushBundle: () => Promise<void>;
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {
@@ -158,6 +179,348 @@ function getServerOrigin(): string {
   return process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
 }
 
+function summarizeText(value: string | undefined, maxLength = 120): string | undefined {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  if (!normalized) return undefined;
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function parseEventTimestamp(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Date.now();
+}
+
+function extractMessageText(message: unknown): string | undefined {
+  if (typeof message === "string") return message;
+  if (Array.isArray(message)) {
+    return summarizeText(message.map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (!entry || typeof entry !== "object") return "";
+      const typedEntry = entry as Record<string, unknown>;
+      return typeof typedEntry.text === "string" ? typedEntry.text : "";
+    }).filter(Boolean).join(" "));
+  }
+  return undefined;
+}
+
+function mapTranscriptMessageType(role: string | undefined): LoomRunEvent["type"] {
+  if (role === "user") return "user";
+  if (role === "assistant") return "assistant";
+  return "error";
+}
+
+function coerceAgentDepth(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    return {
+      runId,
+      ts: Date.now(),
+      type: "error",
+      summary: summarizeText(trimmed, 100),
+      raw: trimmed,
+    };
+  }
+
+  const ts = parseEventTimestamp(parsed.timestamp ?? parsed.ts);
+  const transcriptType = typeof parsed.type === "string" ? parsed.type : undefined;
+  if (transcriptType === "user") {
+    const message = parsed.message as Record<string, unknown> | undefined;
+    const fallbackContent = typeof parsed.content === "string" ? parsed.content : undefined;
+    return {
+      runId,
+      ts,
+      type: "user",
+      summary: summarizeText(extractMessageText(message?.content) ?? fallbackContent),
+      agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
+      agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
+      raw: parsed,
+    };
+  }
+  if (transcriptType === "assistant") {
+    const message = parsed.message as Record<string, unknown> | undefined;
+    const role = typeof message?.role === "string" ? message.role : undefined;
+    const content = Array.isArray(message?.content) ? message.content : [];
+    const agentName = typeof parsed.agentName === "string"
+      ? parsed.agentName
+      : typeof parsed.agent_name === "string"
+        ? parsed.agent_name
+        : typeof parsed.sessionId === "string"
+          ? parsed.sessionId
+          : undefined;
+    const agentDepth = coerceAgentDepth(parsed.parentUuid ? 1 : parsed.agentDepth ?? parsed.agent_depth);
+
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const typedPart = part as Record<string, unknown>;
+      const partType = typeof typedPart.type === "string" ? typedPart.type : undefined;
+      if (partType === "tool_use") {
+        return {
+          runId,
+          ts,
+          type: "tool_use",
+          summary: summarizeText(typeof typedPart.name === "string" ? `tool ${typedPart.name}` : "tool use", 100),
+          toolName: typeof typedPart.name === "string" ? typedPart.name : undefined,
+          agentName,
+          agentDepth,
+          raw: parsed,
+        };
+      }
+      if (partType === "tool_result") {
+        const toolUseId = typeof typedPart.tool_use_id === "string" ? typedPart.tool_use_id : undefined;
+        return {
+          runId,
+          ts,
+          type: "tool_result",
+          summary: summarizeText(toolUseId ? `result ${toolUseId}` : "tool result", 100),
+          agentName,
+          agentDepth,
+          raw: parsed,
+        };
+      }
+      if (partType === "text") {
+        return {
+          runId,
+          ts,
+          type: mapTranscriptMessageType(role),
+          summary: summarizeText(typeof typedPart.text === "string" ? typedPart.text : undefined),
+          agentName,
+          agentDepth,
+          raw: parsed,
+        };
+      }
+    }
+
+    const errorText = typeof parsed.error === "string"
+      ? parsed.error
+      : typeof parsed.message === "string"
+        ? parsed.message
+        : undefined;
+    return {
+      runId,
+      ts,
+      type: errorText ? "error" : mapTranscriptMessageType(role),
+      summary: summarizeText(errorText),
+      agentName,
+      agentDepth,
+      raw: parsed,
+    };
+  }
+
+  const queueSummary = transcriptType === "queue-operation"
+    ? summarizeText(typeof parsed.content === "string" ? parsed.content : typeof parsed.operation === "string" ? parsed.operation : transcriptType, 100)
+    : undefined;
+  return {
+    runId,
+    ts,
+    type: transcriptType === "queue-operation" ? "user" : "error",
+    summary: queueSummary,
+    agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
+    agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
+    raw: parsed,
+  };
+}
+
+async function postRunEvents(origin: string, runId: string, events: LoomRunEvent[]): Promise<void> {
+  if (events.length === 0) return;
+  try {
+    await fetch(`${origin}/runs/${runId}/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ events }),
+    });
+  } catch {
+    // Event streaming is best-effort for CLI launches.
+  }
+}
+
+async function readTranscriptEvents(runId: string, transcriptPath: string, offset: number): Promise<{ events: LoomRunEvent[]; nextOffset: number }> {
+  let content: string;
+  try {
+    content = await readFile(transcriptPath, "utf8");
+  } catch {
+    return { events: [], nextOffset: offset };
+  }
+
+  if (offset >= content.length) {
+    return { events: [], nextOffset: content.length };
+  }
+
+  const chunk = content.slice(offset);
+  const trailingNewline = chunk.endsWith("\n");
+  const lines = chunk.split("\n");
+  const completeLines = trailingNewline ? lines : lines.slice(0, -1);
+  const consumedLength = completeLines.reduce((total, entry) => total + entry.length + 1, 0);
+  return {
+    events: completeLines.map((entry) => mapTranscriptLine(runId, entry)).filter((entry): entry is LoomRunEvent => entry !== null),
+    nextOffset: offset + consumedLength,
+  };
+}
+
+async function collectTranscriptProjectDirs(projectsRoot: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(projectsRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(projectsRoot, entry.name))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+async function collectTranscriptFiles(projectsRoot: string): Promise<string[]> {
+  const projectDirs = await collectTranscriptProjectDirs(projectsRoot);
+  const files = await Promise.all(projectDirs.map(async (dir) => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+      .map((entry) => path.join(dir, entry.name));
+  }));
+
+  return files.flat().sort((a, b) => a.localeCompare(b));
+}
+
+async function createTranscriptTail(runId: string, isolatedHome: string, cwd: string, origin: string): Promise<TranscriptTailState> {
+  const projectsRoot = path.join(isolatedHome, ".claude", "projects");
+  const offsets = new Map<string, number>();
+  const discoveredFiles = new Set<string>();
+  const deliveredLineKeys = new Set<string>();
+  let watcher: ReturnType<typeof watch> | undefined;
+  let pollTimer: NodeJS.Timeout | undefined;
+  let closed = false;
+  let discoveredTranscriptDir = path.join(projectsRoot, path.basename(cwd));
+  let eventCount = 0;
+  let polling = Promise.resolve();
+
+  const dedupeEvents = (file: string, startOffset: number, lines: string[], events: LoomRunEvent[]): LoomRunEvent[] => {
+    const deduped: LoomRunEvent[] = [];
+    let offset = startOffset;
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      const event = events[index];
+      const key = `${file}:${offset}:${line}`;
+      offset += line.length + 1;
+      if (deliveredLineKeys.has(key)) continue;
+      deliveredLineKeys.add(key);
+      deduped.push(event);
+    }
+    return deduped;
+  };
+
+  const readDelta = async (file: string, startOffset: number): Promise<{ events: LoomRunEvent[]; nextOffset: number }> => {
+    let content: string;
+    try {
+      content = await readFile(file, "utf8");
+    } catch {
+      return { events: [], nextOffset: startOffset };
+    }
+
+    if (startOffset >= content.length) {
+      return { events: [], nextOffset: content.length };
+    }
+
+    const chunk = content.slice(startOffset);
+    const trailingNewline = chunk.endsWith("\n");
+    const lines = chunk.split("\n");
+    const completeLines = trailingNewline ? lines : lines.slice(0, -1);
+    const consumedLength = completeLines.reduce((total, entry) => total + entry.length + 1, 0);
+    const mappedEvents = completeLines
+      .map((entry) => mapTranscriptLine(runId, entry))
+      .filter((entry): entry is LoomRunEvent => entry !== null);
+    const eventLines = completeLines.filter((entry) => mapTranscriptLine(runId, entry) !== null);
+    return {
+      events: dedupeEvents(file, startOffset, eventLines, mappedEvents),
+      nextOffset: startOffset + consumedLength,
+    };
+  };
+
+  const pollOnce = async (): Promise<void> => {
+    const files = await collectTranscriptFiles(projectsRoot);
+    for (const file of files) {
+      discoveredFiles.add(file);
+      discoveredTranscriptDir = path.dirname(file);
+      const currentOffset = offsets.get(file) ?? 0;
+      const { events, nextOffset } = await readDelta(file, currentOffset);
+      offsets.set(file, nextOffset);
+      if (events.length > 0) {
+        eventCount += events.length;
+        await postRunEvents(origin, runId, events);
+      }
+    }
+
+    for (const knownFile of [...offsets.keys()]) {
+      if (!files.includes(knownFile)) {
+        offsets.delete(knownFile);
+        discoveredFiles.delete(knownFile);
+      }
+    }
+  };
+
+  const queuePoll = () => {
+    polling = polling.then(pollOnce).catch(() => undefined);
+    return polling;
+  };
+
+  await mkdir(projectsRoot, { recursive: true });
+  await queuePoll();
+
+  try {
+    watcher = watch(projectsRoot, { recursive: true }, () => {
+      void queuePoll();
+    });
+  } catch {
+    watcher = undefined;
+  }
+
+  pollTimer = setInterval(() => {
+    void queuePoll();
+  }, 500);
+  pollTimer.unref();
+
+  return {
+    get transcriptDir() {
+      return discoveredTranscriptDir;
+    },
+    get discoveredFiles() {
+      return discoveredFiles;
+    },
+    get eventCount() {
+      return eventCount;
+    },
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      watcher?.close();
+      if (pollTimer) clearInterval(pollTimer);
+      await queuePoll();
+    },
+    flushBundle: async () => {
+      await queuePoll();
+    },
+  };
+}
+
 async function reportCliRunStart(flow: LoadedCliFlow, agentType: AgentType): Promise<RunRegistration> {
   const runId = randomUUID();
   const startTime = new Date().toISOString();
@@ -174,14 +537,18 @@ async function reportCliRunStart(flow: LoadedCliFlow, agentType: AgentType): Pro
         agentType,
         startTime,
         source: "cli",
+        cwd: resolveFlowCwd(flow),
       }),
     });
   } catch {
-    return { runId, cleanup: async () => undefined };
+    return { runId, cleanup: async () => undefined, postEvents: async () => undefined };
   }
 
   return {
     runId,
+    postEvents: async (events: LoomRunEvent[]) => {
+      await postRunEvents(origin, runId, events);
+    },
     cleanup: async (exitCode: number) => {
       try {
         await fetch(`${origin}/runs/${runId}/status`, {
@@ -252,6 +619,14 @@ const CLAUDE_SETTINGS_CARRYOVER_KEYS = [
   "skipDangerousModePermissionPrompt",
 ] as const;
 
+const CLAUDE_PROJECT_STATE_KEYS = [
+  "hasTrustDialogAccepted",
+  "projectOnboardingSeenCount",
+  "hasClaudeMdExternalIncludesApproved",
+  "hasClaudeMdExternalIncludesWarningShown",
+  "exampleFiles",
+] as const;
+
 const CLAUDE_DEFAULT_THEME = "dark";
 const CLAUDE_ONBOARDING_VERSION_LOCK = "99.99.99";
 
@@ -308,6 +683,7 @@ async function createIsolatedHome(
   flowClaudeMd: string | undefined,
   agentClaudeMd: string | undefined,
   configuredAgent: AgentConfig,
+  flowCwd: string,
   scopedHooks: HookDefinition[],
   scopedSkills: SkillDefinition[],
 ): Promise<string> {
@@ -336,6 +712,12 @@ async function createIsolatedHome(
     if (realClaudeJsonRaw) {
       try {
         const realClaudeJson = JSON.parse(realClaudeJsonRaw) as Record<string, unknown>;
+        const realProjects = realClaudeJson.projects && typeof realClaudeJson.projects === "object"
+          ? realClaudeJson.projects as Record<string, Record<string, unknown>>
+          : {};
+        const sourceProject = realProjects[workspaceRoot] && typeof realProjects[workspaceRoot] === "object"
+          ? realProjects[workspaceRoot]
+          : undefined;
         filteredClaudeJson = {
           ...stripGlobalCustomKeys(realClaudeJson),
           theme: typeof realClaudeJson.theme === "string" ? realClaudeJson.theme : CLAUDE_DEFAULT_THEME,
@@ -343,6 +725,11 @@ async function createIsolatedHome(
           env: {},
           permissions: { allow: [] },
           lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
+          projects: sourceProject
+            ? {
+                [flowCwd]: copyDefinedKeys(sourceProject, CLAUDE_PROJECT_STATE_KEYS),
+              }
+            : {},
         };
       } catch {
         filteredClaudeJson = {
@@ -415,9 +802,24 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   const systemPrompt = configuredAgent.system ?? "";
   const agentClaudeMd = resolveAgentClaudeMd(flow, configuredAgent);
   const mergedInstructions = mergeClaudeMd(flow.flow.claudeMd, agentClaudeMd, configuredAgent);
-  const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, agentClaudeMd, configuredAgent, scopedHooks, scopedSkills);
+  const flowCwd = resolveFlowCwd(flow);
+  const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, agentClaudeMd, configuredAgent, flowCwd, scopedHooks, scopedSkills);
   const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow.flow, isolatedHome);
   const registration = await reportCliRunStart(flow, configuredAgent.type);
+  const transcriptTail = configuredAgent.type === "claude-code"
+    ? await createTranscriptTail(registration.runId, isolatedHome, flowCwd, getServerOrigin())
+    : undefined;
+  const finalizeRun = async (exitCode: number) => {
+    if (transcriptTail) {
+      await transcriptTail.close();
+      await transcriptTail.flushBundle();
+    }
+    await registration.cleanup(exitCode);
+    if (scopedMcpConfigPath) {
+      await rm(path.dirname(scopedMcpConfigPath), { recursive: true, force: true }).catch(() => undefined);
+    }
+    await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
+  };
   const { command, args } = buildSpawnArgs(configuredAgent);
   // Inject flow claudeMd into claude via --append-system-prompt so the real
   // HOME stays untouched (no re-login / onboarding).
@@ -450,12 +852,13 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   }
 
   const child = spawn(command, args, {
-    cwd: resolveFlowCwd(flow),
+    cwd: flowCwd,
     stdio: "inherit",
     env: {
       ...process.env,
       HOME: isolatedHome,
       USERPROFILE: isolatedHome,
+      PATH: process.env.PATH ?? "",
       XDG_CONFIG_HOME: path.join(isolatedHome, ".config"),
       CODEX_HOME: path.join(isolatedHome, ".codex"),
       CODEX_CONFIG_DIR: path.join(isolatedHome, ".codex"),
@@ -469,14 +872,13 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   });
 
   return await new Promise<number>((resolve, reject) => {
-    child.once("error", reject);
+    child.once("error", async (error) => {
+      await finalizeRun(1).catch(() => undefined);
+      reject(error);
+    });
     child.once("exit", async (code, signal) => {
-      if (scopedMcpConfigPath) {
-        await rm(path.dirname(scopedMcpConfigPath), { recursive: true, force: true }).catch(() => undefined);
-      }
-      await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
       const resolvedCode = signal ? 1 : (code ?? 0);
-      await registration.cleanup(resolvedCode);
+      await finalizeRun(resolvedCode);
       resolve(resolvedCode);
     });
   });

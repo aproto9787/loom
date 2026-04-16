@@ -105,6 +105,9 @@ const flowQuerySchema = z.object({
 });
 
 const runEventRequestSchema = runEventSchema.omit({ runId: true });
+const runEventBatchRequestSchema = z.object({
+  events: z.array(runEventRequestSchema).min(1),
+});
 
 const saveFlowSchema = z.object({
   flowPath: flowPathSchema,
@@ -403,7 +406,7 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(params.error) });
     }
 
-    const parsed = runEventRequestSchema.safeParse(request.body);
+    const parsed = runEventBatchRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
@@ -413,8 +416,10 @@ export function buildServer() {
       return reply.code(404).send({ error: { message: "run not found" } });
     }
 
-    emitRunEvent(toRunEvent(params.data.id, parsed.data));
-    return reply.code(201).send({ runId: params.data.id });
+    for (const event of parsed.data.events) {
+      emitRunEvent(toRunEvent(params.data.id, event));
+    }
+    return reply.code(201).send({ runId: params.data.id, count: parsed.data.events.length });
   });
 
   app.get("/runs/:id/events", async (request, reply) => {
