@@ -240,12 +240,37 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
   const transcriptType = typeof parsed.type === "string" ? parsed.type : undefined;
   if (transcriptType === "user") {
     const message = parsed.message as Record<string, unknown> | undefined;
+    const messageContent = message?.content;
+    // Detect tool_result user frames (Claude Code sends tool returns as
+    // user role with content=[{type:"tool_result", ...}]). Promote those
+    // to a tool_result event instead of a blank USER row.
+    if (Array.isArray(messageContent)) {
+      for (const part of messageContent) {
+        if (!part || typeof part !== "object") continue;
+        const typedPart = part as Record<string, unknown>;
+        if (typedPart.type === "tool_result") {
+          const toolUseId = typeof typedPart.tool_use_id === "string" ? typedPart.tool_use_id : undefined;
+          const resultText = extractMessageText(typedPart.content);
+          return {
+            runId,
+            ts,
+            type: "tool_result",
+            summary: summarizeText(resultText ?? (toolUseId ? `result ${toolUseId.slice(0, 8)}` : "tool result"), 120),
+            agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
+            agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
+            raw: parsed,
+          };
+        }
+      }
+    }
     const fallbackContent = typeof parsed.content === "string" ? parsed.content : undefined;
+    const summary = summarizeText(extractMessageText(messageContent) ?? fallbackContent);
+    if (!summary) return null;
     return {
       runId,
       ts,
       type: "user",
-      summary: summarizeText(extractMessageText(message?.content) ?? fallbackContent),
+      summary,
       agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
       agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
       raw: parsed,
@@ -293,11 +318,13 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
         };
       }
       if (partType === "text") {
+        const textSummary = summarizeText(typeof typedPart.text === "string" ? typedPart.text : undefined);
+        if (!textSummary) continue;
         return {
           runId,
           ts,
           type: mapTranscriptMessageType(role),
-          summary: summarizeText(typeof typedPart.text === "string" ? typedPart.text : undefined),
+          summary: textSummary,
           agentName,
           agentDepth,
           raw: parsed,
@@ -310,11 +337,13 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
       : typeof parsed.message === "string"
         ? parsed.message
         : undefined;
+    const fallbackSummary = summarizeText(errorText);
+    if (!fallbackSummary) return null;
     return {
       runId,
       ts,
       type: errorText ? "error" : mapTranscriptMessageType(role),
-      summary: summarizeText(errorText),
+      summary: fallbackSummary,
       agentName,
       agentDepth,
       raw: parsed,
@@ -984,6 +1013,8 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
       LOOM_FLOW_CWD: flowCwd,
       LOOM_AGENT: agent.name,
       LOOM_AGENT_TYPE: agent.type,
+      LOOM_RUN_ID: registration.runId,
+      LOOM_SERVER_ORIGIN: getServerOrigin(),
       ...litellmEnv,
       ...(scopedMcpConfigPath ? { LOOM_MCP_CONFIG_PATH: scopedMcpConfigPath } : {}),
     },

@@ -13,6 +13,34 @@ import process from "node:process";
 const MODEL = process.env.LOOM_CONDUCTOR_MODEL ?? "gpt-5.4";
 const MAX_SECONDS = Number(process.env.LOOM_CONDUCTOR_MAX_SECONDS ?? "900");
 const DEFAULT_REPORT_DIR = path.join(os.tmpdir(), "loom-conductor");
+const RUN_ID = process.env.LOOM_RUN_ID;
+const SERVER_ORIGIN = process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
+
+async function postProgress(
+  type: "tool_use" | "tool_result" | "user" | "assistant" | "error",
+  summary: string,
+  extra: { toolName?: string } = {},
+): Promise<void> {
+  if (!RUN_ID) return;
+  try {
+    await fetch(`${SERVER_ORIGIN}/runs/${encodeURIComponent(RUN_ID)}/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        events: [{
+          ts: Date.now(),
+          type,
+          summary,
+          toolName: extra.toolName,
+          agentName: "conductor",
+          agentDepth: 1,
+        }],
+      }),
+    });
+  } catch {
+    // best effort
+  }
+}
 
 function printUsage(): void {
   console.error(`loom-conductor — headless executor for the Loom flow conductor role
@@ -111,6 +139,9 @@ async function main(): Promise<void> {
   await mkdir(path.dirname(reportPath), { recursive: true });
   await writeFile(reportPath, "status: blocked\nsummary:\n  - conductor did not start\n", "utf8");
 
+  const briefingPreview = briefing.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 3).join(" | ");
+  await postProgress("tool_use", `conductor spawned (${MODEL}) — ${briefingPreview.slice(0, 140)}`, { toolName: "loom-conductor" });
+
   const prompt = buildConductorPrompt(briefing, reportPath);
   const exitCode = await runCodex(prompt, reportPath);
 
@@ -120,6 +151,14 @@ async function main(): Promise<void> {
   } catch {
     report = "status: blocked\nsummary:\n  - report file missing\n";
   }
+
+  const firstLine = report.split("\n").find((line) => line.trim().length > 0) ?? "";
+  await postProgress(
+    exitCode === 0 ? "tool_result" : "error",
+    `conductor ${exitCode === 0 ? "done" : `exit ${exitCode}`} — ${firstLine.slice(0, 140)}`,
+    { toolName: "loom-conductor" },
+  );
+
   process.stdout.write(report);
   process.stdout.write(report.endsWith("\n") ? "" : "\n");
   process.exit(exitCode === 0 ? 0 : 1);
