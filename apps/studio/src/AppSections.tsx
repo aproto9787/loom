@@ -18,6 +18,7 @@ import {
   useRunStore,
   type AgentRuntime,
   type RunHistoryItem,
+  type RunDetailEvent,
 } from "./store.js";
 import { darkCard, inputDark, selectDark } from "./panelStyles.js";
 
@@ -357,7 +358,12 @@ function runStatusClasses(status: RunHistoryItem["status"]): string {
     case "running":
       return "border-blue-500/40 bg-blue-500/10 text-blue-200";
     case "done":
+    case "success":
       return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+    case "stale":
+      return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+    case "aborted":
+      return "border-slate-500/40 bg-slate-500/10 text-slate-200";
     default:
       return "border-red-500/40 bg-red-500/10 text-red-200";
   }
@@ -368,10 +374,63 @@ function runStatusDot(status: RunHistoryItem["status"]): string {
     case "running":
       return "bg-blue-400 animate-pulse";
     case "done":
+    case "success":
       return "bg-emerald-400";
+    case "stale":
+      return "bg-amber-400";
+    case "aborted":
+      return "bg-slate-400";
     default:
       return "bg-red-400";
   }
+}
+
+function formatElapsed(run: RunHistoryItem, now: number): string {
+  const start = run.startedAt ? Date.parse(run.startedAt) : Date.parse(run.createdAt);
+  if (!Number.isFinite(start)) return "";
+  const endRef = run.endedAt ? Date.parse(run.endedAt) : now;
+  const elapsed = Math.max(0, Math.floor(((Number.isFinite(endRef) ? endRef : now) - start) / 1000));
+  if (elapsed < 60) return `${elapsed}s`;
+  const mins = Math.floor(elapsed / 60);
+  if (mins < 60) return `${mins}m ${elapsed % 60}s`;
+  const hours = Math.floor(mins / 60);
+  return `${hours}h ${mins % 60}m`;
+}
+
+function shortenPath(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const segments = value.split("/").filter(Boolean);
+  if (segments.length <= 2) return value;
+  return `…/${segments.slice(-2).join("/")}`;
+}
+
+function agentTypeLabel(value?: string): string {
+  if (value === "claude-code") return "claude";
+  if (value === "codex") return "codex";
+  return value ?? "";
+}
+
+function eventTypeBadge(type: RunDetailEvent["type"]): string {
+  switch (type) {
+    case "tool_use":
+      return "bg-indigo-500/10 text-indigo-200 border-indigo-500/40";
+    case "tool_result":
+      return "bg-teal-500/10 text-teal-200 border-teal-500/40";
+    case "assistant":
+      return "bg-violet-500/10 text-violet-200 border-violet-500/40";
+    case "user":
+      return "bg-slate-500/10 text-slate-200 border-slate-500/40";
+    case "error":
+      return "bg-red-500/10 text-red-200 border-red-500/40";
+    default:
+      return "bg-slate-500/10 text-slate-200 border-slate-500/40";
+  }
+}
+
+function formatEventClock(ts: number): string {
+  if (!Number.isFinite(ts)) return "";
+  const date = new Date(ts);
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 export function RunsPanel() {
@@ -379,21 +438,48 @@ export function RunsPanel() {
   const keyword = useRunStore((s) => s.runHistoryKeyword);
   const statusFilter = useRunStore((s) => s.runHistoryStatus);
   const loading = useRunStore((s) => s.runHistoryLoading);
+  const selectedRunId = useRunStore((s) => s.selectedRunId);
+  const runDetailEvents = useRunStore((s) => s.runDetailEvents);
+  const runDetailLoading = useRunStore((s) => s.runDetailLoading);
+  const runDetailStreamOpen = useRunStore((s) => s.runDetailStreamOpen);
   const setKeyword = useRunStore((s) => s.setRunHistoryKeyword);
   const setStatus = useRunStore((s) => s.setRunHistoryStatus);
   const fetchRunHistory = useRunStore((s) => s.fetchRunHistory);
+  const selectRun = useRunStore((s) => s.selectRun);
+  const closeRunDetailStream = useRunStore((s) => s.closeRunDetailStream);
+
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
 
   useEffect(() => {
     fetchRunHistory(SERVER_ORIGIN);
   }, [fetchRunHistory, keyword, statusFilter]);
 
   useEffect(() => {
-    const interval = setInterval(() => fetchRunHistory(SERVER_ORIGIN), 5000);
+    const interval = setInterval(() => {
+      fetchRunHistory(SERVER_ORIGIN);
+      setNowTick(Date.now());
+    }, 5000);
     return () => clearInterval(interval);
   }, [fetchRunHistory]);
 
+  useEffect(() => {
+    return () => {
+      closeRunDetailStream();
+    };
+  }, [closeRunDetailStream]);
+
+  const selectedRun = useMemo(
+    () => runHistory.find((run) => run.runId === selectedRunId),
+    [runHistory, selectedRunId],
+  );
+
+  const handleSelect = useCallback((runId: string) => {
+    if (selectedRunId === runId) return;
+    selectRun(SERVER_ORIGIN, runId);
+  }, [selectedRunId, selectRun]);
+
   return (
-    <div className="flex h-full flex-col gap-5 p-5">
+    <div className="flex h-full flex-col gap-4 p-5">
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
         <input
           type="text"
@@ -411,32 +497,147 @@ export function RunsPanel() {
           <option value="running">Running</option>
           <option value="done">Done</option>
           <option value="error">Error</option>
+          <option value="stale">Stale</option>
+          <option value="aborted">Aborted</option>
         </select>
       </div>
-      {loading && runHistory.length === 0 ? (
-        <div className={`px-4 py-5 text-sm text-slate-400 ${darkCard}`}>Loading...</div>
-      ) : runHistory.length === 0 ? (
-        <div className={`px-4 py-5 text-sm text-slate-400 ${darkCard}`}>No runs found</div>
-      ) : (
-        <ul className="flex flex-col gap-3 overflow-y-auto">
-          {runHistory.map((run: RunHistoryItem) => (
-            <li key={run.runId} className={`flex items-center justify-between gap-4 px-5 py-4 ${darkCard}`}>
-              <div className="min-w-0 flex flex-col gap-1">
-                <span className="truncate text-sm font-semibold text-slate-100">{run.flowName}</span>
-                <span className="text-xs text-slate-400">
-                  {run.source === "cli" ? "CLI" : "Studio"} · {new Date(run.createdAt).toLocaleString()}
-                </span>
+
+      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+        <div className="flex min-h-0 flex-col overflow-hidden">
+          {loading && runHistory.length === 0 ? (
+            <div className={`px-4 py-5 text-sm text-slate-400 ${darkCard}`}>Loading…</div>
+          ) : runHistory.length === 0 ? (
+            <div className={`px-4 py-5 text-sm text-slate-400 ${darkCard}`}>No runs found</div>
+          ) : (
+            <ul className="flex flex-col gap-3 overflow-y-auto pr-1">
+              {runHistory.map((run: RunHistoryItem) => {
+                const isSelected = run.runId === selectedRunId;
+                const cwdShort = shortenPath(run.cwd ?? undefined);
+                return (
+                  <li key={run.runId}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(run.runId)}
+                      className={`w-full text-left px-5 py-4 rounded-xl border transition ${
+                        isSelected
+                          ? "border-blue-400/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
+                          : `${darkCard} hover:border-slate-500/60`
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex flex-col gap-1">
+                          <span className="truncate text-sm font-semibold text-slate-100">{run.flowName}</span>
+                          <span className="truncate text-[11px] text-slate-400">
+                            {cwdShort ?? "(no cwd)"}
+                          </span>
+                          {run.latestActivity ? (
+                            <span className="truncate text-[11px] text-slate-500 italic">
+                              {run.latestActivity}
+                            </span>
+                          ) : null}
+                        </div>
+                        <span
+                          className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${runStatusClasses(run.status)}`}
+                        >
+                          <span className={`h-2 w-2 rounded-full ${runStatusDot(run.status)}`} />
+                          {run.status}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
+                        {run.agentType ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-[1px] text-slate-300">
+                            {agentTypeLabel(run.agentType)}
+                          </span>
+                        ) : null}
+                        <span>{run.source === "cli" ? "CLI" : "Studio"}</span>
+                        <span>·</span>
+                        <span>{formatElapsed(run, nowTick)}</span>
+                        <span>·</span>
+                        <span>{new Date(run.startedAt ?? run.createdAt).toLocaleTimeString()}</span>
+                        {typeof run.eventCount === "number" && run.eventCount > 0 ? (
+                          <>
+                            <span>·</span>
+                            <span>{run.eventCount} events</span>
+                          </>
+                        ) : null}
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className={`flex min-h-0 flex-col overflow-hidden ${darkCard}`}>
+          {!selectedRun ? (
+            <div className="flex h-full items-center justify-center p-6 text-sm text-slate-500">
+              Select a run to see its activity
+            </div>
+          ) : (
+            <>
+              <div className="border-b border-slate-800 px-5 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex flex-col gap-1">
+                    <span className="truncate text-sm font-semibold text-slate-100">{selectedRun.flowName}</span>
+                    <span className="truncate text-[11px] text-slate-400">{selectedRun.cwd ?? "(no cwd)"}</span>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${runStatusClasses(selectedRun.status)}`}
+                  >
+                    <span className={`h-2 w-2 rounded-full ${runStatusDot(selectedRun.status)}`} />
+                    {selectedRun.status}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
+                  <span>
+                    Active agent: <span className="text-slate-200">{selectedRun.activeAgent ?? agentTypeLabel(selectedRun.agentType) ?? "—"}</span>
+                  </span>
+                  <span>·</span>
+                  <span>elapsed {formatElapsed(selectedRun, nowTick)}</span>
+                  {runDetailStreamOpen ? (
+                    <>
+                      <span>·</span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" /> live
+                      </span>
+                    </>
+                  ) : null}
+                </div>
               </div>
-              <span
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${runStatusClasses(run.status)}`}
-              >
-                <span className={`h-2.5 w-2.5 rounded-full ${runStatusDot(run.status)}`} />
-                {run.status}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+                {runDetailLoading && runDetailEvents.length === 0 ? (
+                  <div className="text-xs text-slate-500">Loading events…</div>
+                ) : runDetailEvents.length === 0 ? (
+                  <div className="text-xs text-slate-500">No events recorded yet.</div>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {runDetailEvents.map((event, index) => (
+                      <li key={`${event.ts}-${index}`} className="flex items-start gap-3 py-1.5">
+                        <span className="w-16 shrink-0 text-[10px] font-mono text-slate-500">{formatEventClock(event.ts)}</span>
+                        <span className={`shrink-0 rounded border px-2 py-[1px] text-[10px] font-semibold uppercase tracking-wide ${eventTypeBadge(event.type)}`}>
+                          {event.type}
+                        </span>
+                        <div className="min-w-0 flex flex-col gap-0.5 text-[12px]">
+                          {event.toolName ? (
+                            <span className="font-mono text-slate-300">{event.toolName}</span>
+                          ) : null}
+                          {event.summary ? (
+                            <span className="text-slate-300">{event.summary}</span>
+                          ) : null}
+                          {event.agentName ? (
+                            <span className="text-[10px] text-slate-500">agent: {event.agentName}</span>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -130,6 +130,22 @@ export interface RunHistoryItem {
   endedAt?: string;
   exitCode?: number;
   agentCount: number;
+  cwd?: string | null;
+  agentType?: AgentType;
+  lastEventAt?: number;
+  eventCount?: number;
+  latestActivity?: string;
+  activeAgent?: string;
+}
+
+export interface RunDetailEvent {
+  runId: string;
+  ts: number;
+  type: "user" | "assistant" | "tool_use" | "tool_result" | "error";
+  summary?: string;
+  toolName?: string;
+  agentName?: string;
+  agentDepth?: number;
 }
 
 interface StudioState {
@@ -148,6 +164,10 @@ interface StudioState {
   runHistoryKeyword: string;
   runHistoryStatus: "all" | RunStatus;
   runHistoryLoading: boolean;
+  selectedRunId?: string;
+  runDetailEvents: RunDetailEvent[];
+  runDetailLoading: boolean;
+  runDetailStreamOpen: boolean;
 
   // Roles & custom resources
   roles: RoleDefinition[];
@@ -194,6 +214,9 @@ interface StudioState {
   duplicateFlow: (origin: string, sourcePath: string, name: string) => Promise<void>;
   createFlow: (origin: string, name: string) => Promise<void>;
   fetchRunHistory: (origin: string) => Promise<void>;
+  selectRun: (origin: string, runId: string | undefined) => Promise<void>;
+  appendRunDetailEvent: (event: RunDetailEvent) => void;
+  closeRunDetailStream: () => void;
 
   fetchRoles: (origin: string) => Promise<void>;
   saveRole: (origin: string, role: RoleDefinition) => Promise<void>;
@@ -225,6 +248,10 @@ export const useRunStore = create<StudioState>((set) => ({
   runHistoryKeyword: "",
   runHistoryStatus: "all",
   runHistoryLoading: false,
+  selectedRunId: undefined,
+  runDetailEvents: [],
+  runDetailLoading: false,
+  runDetailStreamOpen: false,
   roles: [],
   availableMcps: [],
   hooks: [],
@@ -635,4 +662,81 @@ export const useRunStore = create<StudioState>((set) => ({
       set({ runHistoryLoading: false });
     }
   },
+
+  selectRun: async (origin, runId) => {
+    closeActiveRunDetailStream();
+    if (!runId) {
+      set({ selectedRunId: undefined, runDetailEvents: [], runDetailLoading: false, runDetailStreamOpen: false });
+      return;
+    }
+    set({ selectedRunId: runId, runDetailEvents: [], runDetailLoading: true, runDetailStreamOpen: false });
+    try {
+      const res = await fetch(`${origin}/runs/${runId}/events`);
+      if (res.ok) {
+        const body = (await res.json()) as { events: RunDetailEvent[] };
+        const current = useRunStore.getState();
+        if (current.selectedRunId === runId) {
+          set({ runDetailEvents: body.events, runDetailLoading: false });
+        }
+      } else {
+        set({ runDetailLoading: false });
+      }
+    } catch {
+      set({ runDetailLoading: false });
+    }
+    const stream = openRunDetailStream(origin, runId, (event) => {
+      const current = useRunStore.getState();
+      if (current.selectedRunId !== runId) return;
+      set({ runDetailEvents: [...current.runDetailEvents, event] });
+    });
+    if (stream) {
+      activeRunDetailStream = stream;
+      set({ runDetailStreamOpen: true });
+    }
+  },
+
+  appendRunDetailEvent: (event) => {
+    const current = useRunStore.getState();
+    if (!current.selectedRunId || current.selectedRunId !== event.runId) return;
+    set({ runDetailEvents: [...current.runDetailEvents, event] });
+  },
+
+  closeRunDetailStream: () => {
+    closeActiveRunDetailStream();
+    set({ runDetailStreamOpen: false });
+  },
 }));
+
+let activeRunDetailStream: EventSource | null = null;
+
+function closeActiveRunDetailStream(): void {
+  if (activeRunDetailStream) {
+    activeRunDetailStream.close();
+    activeRunDetailStream = null;
+  }
+}
+
+function openRunDetailStream(origin: string, runId: string, onEvent: (event: RunDetailEvent) => void): EventSource | null {
+  if (typeof EventSource === "undefined") return null;
+  try {
+    const url = `${origin}/runs/${encodeURIComponent(runId)}/stream`;
+    const source = new EventSource(url);
+    source.onmessage = (msg) => {
+      if (!msg.data) return;
+      try {
+        const parsed = JSON.parse(msg.data) as RunDetailEvent;
+        if (parsed && parsed.runId === runId) {
+          onEvent(parsed);
+        }
+      } catch {
+        // ignore malformed frames
+      }
+    };
+    source.onerror = () => {
+      // leave socket open; browser will retry automatically
+    };
+    return source;
+  } catch {
+    return null;
+  }
+}

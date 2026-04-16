@@ -168,7 +168,7 @@ export interface RunAgentResult {
   finishedAt?: string;
 }
 
-export type RunStatus = "success" | "failed" | "aborted" | "running" | "done" | "error";
+export type RunStatus = "success" | "failed" | "aborted" | "running" | "done" | "error" | "stale";
 export type RunSource = "server" | "cli";
 
 export interface RunSummary {
@@ -181,6 +181,12 @@ export interface RunSummary {
   endedAt?: string;
   exitCode?: number;
   agentCount: number;
+  cwd?: string | null;
+  agentType?: AgentType;
+  lastEventAt?: number;
+  eventCount?: number;
+  latestActivity?: string;
+  activeAgent?: string;
 }
 
 export interface RunRecord {

@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { RunRecord, RunSource, RunStatus, RunSummary } from "@loom/core";
+import type { AgentType, RunRecord, RunSource, RunStatus, RunSummary } from "@loom/core";
 
 export type PersistedRunEventType = "user" | "assistant" | "tool_use" | "tool_result" | "error";
 
@@ -82,6 +82,7 @@ for (const statement of [
   "ALTER TABLE runs ADD COLUMN started_at TEXT",
   "ALTER TABLE runs ADD COLUMN ended_at TEXT",
   "ALTER TABLE runs ADD COLUMN cwd TEXT",
+  "ALTER TABLE runs ADD COLUMN agent_type TEXT",
 ]) {
   try {
     database.exec(statement);
@@ -95,6 +96,7 @@ for (const statement of [
 
 export interface PersistedRun extends Omit<RunRecord, "createdAt" | "agentResults"> {
   cwd?: string | null;
+  agentType?: string | null;
   agentResults: Array<{
     agentName: string;
     output: string;
@@ -124,8 +126,8 @@ export function getTraceDbPath(): string {
 
 export function persistRun(run: PersistedRun): void {
   const insertRun = database.prepare(`
-    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, cwd)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, cwd, agent_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertAgentResult = database.prepare(`
     INSERT INTO node_results (run_id, node_id, output, started_at, finished_at)
@@ -147,6 +149,7 @@ export function persistRun(run: PersistedRun): void {
       run.startedAt ?? null,
       run.endedAt ?? null,
       run.cwd ?? null,
+      run.agentType ?? null,
     );
 
     for (const agentResult of run.agentResults) {
@@ -168,8 +171,8 @@ export function persistRun(run: PersistedRun): void {
 
 export function createRunRecord(run: PersistedRun): void {
   const statement = database.prepare(`
-    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, cwd)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO runs (run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, cwd, agent_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   statement.run(
     run.runId,
@@ -183,6 +186,7 @@ export function createRunRecord(run: PersistedRun): void {
     run.startedAt ?? null,
     run.endedAt ?? null,
     run.cwd ?? null,
+    run.agentType ?? null,
   );
 }
 
@@ -258,17 +262,59 @@ export function listRuns(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const statement = database.prepare(`
-    SELECT runs.run_id, runs.flow_name, runs.status, runs.source, runs.exit_code, runs.started_at, runs.ended_at, runs.created_at, COUNT(node_results.node_id) AS agent_count
+    SELECT
+      runs.run_id,
+      runs.flow_name,
+      runs.status,
+      runs.source,
+      runs.exit_code,
+      runs.started_at,
+      runs.ended_at,
+      runs.created_at,
+      runs.cwd,
+      runs.agent_type,
+      (SELECT COUNT(node_id) FROM node_results WHERE node_results.run_id = runs.run_id) AS agent_count,
+      (SELECT COUNT(id) FROM events WHERE events.run_id = runs.run_id) AS event_count,
+      (SELECT MAX(ts) FROM events WHERE events.run_id = runs.run_id) AS last_event_at,
+      (SELECT json_object('type', type, 'toolName', tool_name, 'summary', summary, 'agentName', agent_name)
+         FROM events WHERE events.run_id = runs.run_id
+         ORDER BY events.ts DESC, events.id DESC LIMIT 1) AS latest_event_json
     FROM runs
-    LEFT JOIN node_results ON node_results.run_id = runs.run_id
     ${whereClause}
-    GROUP BY runs.run_id
     ORDER BY COALESCE(runs.started_at, runs.created_at) DESC, runs.run_id DESC
     LIMIT ? OFFSET ?
   `);
 
   return statement.all(...values, pageSize, offset).map((row) => {
     const typedRow = row as Record<string, unknown>;
+    const latestEventJson = typedRow.latest_event_json == null ? null : String(typedRow.latest_event_json);
+    let latestActivity: string | undefined;
+    let activeAgent: string | undefined;
+    if (latestEventJson) {
+      try {
+        const parsed = JSON.parse(latestEventJson) as {
+          type?: string;
+          toolName?: string | null;
+          summary?: string | null;
+          agentName?: string | null;
+        };
+        const type = parsed.type ?? "";
+        const toolName = parsed.toolName ?? undefined;
+        const summary = parsed.summary ?? undefined;
+        if (toolName) {
+          latestActivity = `${type}: ${toolName}`;
+        } else if (summary) {
+          latestActivity = `${type}: ${summary.slice(0, 80)}`;
+        } else if (type) {
+          latestActivity = type;
+        }
+        if (parsed.agentName) {
+          activeAgent = parsed.agentName;
+        }
+      } catch {
+        // ignore malformed JSON from sqlite
+      }
+    }
     return {
       runId: String(typedRow.run_id),
       flowName: String(typedRow.flow_name),
@@ -279,6 +325,12 @@ export function listRuns(
       endedAt: typedRow.ended_at == null ? undefined : String(typedRow.ended_at),
       exitCode: typedRow.exit_code == null ? undefined : Number(typedRow.exit_code),
       agentCount: Number(typedRow.agent_count),
+      cwd: typedRow.cwd == null ? null : String(typedRow.cwd),
+      agentType: typedRow.agent_type == null ? undefined : String(typedRow.agent_type) as AgentType,
+      eventCount: Number(typedRow.event_count ?? 0),
+      lastEventAt: typedRow.last_event_at == null ? undefined : Number(typedRow.last_event_at),
+      latestActivity,
+      activeAgent,
     };
   });
 }

@@ -389,6 +389,7 @@ export function buildServer() {
       source: parsed.data.source,
       startedAt: parsed.data.startTime,
       cwd: parsed.data.cwd ?? "",
+      agentType: parsed.data.agentType,
       agentResults: [
         {
           agentName: parsed.data.agentType,
