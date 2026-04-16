@@ -321,18 +321,47 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
     };
   }
 
-  const queueSummary = transcriptType === "queue-operation"
-    ? summarizeText(typeof parsed.content === "string" ? parsed.content : typeof parsed.operation === "string" ? parsed.operation : transcriptType, 100)
-    : undefined;
-  return {
-    runId,
-    ts,
-    type: transcriptType === "queue-operation" ? "user" : "error",
-    summary: queueSummary,
-    agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
-    agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
-    raw: parsed,
-  };
+  if (transcriptType === "attachment") {
+    const attachment = parsed.attachment as Record<string, unknown> | undefined;
+    const attachmentType = typeof attachment?.type === "string" ? attachment.type : undefined;
+    if (attachmentType === "hook_non_blocking_error") {
+      const hookName = typeof attachment?.hookName === "string" ? attachment.hookName : "hook";
+      const command = typeof attachment?.command === "string" ? attachment.command : "";
+      const stderr = typeof attachment?.stderr === "string" ? attachment.stderr : "";
+      const exitCode = typeof attachment?.exitCode === "number" ? attachment.exitCode : undefined;
+      const pieces = [hookName, exitCode !== undefined ? `exit ${exitCode}` : undefined, stderr || command].filter(Boolean);
+      return {
+        runId,
+        ts,
+        type: "error",
+        summary: summarizeText(pieces.join(" · "), 160),
+        toolName: `hook:${hookName}`,
+        agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
+        agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
+        raw: parsed,
+      };
+    }
+    // other attachment subtypes (deferred_tools_delta, file-history-snapshot, etc.) are noise.
+    return null;
+  }
+
+  if (transcriptType === "queue-operation") {
+    return {
+      runId,
+      ts,
+      type: "user",
+      summary: summarizeText(typeof parsed.content === "string" ? parsed.content : typeof parsed.operation === "string" ? parsed.operation : transcriptType, 100),
+      agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
+      agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
+      raw: parsed,
+    };
+  }
+
+  // Skip internal meta frames the orchestrator writes to transcript but which
+  // aren't useful to a human watcher (permission-mode, system bridge, file
+  // snapshots, summary blobs, etc.). Anything we don't explicitly understand
+  // is dropped rather than surfaced as a bogus ERROR row.
+  return null;
 }
 
 async function postRunEvents(origin: string, runId: string, events: LoomRunEvent[]): Promise<void> {
