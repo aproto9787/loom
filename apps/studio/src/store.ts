@@ -721,7 +721,7 @@ function openRunDetailStream(origin: string, runId: string, onEvent: (event: Run
   try {
     const url = `${origin}/runs/${encodeURIComponent(runId)}/stream`;
     const source = new EventSource(url);
-    source.onmessage = (msg) => {
+    const handleFrame = (msg: MessageEvent) => {
       if (!msg.data) return;
       try {
         const parsed = JSON.parse(msg.data) as RunDetailEvent;
@@ -732,6 +732,10 @@ function openRunDetailStream(origin: string, runId: string, onEvent: (event: Run
         // ignore malformed frames
       }
     };
+    // Server emits named SSE frames (`event: run_event`). EventSource.onmessage
+    // only fires for frames without an `event:` line, so also subscribe by name.
+    source.addEventListener("run_event", handleFrame as EventListener);
+    source.onmessage = handleFrame;
     source.onerror = () => {
       // leave socket open; browser will retry automatically
     };
