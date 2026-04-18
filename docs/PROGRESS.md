@@ -628,3 +628,60 @@ runtime shape.
 - Source-backed behavior exists for runner splitting, temporary isolated
   HOME handling, scoped MCP config creation, capability-aware prompt
   building, and role inheritance across both backend and studio code
+
+---
+
+## Phase 7 — loom-subagent trees (conductor pattern generalized)
+
+**Goal.** Unify every subagent — not just `conductor` — onto the same
+"spawn-a-process, POST events with your own name/parent" pattern that
+the old `loom-conductor` (codex) used, so a single Studio run timeline
+can display the full recursive agent tree (leader → subagents →
+grandchildren) instead of only the leader's Claude Code session.
+
+**What changed.**
+
+- `apps/server/src/trace-store.ts`, `apps/server/src/index.ts`,
+  `apps/studio/src/store.ts`: run events now carry
+  `parentAgent` and `agentKind` alongside `agentName` / `agentDepth`,
+  with DB columns and zod schema extended. Existing rows remain valid
+  (both fields optional)
+- `apps/studio/src/AppSections.tsx`: timeline renders per-event
+  depth indentation, shortens UUID agent names to 8-char prefixes,
+  color-codes by kind (`claude` sky, `codex` amber), and shows
+  `child ← parent` relationships inline
+- `packages/cli/src/subagent-launcher.ts` (new, `loom-subagent` bin):
+  generalized headless runner for both claude (`--print
+  --output-format stream-json --session-id`) and codex (`exec --json`)
+  backends. Each process POSTs events tagged with its own `agentName`
+  and the parent passed in via `--parent` / env. Sets
+  `LOOM_PARENT_AGENT` / `LOOM_PARENT_DEPTH` for its own child shells,
+  so recursion composes naturally
+- `packages/cli/src/delegation-prompt.ts`: walks the flow tree to
+  produce a `## Subagent Delegation Protocol` snippet that lists
+  each child with a copy-paste-ready `node "$LOOM_SUBAGENT_BIN"
+  --name ... --backend ... --parent <self> "<BRIEFING>"` template.
+  Agent tool use is explicitly forbidden for these delegated roles
+- `packages/cli/src/index.ts` `launchAgent()`: appends the leader's
+  delegation prompt to `--append-system-prompt`, sets
+  `LOOM_SUBAGENT_BIN` to the absolute path of the installed launcher
+  (PATH-linking optional), and seeds `LOOM_PARENT_AGENT=leader`
+- `packages/cli/src/conductor-launcher.ts`: now tags events with
+  `parentAgent` / `agentKind: codex` and honors
+  `LOOM_PARENT_AGENT` / `LOOM_PARENT_DEPTH`. Marked as superseded by
+  `loom-subagent` but retained for backward compatibility
+- `apps/server/src/runner-executor.ts`: marked deprecated in header
+  comment; Studio `POST /runs/stream` path still uses it but new
+  behavior should land in `subagent-launcher` instead
+
+**Acceptance notes.**
+
+- `pnpm -r build` passes across all six packages after each phase
+- Delegation prompt output verified via `node -e` against a sample
+  `AgentConfig` tree — both claude-code and codex children produce
+  valid Bash templates
+- Golden-path verification (leader → conductor → 9 codex workers
+  visible in the Studio timeline at decreasing indentation) still
+  requires a manual `loom` run with the Studio open; no automated
+  harness covers it yet
+

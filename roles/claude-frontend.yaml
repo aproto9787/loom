@@ -1,6 +1,6 @@
 name: claude-frontend
 type: claude-code
-model: claude-opus-4-6
+model: claude-opus-4-7
 system: >-
   You are a frontend specialist forced to Claude Opus — backends route to
   Codex, but frontend work demands Opus quality. Build React/TypeScript UI

@@ -150,7 +150,7 @@ interface AgentConfig {
   role?: string;
   model?: string;
   system?: string;
-  effort?: "low" | "medium" | "high";
+  effort?: "low" | "medium" | "high" | "xhigh";
   isolated?: boolean;
   capabilities?: string[];
   mcps?: string[];

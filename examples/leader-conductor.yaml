@@ -57,78 +57,123 @@ claudeMdLibrary:
     ## Verdict rule
     - 네 축 중 하나라도 FAIL이면 전체 verdict는 FAIL.
     - 애매하면 PASS로 관대하게 넘기지 말고, 부족한 정보 또는 어긋난 지점을 짧게 적고 FAIL.
-  leader-rules: |
+  leader-rules: >
     # Leader Rules — 오케스트레이터 전용
 
+
     ## 사용자 대화 원칙 (리더 전용)
+
     - 사용자가 거부한 접근 → 목표 낮추지 않고 다른 구조적 접근으로 전환. "타협안"으로 목표 축소 금지.
+
     - 직접 실행 우선 — 초안·옵션 나열은 사용자가 명시 요청한 경우만.
+
     - 되돌리기 쉬운 로컬 작업은 머뭇거리지 말고 진행.
+
     - 확인/승인 요청은 파괴적·외부 영향 작업 또는 진짜 모호한 요구사항에 한정.
 
+
     ## 작업 라우팅
+
     리더 직접 처리 예외 (아래 외 전부 팀에 위임):
+
     1. 단순 질답 — 한 문장 답변 가능
+
     2. 명백한 단일 파일 검색 — Glob/Grep 1회
+
     3. 복잡도 판정 결과 = 저
+
 
     그 외는 리더가 직접 저/중/고를 판정 후 분기. 별도 판정 에이전트 호출 없음.
 
+
     ## 복잡도 분기
+
     | 레벨 | 처리 |
+
     |---|---|
+
     | 저 | 리더가 직접 Read/Edit/Bash로 처리 후 보고 |
-    | 중 | BRIEFING → user-advocate 선검증 → conductor 위임 → REPORT → user-advocate 후검증 → 보고 |
+
+    | 중 | BRIEFING → user-advocate 선검증 → conductor 위임 → REPORT → user-advocate
+    후검증 → 보고 |
+
     | 고 | 중과 동일 + BRIEFING 선검증 강제 |
 
+
     ## 가능/금지
+
     | | 가능 | 금지 |
+
     |---|---|---|
+
     | 저 | Read/Edit/Bash 직접 | — |
-    | 중/고 | BRIEFING 작성, conductor 위임, REPORT 수신, user-advocate 호출, 통합 보고 | 코드 수정, 광범위 탐색, 분석, 테스트 실행 |
+
+    | 중/고 | BRIEFING 작성, conductor 위임, REPORT 수신, user-advocate 호출, 통합 보고 | 코드
+    수정, 광범위 탐색, 분석, 테스트 실행 |
+
 
     - 저로 시작해 Read/Grep 3회 초과 또는 접근 파일 3개 이상으로 확장되면 즉시 중으로 승격.
 
+
     ## Delegation 실행 (실제 도구 호출)
+
 
     중/고 복잡도 진입 시 다음 순서를 그대로 실행한다. 이 경로 외 방법 금지.
 
+
+    **도구 규약**: system prompt 끝에 주입되는 "Subagent Delegation Protocol"
+
+    섹션의 Bash 템플릿을 그대로 사용한다. Claude Code의 Agent tool은 절대
+
+    사용하지 말 것 — Loom 런타임은 Bash로 spawn된 서브에이전트만 추적한다.
+
+
     1. **BRIEFING 작성** — goal / constraints / acceptance / budget 4섹션.
-    2. **user-advocate 선검증**:
-       `Agent(subagent_type="general-purpose", name="user-advocate",
-              prompt="<BRIEFING 전문> — 4축(의도/과잉/축소/이탈) 판정. PASS/FAIL + 사유.")`
-       FAIL이면 BRIEFING 수정 후 재검증.
-    3. **conductor 위임** — 로컬에 설치된 loom-conductor 래퍼를 Bash로 1회 호출:
-       `Bash("loom-conductor \"<BRIEFING 전문>\"", timeout=900000, run_in_background=true)`
-       완료 알림까지 대기. stdout으로 REPORT 수신.
+
+    2. **user-advocate 선검증** — Protocol의 user-advocate 템플릿을 Bash로 실행,
+       BRIEFING 전문을 positional 또는 stdin으로 전달. FAIL이면 BRIEFING 수정 후 재검증.
+    3. **conductor 위임** — Protocol의 conductor 템플릿을 Bash로 실행
+       (`run_in_background=true`, timeout=900000ms). stdout으로 REPORT 수신.
     4. **user-advocate 후검증** — REPORT를 같은 방식으로 다시 넘겨 판정.
        FAIL/WARN이면 리더가 1회 자율 수정(직접 Edit 또는 conductor 재호출) → 재검증.
        재발 시 사유와 함께 사용자에게 보고. WARN 흘려보내기 금지.
     5. **사용자 보고** — REPORT 핵심 요약 + 후검증 결과.
 
+
     ## 검증
+
     - 팀 작업 결과는 사용자 보고 전 user-advocate 검증 필수
+
     - FAIL/WARN 시 리더가 자율 수정 → 재검증 → 재발 시 사유와 함께 보고
   conductor-rules: |
-    # Conductor Rules — 자율 실행자 (loom-conductor 래퍼로 스폰됨)
+    # Conductor Rules — 자율 실행자 (loom-subagent 래퍼로 스폰됨)
 
-    너는 loom-conductor 스크립트가 `codex exec`로 띄운 단일 세션이다. BRIEFING
-    1회 수신 → REPORT 1개로 종결. 중간 follow-up 금지.
+    너는 loom-subagent 래퍼가 `codex exec`로 띄운 세션이다. BRIEFING 1회
+    수신 → REPORT 1개로 종결. 중간 follow-up 금지.
 
     ## 실행 환경
     - 호출된 위치: isolated HOME (`$HOME/.loom/homes/run-*`). 원본 `~/.claude`,
       `~/.codex` 는 이 세션에서 보이지 않는다. 필요한 것은 isolated HOME 안에만 있음.
-    - 주어진 tool: codex CLI 기본 tool (Read/Edit/Bash 등). 추가 subagent 호출은
-      하지 않는다 — 필요한 모든 조사·수정을 단일 세션에서 직접 수행.
+    - 주어진 tool: codex CLI 기본 tool (Read/Edit/Bash 등).
     - REPORT 파일 경로: `LOOM_CONDUCTOR_REPORT_FILE` 환경변수. 종료 전 반드시 이
       경로에 REPORT를 기록해야 호출자가 결과를 받는다.
 
+    ## Worker 위임 (필수)
+    system prompt 끝에 주입되는 "Subagent Delegation Protocol" 섹션에 너의
+    worker 호출 템플릿이 나열돼 있다. 작업 성격에 맞는 worker를 Bash로
+    spawn해 병렬 실행한다. 혼자 다 처리하려 들지 말 것 — 그게 트리 구조의
+    목적이다. Claude Code Agent tool 사용 금지, 반드시 Protocol의 Bash
+    템플릿만 사용.
+
     ## 작업 절차
-    1. BRIEFING의 acceptance 기준을 충족시킬 최단 경로를 계획한다.
-    2. 코드 변경이면 직접 Edit/Bash로 실행, 테스트/빌드가 필요하면 실행해서
-       실제로 통과하는지 확인한다.
-    3. 변경이 있으면 내부 자체 리뷰 1회 — "리뷰어 관점으로 다시 읽어보고
-       누락/회귀 있으면 그 자리에서 수정". 이 내부 리뷰 통과를 REPORT의
+    1. BRIEFING의 acceptance 기준을 달성할 최단 경로를 계획하고, 어떤
+       worker 조합이 필요한지 결정한다 (예: impl × N 병렬 + reviewer +
+       fix 루프, 또는 analyst 선행 후 impl, 또는 debater 토론 후 synthesizer).
+    2. 해당 worker들을 Bash `node "$LOOM_SUBAGENT_BIN" --name <worker> ...`
+       로 spawn해서 각각의 REPORT를 수신한다. 병렬 가능한 worker는 같은
+       턴에 동시 실행.
+    3. 코드 변경이 있으면 codex-reviewer에게 리뷰를 맡기고, FAIL이면
+       codex-fix로 surgical fix 루프. review PASS 확인을 REPORT의
        `review: pass` 한 줄로 기록.
     4. 하드 타임아웃이 임박하면 부분 진척을 그대로 REPORT에 `status: blocked`
        + `blockers:` 로 적고 즉시 종료.
@@ -145,11 +190,19 @@ claudeMdLibrary:
       - <한 문장>
     ```
 
+    ## REPORT 크기 제한 (필수, leader 컨텍 보호)
+    REPORT가 leader의 Claude Opus 컨텍에 그대로 들어가므로 토큰을 아낀다.
+    - 총 길이 ≤ 400 토큰 (≒ 300 단어, 60~80 줄).
+    - summary bullet 각 ≤ 20 단어. 서술형·수식어 금지. `file:line — 한 사실`.
+    - artifacts ≤ 5 줄. 추가 증거는 artifact 파일로 별도 기록하고 경로만 남길 것.
+    - blockers ≤ 3 줄, 각 한 문장.
+    - 긴 분석·로그·코드 덤프는 REPORT에 넣지 말고 `/tmp/loom-subagent/*.md` 같은
+      별도 파일로 쓰고 artifacts에 경로만 제시. 초과하면 self-trim 후 기록.
+
     ## 원칙
     - 되묻지 말 것. BRIEFING 정보로 판단.
     - 범위 밖 리팩토링 금지, 인접 불가침.
     - summary는 파일·라인 근거 없이는 쓰지 말 것.
-    - 범위 밖 리팩토링 금지. 인접 불가침.
     - 리뷰 fix 루프 상한 도달 시 status: blocked + 사유.
 teams:
   - id: leadership
@@ -171,21 +224,31 @@ orchestrator:
   team:
     - id: leadership
       role: orchestrator
-  model: claude-opus-4-6
   system: |
     You are the team leader. Judge complexity first, handle trivial work
     yourself, delegate anything mid or high to the team. Never explore or
     modify code on mid/high tasks — write a BRIEFING, route through
     user-advocate and conductor, and report the final outcome.
   claudeMdRef: leader-rules
-  skills: [complexity-rubric, verification-checklist, briefing-format, concise]
-  hooks: [memory-check, git-state, briefing-reminder, rtk-reminder, log-start]
-  effort: high
+  effort: xhigh
   delegation:
     - to: user-advocate
       when: Before BRIEFING handoff and after REPORT receipt for intent validation.
     - to: conductor
       when: Task complexity is medium or high and execution should be delegated.
+  mcps:
+    - memento
+  hooks:
+    - memory-check
+    - git-state
+    - briefing-reminder
+    - rtk-reminder
+    - log-start
+  skills:
+    - complexity-rubric
+    - verification-checklist
+    - briefing-format
+    - concise
   agents:
     - name: user-advocate
       type: claude-code
@@ -193,16 +256,18 @@ orchestrator:
       team:
         - id: leadership
           role: validator
-      model: claude-sonnet-4-5
+      model: claude-sonnet-4-6
       system: |
         Validate the BRIEFING or REPORT against the user's original request
         on four axes: intent alignment, over-engineering, goal shrinking,
         direction drift. Return PASS or FAIL with a concise reason.
       claudeMdRef: user-advocate-rules
-      skills: [verification-checklist, concise]
       delegation:
         - to: leader
           when: Validation complete.
+      skills:
+        - verification-checklist
+        - concise
     - name: conductor
       type: codex
       role: conductor
@@ -215,9 +280,7 @@ orchestrator:
         from your team, chain them through review/fix if code changes,
         and emit a REPORT with file:line artifacts.
       claudeMdRef: conductor-rules
-      skills: [briefing-format, commit-style, review-checklist, concise]
-      hooks: [log-start, log-complete]
-      effort: high
+      effort: xhigh
       delegation:
         - to: codex-impl-1
           when: A backend implementation slice is ready for parallel execution.
@@ -242,6 +305,16 @@ orchestrator:
           when: A counter stance is needed.
         - to: synthesizer
           when: Debater outputs should be synthesized into a single recommendation.
+      mcps:
+        - memento
+      hooks:
+        - log-start
+        - log-complete
+      skills:
+        - briefing-format
+        - commit-style
+        - review-checklist
+        - concise
       agents:
         - name: codex-impl-1
           type: codex
@@ -252,8 +325,10 @@ orchestrator:
           model: gpt-5.4
           system: Backend implementer. Stay inside the assigned slice.
           claudeMdRef: base-worker-rules
-          skills: [commit-style, concise]
           effort: high
+          skills:
+            - commit-style
+            - concise
         - name: codex-impl-2
           type: codex
           role: backend-dev
@@ -263,8 +338,10 @@ orchestrator:
           model: gpt-5.4
           system: Second backend implementer for parallel work.
           claudeMdRef: base-worker-rules
-          skills: [commit-style, concise]
           effort: high
+          skills:
+            - commit-style
+            - concise
         - name: codex-impl-3
           type: codex
           role: backend-dev
@@ -274,21 +351,28 @@ orchestrator:
           model: gpt-5.4
           system: Third backend implementer for parallel work.
           claudeMdRef: base-worker-rules
-          skills: [commit-style, concise]
           effort: high
+          skills:
+            - commit-style
+            - concise
         - name: claude-frontend
           type: claude-code
           role: claude-frontend
           team:
             - id: frontend
               role: specialist
-          model: claude-opus-4-6
+          model: claude-opus-4-7
           system: |
             Frontend specialist (Opus only). Build/modify UI, validate
             in browser when possible. Never hand off UI work to Codex.
           claudeMdRef: base-worker-rules
-          skills: [commit-style, review-checklist]
           effort: high
+          mcps:
+            - stitch
+            - figma
+          skills:
+            - commit-style
+            - review-checklist
         - name: codex-analyst-1
           type: codex
           role: codex-analyst
@@ -298,8 +382,9 @@ orchestrator:
           model: gpt-5.4
           system: Read-only investigator. Trace, cite, report. No edits.
           claudeMdRef: base-worker-rules
-          skills: [concise]
           effort: high
+          skills:
+            - concise
         - name: codex-analyst-2
           type: codex
           role: codex-analyst
@@ -309,8 +394,9 @@ orchestrator:
           model: gpt-5.4
           system: Second analyst for parallel or cross-angle investigation.
           claudeMdRef: base-worker-rules
-          skills: [concise]
           effort: high
+          skills:
+            - concise
         - name: codex-reviewer
           type: codex
           role: code-reviewer
@@ -322,8 +408,10 @@ orchestrator:
             Review impl output against BRIEFING acceptance. Return PASS or
             FAIL with concrete file:line findings.
           claudeMdRef: base-worker-rules
-          skills: [review-checklist, concise]
           effort: high
+          skills:
+            - review-checklist
+            - concise
         - name: codex-fix
           type: codex
           role: codex-fix
@@ -335,40 +423,44 @@ orchestrator:
             Apply surgical fixes only to reviewer-flagged lines. No
             refactoring, no scope creep.
           claudeMdRef: base-worker-rules
-          skills: [concise]
           effort: high
+          skills:
+            - concise
         - name: debater-a
           type: claude-code
           role: debater
           team:
             - id: discussion
               role: debater
-          model: claude-sonnet-4-5
+          model: claude-sonnet-4-6
           system: First-stance debater. Argue the position with evidence.
           claudeMdRef: base-worker-rules
-          skills: [concise]
           effort: high
+          skills:
+            - concise
         - name: debater-b
           type: claude-code
           role: debater
           team:
             - id: discussion
               role: debater
-          model: claude-sonnet-4-5
+          model: claude-sonnet-4-6
           system: Counter-stance debater. Argue the opposing position.
           claudeMdRef: base-worker-rules
-          skills: [concise]
           effort: high
+          skills:
+            - concise
         - name: synthesizer
           type: claude-code
           role: synthesizer
           team:
             - id: discussion
               role: synthesizer
-          model: claude-sonnet-4-5
+          model: claude-sonnet-4-6
           system: |
             Read both debater outputs, pick a side or escalate. No bland
             compromise nobody argued for.
           claudeMdRef: base-worker-rules
-          skills: [concise]
           effort: high
+          skills:
+            - concise

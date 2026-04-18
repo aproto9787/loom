@@ -146,6 +146,8 @@ export interface RunDetailEvent {
   toolName?: string;
   agentName?: string;
   agentDepth?: number;
+  parentAgent?: string;
+  agentKind?: string;
 }
 
 interface StudioState {
@@ -165,6 +167,7 @@ interface StudioState {
   runHistoryStatus: "all" | RunStatus;
   runHistoryLoading: boolean;
   selectedRunId?: string;
+  selectedAgent?: string;
   runDetailEvents: RunDetailEvent[];
   runDetailLoading: boolean;
   runDetailStreamOpen: boolean;
@@ -217,6 +220,7 @@ interface StudioState {
   selectRun: (origin: string, runId: string | undefined) => Promise<void>;
   appendRunDetailEvent: (event: RunDetailEvent) => void;
   closeRunDetailStream: () => void;
+  selectRunAgent: (agentName: string | undefined) => void;
 
   fetchRoles: (origin: string) => Promise<void>;
   saveRole: (origin: string, role: RoleDefinition) => Promise<void>;
@@ -666,10 +670,10 @@ export const useRunStore = create<StudioState>((set) => ({
   selectRun: async (origin, runId) => {
     closeActiveRunDetailStream();
     if (!runId) {
-      set({ selectedRunId: undefined, runDetailEvents: [], runDetailLoading: false, runDetailStreamOpen: false });
+      set({ selectedRunId: undefined, selectedAgent: undefined, runDetailEvents: [], runDetailLoading: false, runDetailStreamOpen: false });
       return;
     }
-    set({ selectedRunId: runId, runDetailEvents: [], runDetailLoading: true, runDetailStreamOpen: false });
+    set({ selectedRunId: runId, selectedAgent: undefined, runDetailEvents: [], runDetailLoading: true, runDetailStreamOpen: false });
     try {
       const res = await fetch(`${origin}/runs/${runId}/events`);
       if (res.ok) {
@@ -700,6 +704,8 @@ export const useRunStore = create<StudioState>((set) => ({
     if (!current.selectedRunId || current.selectedRunId !== event.runId) return;
     set({ runDetailEvents: [...current.runDetailEvents, event] });
   },
+
+  selectRunAgent: (agentName) => set({ selectedAgent: agentName }),
 
   closeRunDetailStream: () => {
     closeActiveRunDetailStream();

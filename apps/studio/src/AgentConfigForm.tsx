@@ -310,7 +310,7 @@ export function AgentConfigForm({
   const effectiveType = agent.type ?? role?.type ?? type;
   const modelOptions =
     effectiveType === "claude-code"
-      ? ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
+      ? ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
       : ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
 
   useEffect(() => {
@@ -378,20 +378,26 @@ export function AgentConfigForm({
       {expanded && (
         <div className="px-4 pb-4 flex flex-col gap-4">
           <nav className="flex flex-wrap gap-2 pt-1">
-            {TAB_ORDER.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  activeTab === tab.id
-                    ? "border-blue-400 bg-blue-500/20 text-blue-100"
-                    : "border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-500 hover:text-slate-200"
-                }`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {TAB_ORDER
+              // Leader (root orchestrator) runs in the host's real HOME with
+              // the user's full Claude Code setup — flow-scoped MCP/hooks/skills
+              // are not applied to it. Hide the Resources tab so it doesn't
+              // mislead the user into thinking their toggles have effect.
+              .filter((tab) => !(isRoot && tab.id === "resources"))
+              .map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    activeTab === tab.id
+                      ? "border-blue-400 bg-blue-500/20 text-blue-100"
+                      : "border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                  }`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
           </nav>
 
           {activeTab === "basic" ? (
@@ -515,6 +521,7 @@ export function AgentConfigForm({
                   <option value="low">low</option>
                   <option value="medium">medium</option>
                   <option value="high">high</option>
+                  <option value="xhigh">xhigh</option>
                 </select>
                 {!agent.effort && role?.effort && (
                   <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
@@ -639,7 +646,7 @@ export function AgentConfigForm({
             </div>
           ) : null}
 
-          {activeTab === "resources" ? (
+          {activeTab === "resources" && !isRoot ? (
             <div className="flex flex-col gap-4">
               <ResourceSectionCard
                 field="mcps"

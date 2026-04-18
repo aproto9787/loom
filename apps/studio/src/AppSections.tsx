@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
@@ -433,12 +433,99 @@ function formatEventClock(ts: number): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function formatAgentLabel(agentName: string | undefined, agentKind: string | undefined): string | undefined {
+  if (!agentName) return undefined;
+  const kindSuffix = agentKind ? ` (${agentKind})` : "";
+  if (UUID_RE.test(agentName)) {
+    return `${agentName.slice(0, 8)}${kindSuffix}`;
+  }
+  return `${agentName}${kindSuffix}`;
+}
+
+function agentLabelColor(agentKind: string | undefined): string {
+  switch (agentKind) {
+    case "codex":
+      return "text-amber-400/80";
+    case "claude":
+      return "text-sky-400/80";
+    default:
+      return "text-slate-500";
+  }
+}
+
+interface AgentNode {
+  name: string;
+  kind?: string;
+  parentAgent?: string;
+  depth: number;
+  firstTs: number;
+  lastTs: number;
+  eventCount: number;
+  state: "running" | "done" | "error";
+}
+
+function buildAgentTree(events: RunDetailEvent[], runStatus: string | undefined): AgentNode[] {
+  const map = new Map<string, AgentNode>();
+  for (const ev of events) {
+    const name = ev.agentName;
+    if (!name) continue;
+    let node = map.get(name);
+    if (!node) {
+      node = {
+        name,
+        kind: ev.agentKind,
+        parentAgent: ev.parentAgent,
+        depth: 0,
+        firstTs: ev.ts,
+        lastTs: ev.ts,
+        eventCount: 0,
+        state: "running",
+      };
+      map.set(name, node);
+    }
+    node.lastTs = Math.max(node.lastTs, ev.ts);
+    node.eventCount += 1;
+    if (ev.agentKind && !node.kind) node.kind = ev.agentKind;
+    if (ev.parentAgent && !node.parentAgent) node.parentAgent = ev.parentAgent;
+    if (ev.type === "error") node.state = "error";
+    if (typeof ev.summary === "string" && /\bstatus:\s*done\b/i.test(ev.summary)) node.state = "done";
+  }
+  const runIsLive = runStatus === "running";
+  for (const n of map.values()) {
+    if (!runIsLive && n.state === "running") n.state = "done";
+  }
+  const byName = new Map(Array.from(map.values()).map((n) => [n.name, n]));
+  const depthOf = (name: string, seen = new Set<string>()): number => {
+    const node = byName.get(name);
+    if (!node || !node.parentAgent) return 0;
+    if (seen.has(name)) return 0;
+    seen.add(name);
+    return 1 + depthOf(node.parentAgent, seen);
+  };
+  for (const n of map.values()) n.depth = depthOf(n.name);
+  return Array.from(map.values()).sort((a, b) => a.firstTs - b.firstTs);
+}
+
+function agentStateDot(state: AgentNode["state"]): string {
+  switch (state) {
+    case "running":
+      return "bg-emerald-400 animate-pulse";
+    case "error":
+      return "bg-red-400";
+    default:
+      return "bg-slate-500";
+  }
+}
+
 export function RunsPanel() {
   const runHistory = useRunStore((s) => s.runHistory);
   const keyword = useRunStore((s) => s.runHistoryKeyword);
   const statusFilter = useRunStore((s) => s.runHistoryStatus);
   const loading = useRunStore((s) => s.runHistoryLoading);
   const selectedRunId = useRunStore((s) => s.selectedRunId);
+  const selectedAgent = useRunStore((s) => s.selectedAgent);
   const runDetailEvents = useRunStore((s) => s.runDetailEvents);
   const runDetailLoading = useRunStore((s) => s.runDetailLoading);
   const runDetailStreamOpen = useRunStore((s) => s.runDetailStreamOpen);
@@ -446,9 +533,11 @@ export function RunsPanel() {
   const setStatus = useRunStore((s) => s.setRunHistoryStatus);
   const fetchRunHistory = useRunStore((s) => s.fetchRunHistory);
   const selectRun = useRunStore((s) => s.selectRun);
+  const selectRunAgent = useRunStore((s) => s.selectRunAgent);
   const closeRunDetailStream = useRunStore((s) => s.closeRunDetailStream);
 
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetchRunHistory(SERVER_ORIGIN);
@@ -458,7 +547,7 @@ export function RunsPanel() {
     const interval = setInterval(() => {
       fetchRunHistory(SERVER_ORIGIN);
       setNowTick(Date.now());
-    }, 5000);
+    }, 1000);
     return () => clearInterval(interval);
   }, [fetchRunHistory]);
 
@@ -473,14 +562,54 @@ export function RunsPanel() {
     [runHistory, selectedRunId],
   );
 
+  const agentTree = useMemo(
+    () => buildAgentTree(runDetailEvents, selectedRun?.status),
+    [runDetailEvents, selectedRun?.status],
+  );
+
+  const selectedAgentNode = useMemo(
+    () => (selectedAgent ? agentTree.find((n) => n.name === selectedAgent) : undefined),
+    [agentTree, selectedAgent],
+  );
+
+  const filteredEvents = useMemo(
+    () => (selectedAgent ? runDetailEvents.filter((e) => e.agentName === selectedAgent) : runDetailEvents),
+    [runDetailEvents, selectedAgent],
+  );
+
+  // Jump to the bottom unconditionally when the user switches run or
+  // agent filter — behave like a chat view where "latest is always in
+  // view" on open. requestAnimationFrame ensures the newly rendered
+  // list has laid out before we measure scrollHeight.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handle = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [selectedRunId, selectedAgent]);
+
+  // As new events stream in, follow the tail only when the user is
+  // already near the bottom. If they scrolled up to read history, let
+  // them stay put.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
+    if (distanceFromBottom < 180) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [filteredEvents.length]);
+
   const handleSelect = useCallback((runId: string) => {
     if (selectedRunId === runId) return;
     selectRun(SERVER_ORIGIN, runId);
   }, [selectedRunId, selectRun]);
 
   return (
-    <div className="flex h-full flex-col gap-4 p-5">
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+    <div className="flex h-full flex-col gap-3 p-4">
+      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_140px]">
         <input
           type="text"
           placeholder="Search runs..."
@@ -502,65 +631,83 @@ export function RunsPanel() {
         </select>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <div className="flex min-h-0 flex-col overflow-hidden">
+      <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[240px_260px_minmax(0,1fr)]">
+        <div className="flex min-h-0 flex-col overflow-y-auto pr-1">
           {loading && runHistory.length === 0 ? (
-            <div className={`px-4 py-5 text-sm text-slate-400 ${darkCard}`}>Loading…</div>
+            <div className="px-3 py-4 text-xs text-slate-500">Loading…</div>
           ) : runHistory.length === 0 ? (
-            <div className={`px-4 py-5 text-sm text-slate-400 ${darkCard}`}>No runs found</div>
+            <div className="px-3 py-4 text-xs text-slate-500">No runs</div>
           ) : (
-            <ul className="flex flex-col gap-3 overflow-y-auto pr-1">
+            <ul className="flex flex-col gap-1">
               {runHistory.map((run: RunHistoryItem) => {
                 const isSelected = run.runId === selectedRunId;
-                const cwdShort = shortenPath(run.cwd ?? undefined);
                 return (
                   <li key={run.runId}>
                     <button
                       type="button"
                       onClick={() => handleSelect(run.runId)}
-                      className={`w-full text-left px-5 py-4 rounded-xl border transition ${
+                      className={`w-full text-left px-2.5 py-2 rounded-md border text-[12px] transition ${
                         isSelected
-                          ? "border-blue-400/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(96,165,250,0.3)]"
-                          : `${darkCard} hover:border-slate-500/60`
+                          ? "border-blue-400/60 bg-blue-500/10 text-slate-100"
+                          : "border-slate-800 bg-slate-900/30 text-slate-300 hover:border-slate-600 hover:bg-slate-800/40"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex flex-col gap-1">
-                          <span className="truncate text-sm font-semibold text-slate-100">{run.flowName}</span>
-                          <span className="truncate text-[11px] text-slate-400">
-                            {cwdShort ?? "(no cwd)"}
-                          </span>
-                          {run.latestActivity ? (
-                            <span className="truncate text-[11px] text-slate-500 italic">
-                              {run.latestActivity}
-                            </span>
-                          ) : null}
-                        </div>
-                        <span
-                          className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${runStatusClasses(run.status)}`}
-                        >
-                          <span className={`h-2 w-2 rounded-full ${runStatusDot(run.status)}`} />
-                          {run.status}
-                        </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${runStatusDot(run.status)}`} />
+                        <span className="truncate flex-1 font-medium">{run.flowName}</span>
+                        <span className="text-[10px] text-slate-500 shrink-0">{formatElapsed(run, nowTick)}</span>
                       </div>
-                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
-                        {run.agentType ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-[1px] text-slate-300">
-                            {agentTypeLabel(run.agentType)}
-                          </span>
-                        ) : null}
-                        <span>{run.source === "cli" ? "CLI" : "Studio"}</span>
-                        <span>·</span>
-                        <span>{formatElapsed(run, nowTick)}</span>
-                        <span>·</span>
-                        <span>{new Date(run.startedAt ?? run.createdAt).toLocaleTimeString()}</span>
-                        {typeof run.eventCount === "number" && run.eventCount > 0 ? (
-                          <>
-                            <span>·</span>
-                            <span>{run.eventCount} events</span>
-                          </>
-                        ) : null}
+                      <div className="truncate text-[10px] text-slate-500 mt-0.5 pl-3.5">
+                        {shortenPath(run.cwd ?? undefined) ?? "—"}
                       </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className={`flex min-h-0 flex-col overflow-hidden ${darkCard}`}>
+          <div className="border-b border-slate-800 px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-slate-500">
+            Agents {agentTree.length > 0 ? `· ${agentTree.length}` : ""}
+          </div>
+          {!selectedRun ? (
+            <div className="p-3 text-xs text-slate-500">Select a run</div>
+          ) : agentTree.length === 0 ? (
+            <div className="p-3 text-xs text-slate-500">No agents yet</div>
+          ) : (
+            <ul className="flex-1 overflow-y-auto px-1.5 py-1.5">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => selectRunAgent(undefined)}
+                  className={`w-full text-left px-2 py-1.5 rounded-md text-[12px] transition flex items-center gap-2 ${
+                    !selectedAgent ? "bg-blue-500/20 text-slate-100" : "text-slate-300 hover:bg-slate-800/50"
+                  }`}
+                >
+                  <span className="text-[10px] uppercase tracking-wide text-slate-500">all</span>
+                  <span className="ml-auto text-[10px] text-slate-500">{runDetailEvents.length}</span>
+                </button>
+              </li>
+              {agentTree.map((node) => {
+                const isSel = node.name === selectedAgent;
+                const indent = Math.min(node.depth, 4) * 12;
+                return (
+                  <li key={node.name}>
+                    <button
+                      type="button"
+                      onClick={() => selectRunAgent(isSel ? undefined : node.name)}
+                      style={{ paddingLeft: 8 + indent }}
+                      className={`w-full text-left pr-2 py-1.5 rounded-md text-[12px] transition flex items-center gap-2 ${
+                        isSel ? "bg-blue-500/20 text-slate-100" : "text-slate-300 hover:bg-slate-800/50"
+                      }`}
+                    >
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${agentStateDot(node.state)}`} />
+                      <span className={`truncate font-mono ${agentLabelColor(node.kind)}`}>
+                        {formatAgentLabel(node.name, node.kind) ?? node.name}
+                      </span>
+                      <span className="ml-auto text-[10px] text-slate-500 shrink-0">{node.eventCount}</span>
                     </button>
                   </li>
                 );
@@ -576,61 +723,81 @@ export function RunsPanel() {
             </div>
           ) : (
             <>
-              <div className="border-b border-slate-800 px-5 py-4">
+              <div className="border-b border-slate-800 px-5 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex flex-col gap-1">
-                    <span className="truncate text-sm font-semibold text-slate-100">{selectedRun.flowName}</span>
-                    <span className="truncate text-[11px] text-slate-400">{selectedRun.cwd ?? "(no cwd)"}</span>
+                  <div className="min-w-0 flex flex-col gap-0.5">
+                    <span className="truncate text-sm font-semibold text-slate-100">
+                      {selectedAgentNode
+                        ? (formatAgentLabel(selectedAgentNode.name, selectedAgentNode.kind) ?? selectedAgentNode.name)
+                        : `${selectedRun.flowName} · all agents`}
+                    </span>
+                    <span className="truncate text-[11px] text-slate-400">
+                      {selectedAgentNode
+                        ? `${selectedAgentNode.eventCount} events · ${selectedAgentNode.state}${selectedAgentNode.parentAgent ? ` · ← ${selectedAgentNode.parentAgent}` : ""}`
+                        : (selectedRun.cwd ?? "(no cwd)")}
+                    </span>
                   </div>
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${runStatusClasses(selectedRun.status)}`}
-                  >
-                    <span className={`h-2 w-2 rounded-full ${runStatusDot(selectedRun.status)}`} />
-                    {selectedRun.status}
-                  </span>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
-                  <span>
-                    Active agent: <span className="text-slate-200">{selectedRun.activeAgent ?? agentTypeLabel(selectedRun.agentType) ?? "—"}</span>
-                  </span>
-                  <span>·</span>
-                  <span>elapsed {formatElapsed(selectedRun, nowTick)}</span>
-                  {runDetailStreamOpen ? (
-                    <>
-                      <span>·</span>
-                      <span className="inline-flex items-center gap-1">
+                  <div className="flex items-center gap-3 shrink-0">
+                    {selectedAgent ? (
+                      <button
+                        type="button"
+                        onClick={() => selectRunAgent(undefined)}
+                        className="text-[11px] text-slate-400 hover:text-slate-100 underline"
+                      >
+                        show all
+                      </button>
+                    ) : null}
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${runStatusClasses(selectedRun.status)}`}
+                    >
+                      <span className={`h-2 w-2 rounded-full ${runStatusDot(selectedRun.status)}`} />
+                      {selectedRun.status}
+                    </span>
+                    <span className="text-[11px] text-slate-400">elapsed {formatElapsed(selectedRun, nowTick)}</span>
+                    {runDetailStreamOpen ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300">
                         <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" /> live
                       </span>
-                    </>
-                  ) : null}
+                    ) : null}
+                  </div>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-                {runDetailLoading && runDetailEvents.length === 0 ? (
+              <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                {runDetailLoading && filteredEvents.length === 0 ? (
                   <div className="text-xs text-slate-500">Loading events…</div>
-                ) : runDetailEvents.length === 0 ? (
-                  <div className="text-xs text-slate-500">No events recorded yet.</div>
+                ) : filteredEvents.length === 0 ? (
+                  <div className="text-xs text-slate-500">
+                    {selectedAgent ? `No events from ${selectedAgent} yet` : "No events recorded yet."}
+                  </div>
                 ) : (
-                  <ul className="flex flex-col gap-2">
-                    {runDetailEvents.map((event, index) => (
-                      <li key={`${event.ts}-${index}`} className="flex items-start gap-3 py-1.5">
-                        <span className="w-16 shrink-0 text-[10px] font-mono text-slate-500">{formatEventClock(event.ts)}</span>
-                        <span className={`shrink-0 rounded border px-2 py-[1px] text-[10px] font-semibold uppercase tracking-wide ${eventTypeBadge(event.type)}`}>
-                          {event.type}
-                        </span>
-                        <div className="min-w-0 flex flex-col gap-0.5 text-[12px]">
-                          {event.toolName ? (
-                            <span className="font-mono text-slate-300">{event.toolName}</span>
-                          ) : null}
-                          {event.summary ? (
-                            <span className="text-slate-300">{event.summary}</span>
-                          ) : null}
-                          {event.agentName ? (
-                            <span className="text-[10px] text-slate-500">agent: {event.agentName}</span>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))}
+                  <ul className="flex flex-col gap-2.5">
+                    {filteredEvents.map((event, index) => {
+                      const agentLabel = formatAgentLabel(event.agentName, event.agentKind);
+                      return (
+                        <li key={`${event.ts}-${index}`} className="flex items-start gap-3 py-1">
+                          <span className="w-16 shrink-0 text-[10px] font-mono text-slate-500">{formatEventClock(event.ts)}</span>
+                          <span className={`shrink-0 rounded border px-2 py-[1px] text-[10px] font-semibold uppercase tracking-wide ${eventTypeBadge(event.type)}`}>
+                            {event.type}
+                          </span>
+                          <div className="min-w-0 flex flex-col gap-0.5 text-[13px] leading-relaxed">
+                            {event.toolName ? (
+                              <span className="font-mono text-slate-200">{event.toolName}</span>
+                            ) : null}
+                            {event.summary ? (
+                              <span className="text-slate-200 whitespace-pre-wrap break-words">{event.summary}</span>
+                            ) : null}
+                            {!selectedAgent && agentLabel ? (
+                              <span className={`text-[10px] ${agentLabelColor(event.agentKind)}`}>
+                                {agentLabel}
+                                {event.parentAgent ? (
+                                  <span className="text-slate-600"> ← {formatAgentLabel(event.parentAgent, undefined) ?? event.parentAgent}</span>
+                                ) : null}
+                              </span>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

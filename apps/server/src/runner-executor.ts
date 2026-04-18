@@ -1,3 +1,10 @@
+// DEPRECATED: Loom v2 runs flows via the `loom` CLI, which spawns the
+// orchestrator directly and uses `loom-subagent` (packages/cli) for every
+// child. This server-side recursive engine is retained only for the
+// Studio save→run path and is slated for removal in a follow-up phase.
+// Do not add new behavior here — extend packages/cli/src/subagent-launcher.ts
+// instead.
+
 import { mkdtemp, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -245,6 +252,12 @@ async function* executeAgent(
   }
 }
 
+/**
+ * @deprecated Loom v2 runs flows through the `loom` CLI and
+ * `loom-subagent` tree. This server-side generator is kept only for the
+ * existing Studio save→run button and will be removed once Studio is
+ * rewired to hand off to the CLI runner. Do not call from new code.
+ */
 export async function* streamRunFlow(
   flowPath: string,
   userPrompt: string,
@@ -317,6 +330,10 @@ export async function* streamRunFlow(
   }
 }
 
+/**
+ * @deprecated Same as {@link streamRunFlow}. Prefer the CLI-based
+ * `loom-subagent` tree for new entry points.
+ */
 export async function runFlow(
   flowPath: string,
   userPrompt: string,

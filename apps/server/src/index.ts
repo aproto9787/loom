@@ -88,6 +88,8 @@ const runEventSchema = z.object({
   toolName: z.string().min(1).optional(),
   agentName: z.string().min(1).optional(),
   agentDepth: z.number().int().optional(),
+  parentAgent: z.string().min(1).optional(),
+  agentKind: z.string().min(1).optional(),
   raw: z.unknown().optional(),
 });
 
@@ -125,6 +127,8 @@ function toRunEvent(runId: string, payload: z.infer<typeof runEventRequestSchema
     toolName: payload.toolName,
     agentName: payload.agentName,
     agentDepth: payload.agentDepth,
+    parentAgent: payload.parentAgent,
+    agentKind: payload.agentKind,
     raw: payload.raw,
   };
 }
@@ -286,7 +290,7 @@ export function buildServer() {
       orchestrator: {
         name: "leader",
         type: "claude-code" as const,
-        model: "claude-opus-4-6",
+        model: "claude-opus-4-7",
         system: `You are the orchestrator for ${name}. Delegate work to your team.\n`,
         effort: "high" as const,
         delegation: [],

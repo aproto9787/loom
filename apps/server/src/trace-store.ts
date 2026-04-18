@@ -13,6 +13,8 @@ export interface PersistedRunEvent {
   toolName?: string;
   agentName?: string;
   agentDepth?: number;
+  parentAgent?: string;
+  agentKind?: string;
   raw?: unknown;
 }
 
@@ -83,6 +85,8 @@ for (const statement of [
   "ALTER TABLE runs ADD COLUMN ended_at TEXT",
   "ALTER TABLE runs ADD COLUMN cwd TEXT",
   "ALTER TABLE runs ADD COLUMN agent_type TEXT",
+  "ALTER TABLE events ADD COLUMN parent_agent TEXT",
+  "ALTER TABLE events ADD COLUMN agent_kind TEXT",
 ]) {
   try {
     database.exec(statement);
@@ -354,7 +358,7 @@ export function getRun(runId: string): PersistedRunDetail | null {
     ORDER BY created_at ASC, node_id ASC
   `);
   const eventsStatement = database.prepare(`
-    SELECT run_id, ts, type, summary, tool_name, agent_name, agent_depth, raw
+    SELECT run_id, ts, type, summary, tool_name, agent_name, agent_depth, parent_agent, agent_kind, raw
     FROM events
     WHERE run_id = ?
     ORDER BY ts ASC, id ASC
@@ -379,6 +383,8 @@ export function getRun(runId: string): PersistedRunDetail | null {
       toolName: typedRow.tool_name == null ? undefined : String(typedRow.tool_name),
       agentName: typedRow.agent_name == null ? undefined : String(typedRow.agent_name),
       agentDepth: typedRow.agent_depth == null ? undefined : Number(typedRow.agent_depth),
+      parentAgent: typedRow.parent_agent == null ? undefined : String(typedRow.parent_agent),
+      agentKind: typedRow.agent_kind == null ? undefined : String(typedRow.agent_kind),
       raw: typedRow.raw == null ? undefined : JSON.parse(String(typedRow.raw)) as unknown,
     } satisfies PersistedRunEvent;
   });
@@ -403,7 +409,7 @@ export function getRun(runId: string): PersistedRunDetail | null {
 
 export function listRunEvents(runId: string): PersistedRunEvent[] {
   return database.prepare(`
-    SELECT run_id, ts, type, summary, tool_name, agent_name, agent_depth, raw
+    SELECT run_id, ts, type, summary, tool_name, agent_name, agent_depth, parent_agent, agent_kind, raw
     FROM events
     WHERE run_id = ?
     ORDER BY ts ASC, id ASC
@@ -417,6 +423,8 @@ export function listRunEvents(runId: string): PersistedRunEvent[] {
       toolName: typedRow.tool_name == null ? undefined : String(typedRow.tool_name),
       agentName: typedRow.agent_name == null ? undefined : String(typedRow.agent_name),
       agentDepth: typedRow.agent_depth == null ? undefined : Number(typedRow.agent_depth),
+      parentAgent: typedRow.parent_agent == null ? undefined : String(typedRow.parent_agent),
+      agentKind: typedRow.agent_kind == null ? undefined : String(typedRow.agent_kind),
       raw: typedRow.raw == null ? undefined : JSON.parse(String(typedRow.raw)) as unknown,
     } satisfies PersistedRunEvent;
   });
@@ -424,8 +432,8 @@ export function listRunEvents(runId: string): PersistedRunEvent[] {
 
 export function appendRunEvent(event: PersistedRunEvent): void {
   database.prepare(`
-    INSERT INTO events (run_id, ts, type, summary, tool_name, agent_name, agent_depth, raw)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO events (run_id, ts, type, summary, tool_name, agent_name, agent_depth, parent_agent, agent_kind, raw)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     event.runId,
     event.ts,
@@ -434,6 +442,8 @@ export function appendRunEvent(event: PersistedRunEvent): void {
     event.toolName ?? null,
     event.agentName ?? null,
     event.agentDepth ?? null,
+    event.parentAgent ?? null,
+    event.agentKind ?? null,
     event.raw === undefined ? null : JSON.stringify(event.raw),
   );
 }

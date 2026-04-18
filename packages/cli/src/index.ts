@@ -3,21 +3,16 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
-import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig, AgentType, HookDefinition, SkillDefinition } from "@loom/core";
-import {
-  loadFlow,
-  createScopedMcpConfig,
-  loadHookDefinitions,
-  loadSkillDefinitions,
-  resolveAgentResources,
-} from "../../../apps/server/dist/runner.js";
+import type { AgentConfig, AgentType } from "@loom/core";
+import { loadFlow } from "../../../apps/server/dist/runner.js";
 import { buildConfiguredAgent } from "../../../apps/server/dist/runner-prompt-builder.js";
+import { buildDelegationPrompt } from "./delegation-prompt.js";
 
 const VERSION = "0.1.0";
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -71,6 +66,8 @@ interface LoomRunEvent {
   toolName?: string;
   agentName?: string;
   agentDepth?: number;
+  parentAgent?: string;
+  agentKind?: string;
   raw: unknown;
 }
 
@@ -219,7 +216,7 @@ function coerceAgentDepth(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
+function mapTranscriptLine(runId: string, line: string, leaderName = "leader"): LoomRunEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
@@ -256,8 +253,9 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
             ts,
             type: "tool_result",
             summary: summarizeText(resultText ?? (toolUseId ? `result ${toolUseId.slice(0, 8)}` : "tool result"), 120),
-            agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
+            agentName: leaderName,
             agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
+            agentKind: "claude",
             raw: parsed,
           };
         }
@@ -271,8 +269,9 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
       ts,
       type: "user",
       summary,
-      agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
+      agentName: leaderName,
       agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
+      agentKind: "claude",
       raw: parsed,
     };
   }
@@ -284,9 +283,7 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
       ? parsed.agentName
       : typeof parsed.agent_name === "string"
         ? parsed.agent_name
-        : typeof parsed.sessionId === "string"
-          ? parsed.sessionId
-          : undefined;
+        : leaderName;
     const agentDepth = coerceAgentDepth(parsed.parentUuid ? 1 : parsed.agentDepth ?? parsed.agent_depth);
 
     for (const part of content) {
@@ -294,14 +291,31 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
       const typedPart = part as Record<string, unknown>;
       const partType = typeof typedPart.type === "string" ? typedPart.type : undefined;
       if (partType === "tool_use") {
+        const toolName = typeof typedPart.name === "string" ? typedPart.name : undefined;
+        const input = (typedPart.input ?? {}) as Record<string, unknown>;
+        let toolDetail: string | undefined;
+        if (toolName === "Agent") {
+          const subagent = typeof input.subagent_type === "string" ? input.subagent_type : undefined;
+          const desc = typeof input.description === "string" ? input.description : undefined;
+          if (subagent && desc) toolDetail = `${subagent} — ${desc}`;
+          else if (subagent) toolDetail = subagent;
+          else if (desc) toolDetail = desc;
+        } else if (toolName === "Bash") {
+          const cmd = typeof input.command === "string" ? input.command : undefined;
+          if (cmd) toolDetail = cmd;
+        }
+        const summaryText = toolName
+          ? (toolDetail ? `${toolName}: ${toolDetail}` : `tool ${toolName}`)
+          : "tool use";
         return {
           runId,
           ts,
           type: "tool_use",
-          summary: summarizeText(typeof typedPart.name === "string" ? `tool ${typedPart.name}` : "tool use", 100),
-          toolName: typeof typedPart.name === "string" ? typedPart.name : undefined,
+          summary: summarizeText(summaryText, 140),
+          toolName,
           agentName,
           agentDepth,
+          agentKind: "claude",
           raw: parsed,
         };
       }
@@ -314,6 +328,7 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
           summary: summarizeText(toolUseId ? `result ${toolUseId}` : "tool result", 100),
           agentName,
           agentDepth,
+          agentKind: "claude",
           raw: parsed,
         };
       }
@@ -327,6 +342,7 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
           summary: textSummary,
           agentName,
           agentDepth,
+          agentKind: "claude",
           raw: parsed,
         };
       }
@@ -346,6 +362,7 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
       summary: fallbackSummary,
       agentName,
       agentDepth,
+      agentKind: "claude",
       raw: parsed,
     };
   }
@@ -365,8 +382,9 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
         type: "error",
         summary: summarizeText(pieces.join(" · "), 160),
         toolName: `hook:${hookName}`,
-        agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
+        agentName: leaderName,
         agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
+        agentKind: "claude",
         raw: parsed,
       };
     }
@@ -380,8 +398,9 @@ function mapTranscriptLine(runId: string, line: string): LoomRunEvent | null {
       ts,
       type: "user",
       summary: summarizeText(typeof parsed.content === "string" ? parsed.content : typeof parsed.operation === "string" ? parsed.operation : transcriptType, 100),
-      agentName: typeof parsed.sessionId === "string" ? parsed.sessionId : undefined,
+      agentName: leaderName,
       agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
+      agentKind: "claude",
       raw: parsed,
     };
   }
@@ -461,8 +480,28 @@ async function collectTranscriptFiles(projectsRoot: string): Promise<string[]> {
   return files.flat().sort((a, b) => a.localeCompare(b));
 }
 
-async function createTranscriptTail(runId: string, isolatedHome: string, cwd: string, origin: string): Promise<TranscriptTailState> {
-  const projectsRoot = path.join(isolatedHome, ".claude", "projects");
+async function createTranscriptTail(runId: string, homeDir: string, cwd: string, origin: string): Promise<TranscriptTailState> {
+  // Scope the watch to THIS cwd's project directory only. Claude Code
+  // stores transcripts at `~/.claude/projects/<cwd-with-slashes-as-dashes>/<uuid>.jsonl`,
+  // so watching the top-level `projects/` on the real HOME would scan every
+  // previous project the user has ever touched — enormous disk/inotify cost.
+  const cwdMangled = cwd.replace(/\//g, "-");
+  const scopedProjectDir = path.join(homeDir, ".claude", "projects", cwdMangled);
+  // Also snapshot which jsonl files already exist before the leader starts,
+  // so we ignore pre-existing session transcripts. Only files that appear
+  // AFTER this function runs are treated as belonging to the current run.
+  const preExistingFiles = new Set<string>();
+  try {
+    const entries = await readdir(scopedProjectDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+        preExistingFiles.add(path.join(scopedProjectDir, entry.name));
+      }
+    }
+  } catch {
+    // directory may not exist yet — created below.
+  }
+  const projectsRoot = scopedProjectDir;
   const offsets = new Map<string, number>();
   const discoveredFiles = new Set<string>();
   const deliveredLineKeys = new Set<string>();
@@ -520,8 +559,22 @@ async function createTranscriptTail(runId: string, isolatedHome: string, cwd: st
     };
   };
 
+  const listRunFiles = async (): Promise<string[]> => {
+    let entries;
+    try {
+      entries = await readdir(projectsRoot, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+      .map((entry) => path.join(projectsRoot, entry.name))
+      .filter((fullPath) => !preExistingFiles.has(fullPath))
+      .sort((a, b) => a.localeCompare(b));
+  };
+
   const pollOnce = async (): Promise<void> => {
-    const files = await collectTranscriptFiles(projectsRoot);
+    const files = await listRunFiles();
     for (const file of files) {
       discoveredFiles.add(file);
       discoveredTranscriptDir = path.dirname(file);
@@ -659,299 +712,30 @@ function resolveAgentClaudeMd(flow: LoadedCliFlow, agent: AgentConfig): string |
   return flow.flow.claudeMdLibrary?.[ref];
 }
 
-async function readOptional(filePath: string): Promise<string | undefined> {
-  try {
-    return await readFile(filePath, "utf8");
-  } catch {
-    return undefined;
-  }
-}
-
-const CLAUDE_GLOBAL_CUSTOM_KEYS = new Set<string>([
-  "mcpServers",
-  "projects",
-  "skillUsage",
-  "officialMarketplaceAutoInstallAttempted",
-  "officialMarketplaceAutoInstalled",
-  "githubRepoPaths",
-]);
-
-const CLAUDE_SETTINGS_CARRYOVER_KEYS = [
-  "statusLine",
-  "language",
-  "effortLevel",
-  "autoDreamEnabled",
-  "skipDangerousModePermissionPrompt",
-] as const;
-
-const CLAUDE_PROJECT_STATE_KEYS = [
-  "exampleFiles",
-] as const;
-
-const CLAUDE_GLOBAL_ONBOARDING_KEYS = [
-  "hasCompletedOnboarding",
-  "numStartups",
-  "installMethod",
-  "autoUpdates",
-  "autoUpdatesProtectedForNative",
-  "lastReleaseNotesSeen",
-  "clientDataCache",
-  "additionalModelOptionsCache",
-  "additionalModelCostsCache",
-  "penguinModeOrgEnabled",
-] as const;
-
-const CLAUDE_DEFAULT_THEME = "dark";
-const CLAUDE_ONBOARDING_VERSION_LOCK = "99.99.99";
-
-const CLAUDE_HOOK_EVENT_MAP: Record<HookDefinition["event"], string> = {
-  on_start: "SessionStart",
-  on_complete: "Stop",
-  on_error: "SubagentStop",
-  on_delegate: "Notification",
-};
-
-function stripGlobalCustomKeys(source: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(source).filter(([key]) => !CLAUDE_GLOBAL_CUSTOM_KEYS.has(key)));
-}
-
-function copyDefinedKeys(
-  source: Record<string, unknown>,
-  keys: readonly string[],
-): Record<string, unknown> {
-  const copied: Record<string, unknown> = {};
-  for (const key of keys) {
-    if (source[key] !== undefined) copied[key] = source[key];
-  }
-  return copied;
-}
-
-async function writeClaudeSkillFiles(claudeDir: string, skills: SkillDefinition[]): Promise<void> {
-  if (skills.length === 0) {
-    return;
-  }
-  const skillsRoot = path.join(claudeDir, "skills");
-  await mkdir(skillsRoot, { recursive: true });
-  await Promise.all(skills.map(async (skill) => {
-    const skillDir = path.join(skillsRoot, skill.name);
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.prompt, "utf8");
-  }));
-}
-
-function buildClaudeHooksConfig(hooks: HookDefinition[]): Record<string, Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>> {
-  const grouped: Record<string, Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>> = {};
-  for (const hook of hooks) {
-    const event = CLAUDE_HOOK_EVENT_MAP[hook.event];
-    grouped[event] ??= [];
-    grouped[event].push({
-      matcher: "",
-      hooks: [{ type: "command", command: hook.command }],
-    });
-  }
-  return grouped;
-}
-
-async function createIsolatedHome(
-  systemPrompt: string,
-  flowClaudeMd: string | undefined,
-  agentClaudeMd: string | undefined,
-  configuredAgent: AgentConfig,
-  flowCwd: string,
-  scopedHooks: HookDefinition[],
-  scopedSkills: SkillDefinition[],
-): Promise<string> {
-  const loomHomesRoot = path.join(os.homedir(), ".loom", "homes");
-  await mkdir(loomHomesRoot, { recursive: true });
-  const isolatedHome = await mkdtemp(path.join(loomHomesRoot, "run-"));
-  const mergedInstructions = mergeClaudeMd(flowClaudeMd, agentClaudeMd, configuredAgent);
-  const realHome = os.homedir();
-
-  if (configuredAgent.type === "claude-code") {
-    const claudeDir = path.join(isolatedHome, ".claude");
-    await mkdir(claudeDir, { recursive: true });
-
-    const realCredentials = await readOptional(path.join(realHome, ".claude", ".credentials.json"));
-    if (realCredentials) {
-      await writeFile(path.join(claudeDir, ".credentials.json"), realCredentials, { encoding: "utf8", mode: 0o600 });
-    }
-
-    const realClaudeJsonRaw = await readOptional(path.join(realHome, ".claude.json"));
-    let filteredClaudeJson: Record<string, unknown> = {
-      env: {},
-      permissions: { allow: [] },
-      theme: CLAUDE_DEFAULT_THEME,
-      lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
-      hasCompletedOnboarding: true,
-      projects: {
-        [flowCwd]: {
-          hasTrustDialogAccepted: true,
-          projectOnboardingSeenCount: 2,
-          hasClaudeMdExternalIncludesApproved: true,
-          hasClaudeMdExternalIncludesWarningShown: true,
-        },
-      },
-    };
-    if (realClaudeJsonRaw) {
-      try {
-        const realClaudeJson = JSON.parse(realClaudeJsonRaw) as Record<string, unknown>;
-        const realProjects = realClaudeJson.projects && typeof realClaudeJson.projects === "object"
-          ? realClaudeJson.projects as Record<string, Record<string, unknown>>
-          : {};
-        const sourceProject = realProjects[workspaceRoot] && typeof realProjects[workspaceRoot] === "object"
-          ? realProjects[workspaceRoot]
-          : undefined;
-        filteredClaudeJson = {
-          ...stripGlobalCustomKeys(realClaudeJson),
-          ...copyDefinedKeys(realClaudeJson, CLAUDE_GLOBAL_ONBOARDING_KEYS),
-          theme: typeof realClaudeJson.theme === "string" ? realClaudeJson.theme : CLAUDE_DEFAULT_THEME,
-          ...copyDefinedKeys(realClaudeJson, ["syntaxHighlightingDisabled"]),
-          env: {},
-          permissions: { allow: [] },
-          lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
-          hasCompletedOnboarding: true,
-          projects: {
-            [flowCwd]: {
-              hasTrustDialogAccepted: true,
-              projectOnboardingSeenCount: 2,
-              hasClaudeMdExternalIncludesApproved: true,
-              hasClaudeMdExternalIncludesWarningShown: true,
-              ...copyDefinedKeys(sourceProject ?? {}, CLAUDE_PROJECT_STATE_KEYS),
-            },
-          },
-        };
-      } catch {
-        filteredClaudeJson = {
-          env: {},
-          permissions: { allow: [] },
-          theme: CLAUDE_DEFAULT_THEME,
-          lastOnboardingVersion: CLAUDE_ONBOARDING_VERSION_LOCK,
-          hasCompletedOnboarding: true,
-          projects: {
-            [flowCwd]: {
-              hasTrustDialogAccepted: true,
-              projectOnboardingSeenCount: 2,
-              hasClaudeMdExternalIncludesApproved: true,
-              hasClaudeMdExternalIncludesWarningShown: true,
-            },
-          },
-        };
-      }
-    }
-    await writeFile(path.join(isolatedHome, ".claude.json"), JSON.stringify(filteredClaudeJson, null, 2), { encoding: "utf8", mode: 0o600 });
-
-    // settings.json filtered: drop global hooks/plugins/marketplaces, then inject only flow-scoped hooks.
-    const realSettingsRaw = await readOptional(path.join(realHome, ".claude", "settings.json"));
-    const filteredSettings: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
-    if (realSettingsRaw) {
-      try {
-        const real = JSON.parse(realSettingsRaw) as Record<string, unknown>;
-        Object.assign(filteredSettings, copyDefinedKeys(real, CLAUDE_SETTINGS_CARRYOVER_KEYS));
-      } catch { /* ignore */ }
-    }
-    if (scopedHooks.length > 0) {
-      filteredSettings.hooks = buildClaudeHooksConfig(scopedHooks);
-    }
-    await writeFile(path.join(claudeDir, "settings.json"), JSON.stringify(filteredSettings, null, 2), "utf8");
-
-    await writeClaudeSkillFiles(claudeDir, scopedSkills);
-
-    const realDashboard = await readOptional(path.join(realHome, ".claude", "claude-dashboard.local.json"));
-    if (realDashboard) {
-      await writeFile(path.join(claudeDir, "claude-dashboard.local.json"), realDashboard, "utf8");
-    }
-
-    await writeFile(path.join(claudeDir, "CLAUDE.md"), mergedInstructions, "utf8");
-
-    // Subagents (user-advocate, codex-*, etc.) need their definitions in the
-    // isolated HOME so the orchestrator's Agent(name=X) tool can spawn them.
-    await copyHostAgentDefinitions(isolatedHome, flowCwd);
-
-    // Also seed a minimal codex side so loom-conductor (Bash helper) can run
-    // `codex exec` against GPT-5.4 without prompting for login.
-    await seedCodexSide(isolatedHome, realHome);
-  } else {
-    const codexDir = path.join(isolatedHome, ".codex");
-    await mkdir(codexDir, { recursive: true });
-    const realAuth = await readOptional(path.join(realHome, ".codex", "auth.json"));
-    if (realAuth) {
-      await writeFile(path.join(codexDir, "auth.json"), realAuth, "utf8");
-    }
-    await writeFile(path.join(codexDir, "AGENTS.md"), mergedInstructions, "utf8");
-    await writeFile(
-      path.join(codexDir, "config.toml"),
-      `# Loom-generated Codex config (isolated)\n`,
-      "utf8",
-    );
-  }
-  return isolatedHome;
-}
-
-async function copyHostAgentDefinitions(isolatedHome: string, flowCwd: string): Promise<void> {
-  void flowCwd;
-  const realHome = os.homedir();
-  const srcDir = path.join(realHome, ".claude", "agents");
-  let entries: string[] = [];
-  try {
-    entries = (await readdir(srcDir, { withFileTypes: true }))
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-      .map((entry) => entry.name);
-  } catch {
-    return;
-  }
-  if (entries.length === 0) return;
-  const destDir = path.join(isolatedHome, ".claude", "agents");
-  await mkdir(destDir, { recursive: true });
-  await Promise.all(entries.map(async (fileName) => {
-    const content = await readOptional(path.join(srcDir, fileName));
-    if (content !== undefined) {
-      await writeFile(path.join(destDir, fileName), content, "utf8");
-    }
-  }));
-}
-
-async function seedCodexSide(isolatedHome: string, realHome: string): Promise<void> {
-  const codexDir = path.join(isolatedHome, ".codex");
-  await mkdir(codexDir, { recursive: true });
-  const realAuth = await readOptional(path.join(realHome, ".codex", "auth.json"));
-  if (realAuth) {
-    await writeFile(path.join(codexDir, "auth.json"), realAuth, { encoding: "utf8", mode: 0o600 });
-  }
-  const realConfig = await readOptional(path.join(realHome, ".codex", "config.toml"));
-  if (realConfig) {
-    await writeFile(path.join(codexDir, "config.toml"), realConfig, "utf8");
-  } else {
-    await writeFile(path.join(codexDir, "config.toml"), "# Loom-seeded (empty)\n", "utf8");
-  }
-}
 
 async function launchAgent(flow: LoadedCliFlow): Promise<number> {
-  const agent: AgentConfig = { ...flow.flow.orchestrator } as AgentConfig & { isolated: true };
-  const [hookDefinitions, skillDefinitions] = await Promise.all([
-    loadHookDefinitions(),
-    loadSkillDefinitions(),
-  ]);
-  const scopedResources = resolveAgentResources(agent, flow.flow);
-  const scopedHooks = scopedResources.hooks
-    .map((name) => hookDefinitions.get(name))
-    .filter((hook): hook is HookDefinition => Boolean(hook));
-  const scopedSkills = scopedResources.skills
-    .map((name) => skillDefinitions.get(name))
-    .filter((skill): skill is SkillDefinition => Boolean(skill));
+  // Leader runs in the host's real HOME — same Claude Code experience the
+  // user gets day-to-day (statusline, plugins, marketplaces, hooks, skills,
+  // settings, theme, login session). No isolation, no carryover dance.
+  //
+  // Flow customization lands on the leader purely through the prompt layer
+  // (`--append-system-prompt` with the flow's claudeMd + leader-rules + the
+  // Subagent Delegation Protocol). That's what teaches the leader how to
+  // use its team. Anything settings-shaped (hooks/skills/mcps/plugins) is
+  // subagent-only — leader stays "vanilla host Claude".
+  const agent: AgentConfig = { ...flow.flow.orchestrator };
   const configuredAgent = buildConfiguredAgent(agent, flow.flow, flow.flow.repo, {
     roles: new Map(),
-    hooks: new Map(scopedHooks.map((hook) => [hook.name, hook])),
-    skills: new Map(scopedSkills.map((skill) => [skill.name, skill])),
+    hooks: new Map(),
+    skills: new Map(),
   });
-  const systemPrompt = configuredAgent.system ?? "";
   const agentClaudeMd = resolveAgentClaudeMd(flow, configuredAgent);
   const mergedInstructions = mergeClaudeMd(flow.flow.claudeMd, agentClaudeMd, configuredAgent);
   const flowCwd = resolveFlowCwd(flow);
-  const isolatedHome = await createIsolatedHome(systemPrompt, flow.flow.claudeMd, agentClaudeMd, configuredAgent, flowCwd, scopedHooks, scopedSkills);
-  const scopedMcpConfigPath = await createScopedMcpConfig(agent, flow.flow, isolatedHome);
   const registration = await reportCliRunStart(flow, configuredAgent.type);
+  const realHome = os.homedir();
   const transcriptTail = configuredAgent.type === "claude-code"
-    ? await createTranscriptTail(registration.runId, isolatedHome, flowCwd, getServerOrigin())
+    ? await createTranscriptTail(registration.runId, realHome, flowCwd, getServerOrigin())
     : undefined;
   const finalizeRun = async (exitCode: number) => {
     if (transcriptTail) {
@@ -959,23 +743,16 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
       await transcriptTail.flushBundle();
     }
     await registration.cleanup(exitCode);
-    if (scopedMcpConfigPath) {
-      await rm(path.dirname(scopedMcpConfigPath), { recursive: true, force: true }).catch(() => undefined);
-    }
-    await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
   };
   const { command, args } = buildSpawnArgs(configuredAgent);
-  // Inject flow claudeMd into claude via --append-system-prompt so the real
-  // HOME stays untouched (no re-login / onboarding).
-  if (configuredAgent.type === "claude-code") {
-    if (mergedInstructions.trim().length > 0) {
-      args.push("--append-system-prompt", mergedInstructions);
-    }
-    // MCP isolation: only the flow-scoped MCPs (if any), otherwise none.
-    args.push("--strict-mcp-config");
-    if (scopedMcpConfigPath) {
-      args.push("--mcp-config", scopedMcpConfigPath);
-    }
+  const delegationPrompt = buildDelegationPrompt(flow.flow.orchestrator, "leader");
+  const finalInstructions = delegationPrompt
+    ? (mergedInstructions.trim()
+        ? `${mergedInstructions}\n\n${delegationPrompt}`
+        : delegationPrompt)
+    : mergedInstructions;
+  if (configuredAgent.type === "claude-code" && finalInstructions.trim().length > 0) {
+    args.push("--append-system-prompt", finalInstructions);
   }
   const litellmEnv = configuredAgent.type === "claude-code" && configuredAgent.model?.startsWith("chatgpt/")
     ? {
@@ -1000,14 +777,6 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
     stdio: "inherit",
     env: {
       ...process.env,
-      HOME: isolatedHome,
-      USERPROFILE: isolatedHome,
-      PATH: process.env.PATH ?? "",
-      XDG_CONFIG_HOME: path.join(isolatedHome, ".config"),
-      CODEX_HOME: path.join(isolatedHome, ".codex"),
-      CODEX_CONFIG_DIR: path.join(isolatedHome, ".codex"),
-      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
-      CLAUDE_CODE_TEAMMATE_COMMAND: "/home/argoss/.claude/codex-bridge/codex-bridge.mjs",
       LOOM_FLOW_PATH: flow.absolutePath,
       LOOM_FLOW_NAME: flow.flow.name,
       LOOM_FLOW_CWD: flowCwd,
@@ -1015,8 +784,10 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
       LOOM_AGENT_TYPE: agent.type,
       LOOM_RUN_ID: registration.runId,
       LOOM_SERVER_ORIGIN: getServerOrigin(),
+      LOOM_PARENT_AGENT: "leader",
+      LOOM_PARENT_DEPTH: "0",
+      LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
       ...litellmEnv,
-      ...(scopedMcpConfigPath ? { LOOM_MCP_CONFIG_PATH: scopedMcpConfigPath } : {}),
     },
   });
 
@@ -1053,10 +824,10 @@ claudeMdLibrary: {}
 orchestrator:
   name: leader
   type: claude-code
-  model: claude-opus-4-6
+  model: claude-opus-4-7
   system: |
     You are the orchestrator for ${name}. Delegate work to your team.
-  effort: high
+  effort: xhigh
   delegation: []
   agents: []
 `;

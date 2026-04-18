@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-// loom-conductor: headless executor that orchestrator spawns via Bash.
-// Receives a BRIEFING, runs `codex exec` with it, and writes a REPORT file.
-// Keeps the calling orchestrator's context clean by returning only the REPORT.
+// loom-conductor: headless codex executor. Retained for backward compat
+// with older flow prompts. New flows use `loom-subagent --backend codex`
+// (packages/cli/src/subagent-launcher.ts) which supersedes this and adds
+// recursive delegation. Prefer the new launcher for anything new.
 
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -15,6 +16,8 @@ const MAX_SECONDS = Number(process.env.LOOM_CONDUCTOR_MAX_SECONDS ?? "900");
 const DEFAULT_REPORT_DIR = path.join(os.tmpdir(), "loom-conductor");
 const RUN_ID = process.env.LOOM_RUN_ID;
 const SERVER_ORIGIN = process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
+const PARENT_AGENT = process.env.LOOM_PARENT_AGENT ?? "leader";
+const PARENT_DEPTH = Number(process.env.LOOM_PARENT_DEPTH ?? "0");
 
 type LoomEventType = "tool_use" | "tool_result" | "user" | "assistant" | "error";
 
@@ -35,7 +38,9 @@ async function postProgress(
           summary,
           toolName: extra.toolName,
           agentName: "conductor",
-          agentDepth: extra.agentDepth ?? 1,
+          agentDepth: extra.agentDepth ?? PARENT_DEPTH + 1,
+          parentAgent: PARENT_AGENT,
+          agentKind: "codex",
         }],
       }),
     });
@@ -178,7 +183,7 @@ async function runCodex(prompt: string, reportPath: string): Promise<number> {
         if (!item || typeof item !== "object") return;
         const mapped = mapCodexItem(item as Record<string, unknown>);
         if (!mapped) return;
-        await postProgress(mapped.type, mapped.summary, { toolName: mapped.toolName, agentDepth: 2 });
+        await postProgress(mapped.type, mapped.summary, { toolName: mapped.toolName, agentDepth: PARENT_DEPTH + 1 });
       } catch {
         // ignore non-JSON frames
       }

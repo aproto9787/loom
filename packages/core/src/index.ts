@@ -66,7 +66,7 @@ export interface AgentConfig {
   system?: string;
   claudeMdRef?: string;
   description?: string;
-  effort?: 'low' | 'medium' | 'high';
+  effort?: 'low' | 'medium' | 'high' | 'xhigh';
   timeout?: number;
   parallel?: boolean;
   delegation?: DelegationRule[];
@@ -85,7 +85,7 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   system: z.string().min(1).optional(),
   claudeMdRef: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
-  effort: z.enum(['low', 'medium', 'high']).optional(),
+  effort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
   timeout: z.number().int().positive().optional(),
   parallel: z.boolean().optional(),
   delegation: z.array(delegationRuleSchema).optional(),
@@ -146,7 +146,7 @@ export interface RoleDefinition {
   type: 'claude-code' | 'codex';
   model?: string;
   system: string;
-  effort?: 'low' | 'medium' | 'high';
+  effort?: 'low' | 'medium' | 'high' | 'xhigh';
   description?: string;
   mcps?: string[];
 }
@@ -156,7 +156,7 @@ export const roleDefinitionSchema: z.ZodType<RoleDefinition> = z.object({
   type: agentTypeSchema,
   model: z.string().min(1).optional(),
   system: z.string().min(1),
-  effort: z.enum(['low', 'medium', 'high']).optional(),
+  effort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
   description: z.string().min(1).optional(),
   mcps: z.array(z.string().min(1)).optional(),
 });
