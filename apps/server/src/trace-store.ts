@@ -26,6 +26,10 @@ mkdirSync(traceDir, { recursive: true });
 
 const database = new DatabaseSync(traceDbPath);
 database.exec(`
+  PRAGMA journal_mode=WAL;
+  PRAGMA busy_timeout=5000;
+`);
+database.exec(`
   CREATE TABLE IF NOT EXISTS runs (
     run_id TEXT PRIMARY KEY,
     flow_name TEXT NOT NULL,
