@@ -1,8 +1,9 @@
 version: "1"
 name: Leader-Conductor-Workers
 description: |
-  The only flow. Leader (Opus) orchestrates. user-advocate validates intent.
-  Conductor (Claude+GPT5.4) runs autonomously and picks workers from a wide
+  The only flow. Leader (Opus) orchestrates and receives conductor REPORTs.
+  Conductor (Claude+GPT5.4) runs autonomously, owns optional advocate
+  validation, and picks workers from a wide
   roster based on task shape — impl, fix, review, analyst, frontend,
   debate team. Delegation rules decide which few fire per BRIEFING.
 repo: .
@@ -94,10 +95,9 @@ claudeMdLibrary:
 
     | 저 | 리더가 직접 Read/Edit/Bash로 처리 후 보고 |
 
-    | 중 | BRIEFING → user-advocate 선검증 → conductor 위임 → REPORT → user-advocate
-    후검증 → 보고 |
+    | 중 | BRIEFING → conductor 위임 → REPORT → 보고 (advocate 검증은 conductor 내부 재량) |
 
-    | 고 | 중과 동일 + BRIEFING 선검증 강제 |
+    | 고 | 중과 동일 |
 
 
     ## 가능/금지
@@ -108,7 +108,7 @@ claudeMdLibrary:
 
     | 저 | Read/Edit/Bash 직접 | — |
 
-    | 중/고 | BRIEFING 작성, conductor 위임, REPORT 수신, user-advocate 호출, 통합 보고 | 코드
+    | 중/고 | BRIEFING 작성, conductor 위임, REPORT 수신, 통합 보고 | 코드
     수정, 광범위 탐색, 분석, 테스트 실행 |
 
 
@@ -130,21 +130,16 @@ claudeMdLibrary:
 
     1. **BRIEFING 작성** — goal / constraints / acceptance / budget 4섹션.
 
-    2. **user-advocate 선검증** — Protocol의 user-advocate 템플릿을 Bash로 실행,
-       BRIEFING 전문을 positional 또는 stdin으로 전달. FAIL이면 BRIEFING 수정 후 재검증.
-    3. **conductor 위임** — Protocol의 conductor 템플릿을 Bash로 실행
+    2. **conductor 위임** — Protocol의 conductor 템플릿을 Bash로 실행
        (`run_in_background=true`, timeout=900000ms). stdout으로 REPORT 수신.
-    4. **user-advocate 후검증** — REPORT를 같은 방식으로 다시 넘겨 판정.
-       FAIL/WARN이면 리더가 1회 자율 수정(직접 Edit 또는 conductor 재호출) → 재검증.
-       재발 시 사유와 함께 사용자에게 보고. WARN 흘려보내기 금지.
-    5. **사용자 보고** — REPORT 핵심 요약 + 후검증 결과.
+    3. **사용자 보고** — REPORT 핵심 요약 + conductor 내부 검증/리뷰 결과.
 
 
     ## 검증
 
-    - 팀 작업 결과는 사용자 보고 전 user-advocate 검증 필수
+    - 팀 작업 검증은 conductor 내부 재량(user-advocate / reviewer)으로 처리
 
-    - FAIL/WARN 시 리더가 자율 수정 → 재검증 → 재발 시 사유와 함께 보고
+    - 리더는 conductor REPORT를 기준으로 재위임 또는 사용자 보고를 결정
   conductor-rules: |
     # Conductor Rules — 자율 실행자 (loom-subagent 래퍼로 스폰됨)
 
@@ -167,15 +162,17 @@ claudeMdLibrary:
 
     ## 작업 절차
     1. BRIEFING의 acceptance 기준을 달성할 최단 경로를 계획하고, 어떤
-       worker 조합이 필요한지 결정한다 (예: impl × N 병렬 + reviewer +
+       worker 조합이 필요한지 결정한다 (예: user-advocate + impl + reviewer +
        fix 루프, 또는 analyst 선행 후 impl, 또는 debater 토론 후 synthesizer).
     2. 해당 worker들을 Bash `node "$LOOM_SUBAGENT_BIN" --name <worker> ...`
        로 spawn해서 각각의 REPORT를 수신한다. 병렬 가능한 worker는 같은
        턴에 동시 실행.
-    3. 코드 변경이 있으면 codex-reviewer에게 리뷰를 맡기고, FAIL이면
+    3. BRIEFING 의도 검증이나 REPORT 최종 4축 검증이 필요하면
+       user-advocate를 내부 호출한다.
+    4. 코드 변경이 있으면 codex-reviewer에게 리뷰를 맡기고, FAIL이면
        codex-fix로 surgical fix 루프. review PASS 확인을 REPORT의
        `review: pass` 한 줄로 기록.
-    4. 하드 타임아웃이 임박하면 부분 진척을 그대로 REPORT에 `status: blocked`
+    5. 하드 타임아웃이 임박하면 부분 진척을 그대로 REPORT에 `status: blocked`
        + `blockers:` 로 적고 즉시 종료.
 
     ## REPORT 포맷 (LOOM_CONDUCTOR_REPORT_FILE 에 반드시 기록)
@@ -206,9 +203,9 @@ claudeMdLibrary:
     - 리뷰 fix 루프 상한 도달 시 status: blocked + 사유.
 teams:
   - id: leadership
-    description: Leader orchestration and user-intent validation.
+    description: Leader orchestration.
   - id: execution
-    description: Conductor-driven implementation workers and repair loop.
+    description: Conductor-driven implementation, validation, and repair loop.
   - id: review
     description: Review gate for code changes.
   - id: research
@@ -228,12 +225,10 @@ orchestrator:
     You are the team leader. Judge complexity first, handle trivial work
     yourself, delegate anything mid or high to the team. Never explore or
     modify code on mid/high tasks — write a BRIEFING, route through
-    user-advocate and conductor, and report the final outcome.
+    conductor, and report the final outcome.
   claudeMdRef: leader-rules
   effort: xhigh
   delegation:
-    - to: user-advocate
-      when: Before BRIEFING handoff and after REPORT receipt for intent validation.
     - to: conductor
       when: Task complexity is medium or high and execution should be delegated.
   mcps:
@@ -250,24 +245,6 @@ orchestrator:
     - briefing-format
     - concise
   agents:
-    - name: user-advocate
-      type: claude-code
-      role: user-advocate
-      team:
-        - id: leadership
-          role: validator
-      model: claude-sonnet-4-6
-      system: |
-        Validate the BRIEFING or REPORT against the user's original request
-        on four axes: intent alignment, over-engineering, goal shrinking,
-        direction drift. Return PASS or FAIL with a concise reason.
-      claudeMdRef: user-advocate-rules
-      delegation:
-        - to: leader
-          when: Validation complete.
-      skills:
-        - verification-checklist
-        - concise
     - name: conductor
       type: codex
       role: conductor
@@ -295,6 +272,8 @@ orchestrator:
             implementation.
         - to: codex-analyst-2
           when: A second analyst angle is needed for parallel investigation.
+        - to: user-advocate
+          when: BRIEFING intent or final REPORT needs 4-axis validation.
         - to: codex-reviewer
           when: Code changes are complete and need final review.
         - to: codex-fix
@@ -316,6 +295,24 @@ orchestrator:
         - review-checklist
         - concise
       agents:
+        - name: user-advocate
+          type: claude-code
+          role: user-advocate
+          team:
+            - id: execution
+              role: validator
+          model: claude-sonnet-4-6
+          system: |
+            Validate the BRIEFING or REPORT against the user's original request
+            on four axes: intent alignment, over-engineering, goal shrinking,
+            direction drift. Return PASS or FAIL with a concise reason.
+          claudeMdRef: user-advocate-rules
+          delegation:
+            - to: conductor
+              when: Validation complete.
+          skills:
+            - verification-checklist
+            - concise
         - name: codex-impl-1
           type: codex
           role: backend-dev
