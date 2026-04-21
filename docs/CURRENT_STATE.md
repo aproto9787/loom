@@ -57,6 +57,7 @@ Do not document these as implemented unless the code changes first:
 - `examples/`-scoped flow CRUD and validation.
 - Server-side synchronous/SSE run routes using the deprecated server runner.
 - CLI-launched runs with event registration and persisted event streaming.
+- `@loom/runtime` as the shared home for flow loading, resource loading, prompt building, scoped MCP config generation, and hook execution.
 - `loom-subagent` as the generalized child-agent launcher.
 - Claude Code and Codex CLI adapters.
 - Role/hook/skill YAML CRUD.
@@ -65,9 +66,9 @@ Do not document these as implemented unless the code changes first:
 
 ## Active runtime split
 
-New subagent behavior belongs in `packages/cli/src/subagent-launcher.ts`.
+New subagent behavior still belongs in `packages/cli/src/subagent-launcher.ts`.
 
-`apps/server/src/runner-executor.ts` is still wired to server/studio run routes, but it is marked deprecated and should be treated as a compatibility path.
+Shared flow/resource/prompt/hook helpers now live in `packages/runtime`. `apps/server/src/runner-executor.ts` is still wired to server/studio run routes, but it is marked deprecated and should be treated as a compatibility path.
 
 ## Safe wording for docs
 

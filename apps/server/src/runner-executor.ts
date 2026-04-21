@@ -11,15 +11,15 @@ import os from "node:os";
 import path from "node:path";
 import type { AgentConfig, FlowDefinition, RunAgentResult, RunEvent, RunResponse } from "@loom/core";
 import { getAgentAdapter, parseParallelDelegationDirective } from "@loom/adapters";
-import { loadFlow } from "./runner.js";
-import { runHooks } from "./runner-hook-runner.js";
 import {
+  buildConfiguredAgent,
   createScopedMcpConfig,
+  loadFlow,
   loadRunResources,
   resolveAgentResources,
+  runHooks,
   type RunResources,
-} from "./runner-resource-loader.js";
-import { buildConfiguredAgent } from "./runner-prompt-builder.js";
+} from "@loom/runtime";
 import { persistRun } from "./trace-store.js";
 
 const DEFAULT_AGENT_TIMEOUT_MS = 10 * 60 * 1000;

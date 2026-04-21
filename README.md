@@ -37,7 +37,8 @@ loom/
 │   ├── core/         Zod schemas and shared run/flow types
 │   ├── adapters/     Claude Code and Codex CLI adapters
 │   ├── cli/          loom, loom-subagent, loom-conductor binaries
-│   └── nodes/        Flow validation helpers
+│   ├── nodes/        Flow validation helpers
+│   └── runtime/      Shared flow loading, resources, prompts, and hooks
 ├── examples/         Flow YAML files shown by the server/studio
 ├── roles/            Reusable role YAML definitions
 ├── hooks/            Hook YAML definitions
@@ -74,10 +75,9 @@ pnpm dev
 
 ## CLI usage from a built checkout
 
-Build the server and CLI first because the CLI currently imports built server modules from `apps/server/dist`:
+Build the CLI from the workspace. The CLI now imports shared helpers from `@loom/runtime` instead of built server modules:
 
 ```bash
-pnpm --filter @loom/server build
 pnpm --filter loom build
 node packages/cli/dist/index.js
 ```
