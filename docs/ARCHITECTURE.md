@@ -1,222 +1,278 @@
 # Architecture
 
-Loom is a pnpm monorepo that runs as two local services — a Node.js
-API server and a Vite-powered React Flow studio — backed by a small
-set of shared packages. This document describes the shape of the
-system as it stands at the end of the early v0.1 slices.
+This document describes Loom as implemented in the current codebase. It avoids earlier DAG-era and roadmap claims that are not present in the active schemas or runtime.
 
+## System overview
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ Browser                                                      │
+│ apps/studio                                                  │
+│ - React 19 + Vite                                            │
+│ - Talks to the local Fastify server over HTTP/SSE            │
+│ - Edits flows, roles, hooks, and skills through server APIs   │
+│ - Displays run history and streamed run events                │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ HTTP + SSE
+┌──────────────────────────────▼───────────────────────────────┐
+│ apps/server                                                   │
+│ - Fastify API on PORT=8787 by default                         │
+│ - Validates YAML flows with @loom/core + @loom/nodes           │
+│ - Stores run records/events in .loom/traces.db                 │
+│ - Provides CRUD for examples/, roles/, hooks/, skills/         │
+│ - Still owns the deprecated server-side run executor           │
+│ - Receives CLI run events from loom / loom-subagent            │
+└─────────────┬───────────────────────────────┬────────────────┘
+              │                               │
+              │ imports shared packages        │ stores
+              │                               │
+┌─────────────▼──────────────┐      ┌─────────▼────────────────┐
+│ packages/core              │      │ .loom/traces.db           │
+│ - Zod flow schema           │      │ - runs                    │
+│ - agent/role/hook/skill     │      │ - events                  │
+│   definitions               │      │ - node_results            │
+│ - run/event TypeScript      │      │   (currently agent result │
+│   types                     │      │    rows despite old name) │
+└─────────────┬──────────────┘      └──────────────────────────┘
+              │
+┌─────────────▼──────────────┐
+│ packages/adapters           │
+│ - claude-code adapter        │
+│ - codex adapter              │
+│ - delegation protocol parser │
+└─────────────┬──────────────┘
+              │
+┌─────────────▼──────────────┐
+│ packages/cli                │
+│ - loom                      │
+│ - loom-subagent             │
+│ - loom-conductor legacy     │
+└────────────────────────────┘
 ```
-┌────────────────────────────────────────────────────────┐
-│                   Browser (React 19)                   │
-│   ┌──────────────────────────────────────────────────┐ │
-│   │  apps/studio                                      │ │
-│   │    ├─ Sidebar flow list (GET /flows)              │ │
-│   │    ├─ React Flow canvas (flowToGraph + state map) │ │
-│   │    ├─ RunPanel with SSE client (POST /runs/stream)│ │
-│   │    └─ zustand store (node runtimes / tokens)      │ │
-│   └──────────────────────────────────────────────────┘ │
-│                ▲ fetch + SSE                            │
-└────────────────┼────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────┐
-│            apps/server (Fastify + TypeScript)          │
-│                                                         │
-│   GET  /health                                         │
-│   GET  /flows                — list examples/*.yaml    │
-│   GET  /flows/get            — parsed LoomFlow (zod)   │
-│   POST /runs                 — synchronous RunResponse │
-│   POST /runs/stream          — SSE of RunEvent         │
-│                                                         │
-│   runner.ts ── loadFlow() + public runner exports      │
-│     ├─ runner-executor.ts → streamRunFlow / runFlow    │
-│     ├─ runner-prompt-builder.ts → agent prompt build   │
-│     ├─ runner-resource-loader.ts → roles/hooks/skills  │
-│     ├─ role merge + capability-aware delegation hints  │
-│     └─ isolated HOME + scoped MCP config per agent     │
-│                                                         │
-│   trace-store.ts — node:sqlite (.loom/traces.db)       │
-│     ├─ runs(run_id, flow_name, flow_path, …)           │
-│     └─ node_results(run_id, node_id, output)           │
-└─────────────────────────────────────────────────────────┘
 
-┌────────────────────────────────────────────────────────┐
-│                 packages/* (shared)                    │
-│                                                        │
-│   core        zod schemas for flow/node/edge/run,      │
-│               RuntimeAdapter interface, RunEvent union │
-│   adapters    claude-api (mock-first), claude-code,    │
-│               codex, litellm (stubs registered)        │
-│   nodes       node definitions surfaced to studio      │
-└────────────────────────────────────────────────────────┘
-```
+## Workspace packages
 
-## Execution model
+### `packages/core`
 
-1. `POST /runs` (or `POST /runs/stream`) receives a `flowPath` plus
-   an `inputs` map. `flowPath` is validated against the examples/
-   whitelist before anything is read from disk.
-2. `loadFlow()` resolves the path from the workspace root, reads
-   the YAML, and hands it to `flowSchema.parse` so the rest of the
-   runner can rely on a fully typed `LoomFlow`.
-3. `streamRunFlow()` now resolves a recursive `orchestrator` tree,
-   allocates one `AbortController` plus loaded role / hook / skill
-   resources for the run, and emits `run_start`, `agent_start`,
-   `agent_token`, `agent_delegate`, `agent_complete`, `agent_error`,
-   `agent_timeout`, `agent_abort`, `run_complete`, `run_aborted`, or
-   `run_error` events as the tree executes.
-4. `executeAgent()` in `runner-executor.ts` is the runtime core. It
-   builds the effective agent config, chooses the adapter, records
-   per-agent timestamps/results, runs hooks, supports sibling-parallel
-   delegation, and gives isolated agents a temporary HOME plus a
-   scoped `.mcp.json` assembled only from the resources they can see.
-5. `buildConfiguredAgent()` in `runner-prompt-builder.ts` merges role
-   defaults into each agent, recursively applies the same merge to
-   child agents, and injects capability/description metadata into the
-   delegation prompt so parent agents can route work to the most
-   appropriate child.
-6. `runFlow()` is the synchronous wrapper around `executeAgent()` and
-   rebuilds the final `RunResponse` from the collected agent results.
-   Every completed, failed, or aborted run is persisted to
-   `.loom/traces.db` through `trace-store.ts`.
+Owns the current recursive agent-tree schema:
 
-## Agent isolation and scoped resources
+- `FlowDefinition`
+- `AgentConfig`
+- `RoleDefinition`
+- `HookDefinition`
+- `SkillDefinition`
+- run request/response, run record, run summary, and run event types
 
-`AgentConfig` now carries two orchestration-specific fields:
+Important current schema facts:
 
-- `isolated` — when true, the runner creates a temporary HOME for the
-  spawned CLI process and removes it during cleanup. This lets Claude
-  Code or Codex agents run without inheriting the user's default home
-  directory state.
-- `capabilities` — free-form labels that are surfaced into parent
-  prompts so delegation can target the most appropriate child agent.
+- Agent types are exactly `claude-code` and `codex`.
+- `AgentConfig` has `team`, `delegation`, `claudeMdRef`, `timeout`, `parallel`, `mcps`, `hooks`, `skills`, and recursive `agents`.
+- `AgentConfig` does not currently define `isolated` or `capabilities`.
+- `RoleDefinition` currently defines `name`, `type`, `model`, `system`, `effort`, `description`, and `mcps`.
+- `RoleDefinition` does not currently define `hooks`, `skills`, `isolated`, or `capabilities`.
 
-Resource scoping is assembled from two places:
+### `packages/nodes`
 
-- Flow-level resources (`flow.resources.{mcps,hooks,skills}`) apply to
-  every agent in the tree.
-- Agent-level resource lists are merged on top via
-  `resolveAgentResources()`.
+Currently provides flow validation helpers, not a DAG node runtime. `validateFlow()` checks required flow/agent fields and recursively validates the agent tree.
 
-When an agent has MCP bindings, `createScopedMcpConfig()` writes a
-throwaway `.mcp.json` containing only the selected servers. Non-isolated
-agents may inherit MCP server entries from the user's `~/.claude.json`;
-isolated agents intentionally skip that global file and see only the
-workspace-level `.mcp.json` entries that were explicitly selected.
+### `packages/adapters`
 
-## Capabilities and roles
-
-Roles live as YAML files in `roles/` and are loaded on each run, plus
-exposed through `GET /roles`, `GET /roles/:name`, `PUT /roles/save`, and
-`DELETE /roles/:name`.
-
-A role can define:
-
-- `type`, `model`, `system`, `effort`, and `description`
-- `capabilities`
-- `isolated`
-- role-scoped MCP defaults
-
-When an agent sets `role: <name>`, `buildConfiguredAgent()` merges role
-values first and then lets explicit agent fields win. In practice this
-means a role can provide default capabilities and isolation, while an
-individual agent can still override them when needed.
-
-On the studio side, the Workflow tab agent editor and the dedicated
-Roles tab both surface these defaults, so authors can see when a role is
-supplying the effective type, effort, isolation, or capability set.
-
-## Runtime adapters
-
-A runtime adapter is a small interface declared in `packages/core`:
+Provides the `AgentAdapter` interface and two concrete CLI-backed adapters.
 
 ```ts
-interface RuntimeAdapter {
-  id: string;
-  supports(nodeType: string): boolean;
-  invoke(ctx: InvokeContext): AsyncIterable<InvokeEvent>;
+type AgentEvent =
+  | { type: "token"; content: string }
+  | { type: "complete"; output: string }
+  | { type: "error"; error: string }
+  | { type: "delegate"; childAgent: string; reason: string };
+```
+
+The adapter registry maps:
+
+- `claude-code` → `claudeCodeAdapter`
+- `codex` → `codexAdapter`
+
+Delegation output is parsed in two formats:
+
+```text
+DELEGATE <child-name>: <reason>
+```
+
+or JSON:
+
+```json
+{ "childAgent": "reviewer", "reason": "Review the patch" }
+```
+
+Parallel delegation can be emitted as:
+
+```json
+{
+  "parallel": [
+    { "childAgent": "a", "reason": "..." },
+    { "childAgent": "b", "reason": "..." }
+  ]
 }
 ```
 
-- `claude-api` remains mock-first when `ANTHROPIC_API_KEY` is
-  absent, preserving the existing word-sized token chunks when no MCP
-  servers are attached and switching to a deterministic first-tool
-  simulation when `node.mcps` is present. When the key is present, the
-  adapter switches to `@anthropic-ai/sdk` `messages.stream()`, declares
-  every bound MCP tool as an Anthropic tool, executes each streamed
-  `tool_use` through the runner-provided MCP handle, and resumes the
-  conversation until the model finishes with plain text.
-- `litellm` is also mock-first, preserving the existing canned reply
-  and token chunking whenever neither `LOOM_LITELLM_URL` nor the opt-in
-  `LOOM_LITELLM_SPAWN=1` path is active and no MCP servers are attached.
-  With MCP bindings present it mirrors the Claude mock path by issuing a
-  deterministic first-tool simulation. With `LOOM_LITELLM_URL` set it
-  POSTs to the OpenAI-compatible `/chat/completions` endpoint,
-  reconstructs streamed `tool_calls`, executes them against the same MCP
-  handles, and continues streaming text deltas as `node_token` chunks.
-  With `LOOM_LITELLM_SPAWN=1`, the adapter starts a local `litellm`
-  proxy on first use, reuses it across nodes via the runner runtime
-  session, and tears it down during runner cleanup.
-- `claude-code` and `codex` adapters are registered stubs that report
-  the relevant node type via `supports()` and surface a "not
-  implemented" error when invoked, so the registry is always complete
-  and the v0.2 adapter work has a clean place to land.
-- `mcp/client.ts` ships an `MCPStdioClient` that speaks the minimal
-  JSON-RPC 2.0 subset (initialize + tools/list + tools/call) over
-  newline-delimited JSON on a child_process. The runner uses it to
-  execute `mcp.server` nodes: spawn the command from `config`, walk
-  the handshake, list tools, expose `{serverInfo, tools, toolCount}`
-  as the node output, and kill every subprocess in a finally block
-  so they cannot leak.
+### `packages/cli`
 
-## Studio canvas
+Provides three binaries:
 
-The studio has two side-by-side columns inside the canvas shell:
+- `loom`: interactive flow launcher.
+- `loom-subagent`: generalized recursive child-agent launcher for Claude or Codex backends.
+- `loom-conductor`: legacy Codex conductor launcher, retained for compatibility.
 
-- **Graph column** — a read-only React Flow instance whose nodes and
-  edges come from `flowToGraph(loadedFlow)`. A simple column-based
-  layout places each node one layer past its deepest dependency and
-  stacks siblings vertically. Run events reduce into a runtime map
-  in zustand, and the App layers runtime classes on top of the
-  graph so running/done/skipped/error states get distinct visuals
-  and outgoing edges animate while the target is running.
-- **Run panel** — a thin form with the flow path, a JSON inputs
-  editor, and a Run button that calls `useSseRun` against the
-  server. As each event arrives the panel renders per-node cards
-  (state, streamed token buffer, structured output, error) and the
-  final outputs once the run completes. When a `node_complete` event
-  carries `meta.mcp.tools`, the matching card also renders the MCP
-  tool list (name + description) in a dedicated sub-block, so the
-  mcp.server handshake surfaces directly in the UI without a second
-  round-trip.
+`loom` currently imports built server modules from `apps/server/dist`, so the server package must be built before running the CLI from source.
 
-Flow selection from the sidebar drives both the canvas and the run
-panel through the same zustand `flowPath`, so picking a new example
-flow just updates the graph preview and leaves the rest in sync.
+`loom-subagent` accepts arguments such as:
 
-## Security posture (current slice)
+```bash
+loom-subagent --name reviewer --backend codex --parent leader "briefing text"
+```
 
-- `flowPath` is always rewritten through `path.resolve` and must
-  stay inside the `examples/` directory of the workspace. Absolute
-  paths and `../` escapes are rejected with a 400 before any file
-  is opened, and both `POST /runs` and `POST /runs/stream` share
-  the same validator.
-- `io.file` independently rejects any resolved path that leaves the
-  workspace root, so a flow cannot read or write outside the repo.
-- CORS is permissive in development only, to let the studio (Vite
-  dev server on :5173) reach the Fastify server on :8787 without a
-  proxy configuration. The current scope is local-first anyway, so
-  this is intentional.
+It posts mapped events to the server when `LOOM_RUN_ID` is present. Events include agent identity and tree metadata:
 
-## What is not here yet
+- `agentName`
+- `agentDepth`
+- `parentAgent`
+- `agentKind`
 
-- MCP `tools/call`. `mcp.server` nodes spawn, initialize and list
-  tools, but actually invoking a listed tool from an agent node
-  is a v0.2 stretch.
-- Graph editing. The canvas is read-only; dragging, connecting and
-  inspecting nodes lands later with the node palette work.
-- Run replay. Traces are persisted to SQLite but the studio does
-  not yet visualise past runs or scrub through them.
+## Server API
 
-Everything above is what the current code actually does. Items that
-are on the README v0.1/v0.2 roadmap but not yet wired live in the
-"What is not here yet" section and are the natural next targets.
+The server is built in `apps/server/src/index.ts`.
+
+### Flow routes
+
+- `GET /flows` lists top-level `.yaml` files under `examples/`.
+- `GET /flows/get` reads and validates one example flow.
+- `PUT /flows/save` writes a validated flow back under `examples/`.
+- `POST /flows/duplicate` copies an existing flow under a generated slug.
+- `POST /flows/new` creates a skeleton flow.
+- `DELETE /flows/:path` deletes an example flow.
+
+Flow path validation rejects absolute paths, path escapes outside `examples/`, and non-`.yaml` files.
+
+### Run routes
+
+- `POST /runs` executes through the deprecated server runner and returns a collected response.
+- `POST /runs/stream` executes through the deprecated server runner and emits SSE lifecycle events.
+- `POST /runs/register` creates a running record for a CLI-launched run.
+- `POST /runs/:id/events` appends CLI-launched run events.
+- `GET /runs/:id/events` returns stored events.
+- `GET /runs/:id/stream` streams newly appended persisted events over SSE.
+- `PATCH /runs/:id/status` finalizes a CLI-launched run.
+- `GET /runs` and `GET /runs/:id` read run history/details.
+- `POST /runs/:id/abort` aborts active server-runner executions only.
+
+### Resource routes
+
+- `GET /mcps` discovers MCP server names from Claude/workspace config.
+- `GET /discover` discovers MCPs, hooks, and skills from Claude, Codex, and Loom workspace locations.
+- `GET /roles`, `GET /roles/:name`, `PUT /roles/save`, `DELETE /roles/:name`.
+- `GET /hooks`, `PUT /hooks/save`, `DELETE /hooks/:name`.
+- `GET /skills`, `PUT /skills/save`, `DELETE /skills/:name`.
+
+## Runtime paths
+
+There are two overlapping run paths.
+
+### 1. CLI / subagent path
+
+This is the newer path.
+
+1. `loom` loads a flow.
+2. It builds the configured root agent.
+3. It injects a delegation protocol into the root agent prompt.
+4. The root agent is spawned as Claude Code or Codex.
+5. Child work is delegated by Bash-spawning `loom-subagent`.
+6. `loom-subagent` maps Claude/Codex stream frames to Loom events.
+7. The server stores those events through `/runs/:id/events`.
+8. Studio can follow `/runs/:id/stream` for persisted event updates.
+
+### 2. Server runner path
+
+This path remains active for server `POST /runs`, `POST /runs/stream`, and the current Studio save→run path.
+
+1. Server validates `flowPath` under `examples/`.
+2. `loadFlow()` parses YAML through `flowDefinitionSchema` and `validateFlow()`.
+3. `streamRunFlow()` creates a run id and execution state.
+4. `executeAgent()` spawns the configured adapter, emits `RunEvent`s, and recursively runs child agents on delegation.
+5. Run summaries and agent results are stored in `.loom/traces.db`.
+
+`runner-executor.ts` is marked deprecated in its own header. New runtime behavior should target `packages/cli/src/subagent-launcher.ts` or a future shared runtime package instead.
+
+## Prompt and role merging
+
+`buildConfiguredAgent()` applies role defaults and recursively configures child agents.
+
+Merge behavior:
+
+- If `agent.role` exists and a matching role YAML is loaded, role fields are spread first.
+- Explicit agent fields win over role fields.
+- `system` falls back to the role's `system` when the agent has no `system`.
+- `description` falls back to the role's `description` when the agent has no `description`.
+
+The generated agent prompt includes:
+
+- Agent system prompt.
+- Selected skills from resolved resources.
+- Shared repo path.
+- MCP and hook names visible to the agent.
+- Child agent list with `name`, `type`, `team`, `delegation`, and description from child `system`.
+- Delegation instructions using the `DELEGATE <child>: <reason>` format.
+
+If `agent.parallel` is true and children exist, the prompt also includes the JSON `parallel` delegation format.
+
+## Resource loading
+
+`runner-resource-loader.ts` loads workspace files from:
+
+- `roles/*.yaml`
+- `hooks/*.yaml`
+- `skills/*.yaml`
+
+`resolveAgentResources()` merges flow-level and agent-level resource name lists.
+
+`createScopedMcpConfig()` reads MCP server definitions from:
+
+- `<home>/.claude.json`
+- workspace `.mcp.json`
+
+It writes a temporary `.mcp.json` containing only the selected MCP server names. If no selected servers resolve, no temporary MCP config is returned.
+
+## Persistence
+
+`trace-store.ts` uses Node's `node:sqlite` `DatabaseSync` and stores data in `.loom/traces.db`.
+
+Tables:
+
+- `runs`
+- `events`
+- `node_results`
+
+The historical `node_results` name is still used, but rows are now interpreted as agent results in the recursive-agent model.
+
+CLI-launched runs are registered, event-appended, and finalized incrementally. Server-runner runs are persisted when the run completes/fails/aborts.
+
+## Security posture
+
+Loom should be treated as a trusted-local-workspace tool.
+
+Current behavior includes:
+
+- Claude Code adapter passes `--permission-mode bypassPermissions`.
+- Codex adapter passes `--dangerously-bypass-approvals-and-sandbox` and `--ephemeral`.
+- CLI root launch uses dangerous bypass flags for Claude/Codex.
+- Hooks execute arbitrary shell commands through `child_process.exec` with the current process environment plus Loom variables.
+- CORS is permissive for local development.
+
+Before broader distribution, the project should make trust boundaries explicit in UI and docs, especially around hook execution and permission-bypass CLI flags.
+
+## Known architecture debt
+
+- The CLI imports built files from `apps/server/dist`; shared runtime/load/prompt/resource logic should move into a package.
+- `runner-executor.ts` is deprecated but still active for server/studio run routes.
+- Schema/docs previously mentioned `isolated` and `capabilities`, but those fields are absent from the current core schema.
+- The example set currently centers on `examples/leader-conductor.yaml`; smaller onboarding flows would make the project easier to test and explain.
+- Golden-path recursive execution is still largely manual; a fake Claude/Codex harness would make it testable without launching real CLIs.
