@@ -1,3 +1,6 @@
+<!-- code-accurate-docs-notice -->
+> Note: this is a historical progress log, not the current runtime contract. For the current code-backed behavior, read `README.md`, `docs/ARCHITECTURE.md`, and `docs/CURRENT_STATE.md` first.
+
 # Loom — Build Progress Log
 
 This document tracks what has been shipped so far in the Loom v0.1
