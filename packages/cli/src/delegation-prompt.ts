@@ -22,19 +22,22 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, selfName: string):
     const role = child.role ?? child.description ?? "";
     const roleSuffix = role ? ` — ${role}` : "";
     const modelFlag = child.model ? ` --model ${shellQuote(child.model)}` : "";
+    const exampleBriefing = shellQuote(`TODO: replace with a concrete task for ${child.name}`);
     lines.push(`- **${child.name}** (${child.type}${child.model ? `, ${child.model}` : ""})${roleSuffix}`);
     lines.push(
-      `  \`${invoker} --name ${shellQuote(child.name)} --backend ${backendFor(child.type)}${modelFlag} --parent ${shellQuote(selfName)} "<BRIEFING>"\``,
+      `  \`${invoker} --name ${shellQuote(child.name)} --backend ${backendFor(child.type)}${modelFlag} --parent ${shellQuote(selfName)} --briefing ${exampleBriefing}\``,
     );
   }
   lines.push("");
   lines.push("Rules:");
-  lines.push("1. Pass the BRIEFING as the final positional arg (quoted) or pipe it on stdin.");
-  lines.push("2. Never invoke the Agent tool for these roles — the Loom runtime tracks only Bash-spawned subagents.");
-  lines.push("3. You may call multiple subagents in parallel by running Bash commands in the same turn.");
-  lines.push("4. Read the REPORT from stdout; decide next step based on `status:` and `summary:` lines.");
+  lines.push("1. Replace the TODO briefing with a concrete, non-empty task before running the command.");
+  lines.push("2. Prefer `--briefing` for one-line tasks. For long or multiline tasks, pipe stdin or use `--briefing-file <path>`.");
+  lines.push("3. If a positional briefing starts with `--`, place it after a literal `--` so it is not parsed as an option.");
+  lines.push("4. Never invoke the Agent tool for these roles — the Loom runtime tracks only Bash-spawned subagents.");
+  lines.push("5. You may call multiple subagents in parallel by running Bash commands in the same turn.");
+  lines.push("6. Read the REPORT from stdout; decide next step based on `status:` and `summary:` lines.");
   lines.push("");
-  return lines.join("\n");
+  return lines.join("\\n");
 }
 
 function backendFor(type: AgentConfig["type"]): "claude" | "codex" {

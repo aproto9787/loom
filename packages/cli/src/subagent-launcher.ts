@@ -35,6 +35,7 @@ interface CliArgs {
   parentDepth: number;
   maxSeconds: number;
   reportPath?: string;
+  briefingFile?: string;
   briefing: string;
 }
 
@@ -46,8 +47,9 @@ function printUsage(): void {
   console.error(`loom-subagent — generalized child-agent runner for Loom flows
 
 Usage:
-  loom-subagent --name <role> --backend claude|codex [options] "<BRIEFING>"
-  echo "<BRIEFING>" | loom-subagent --name <role> --backend <claude|codex> [options]
+  loom-subagent --name <role> --backend claude|codex [options] --briefing "Review the changed files"
+  loom-subagent --name <role> --backend claude|codex [options] -- "Briefing that may start with --"
+  printf '%s\n' "Review the changed files" | loom-subagent --name <role> --backend <claude|codex> [options]
 
 Options:
   --name <role>          child agent display name (required)
@@ -57,6 +59,8 @@ Options:
   --depth <n>            parent depth (default: env LOOM_PARENT_DEPTH or 0)
   --max-seconds <n>      hard timeout (default: 900)
   --report <path>        explicit REPORT file path
+  --briefing <text>      explicit task briefing; safest for one-line delegated tasks
+  --briefing-file <path> read task briefing from a file; useful for long/multiline tasks
 
 Environment:
   LOOM_RUN_ID            run id to POST events to (required to stream)
@@ -67,33 +71,70 @@ Environment:
 }
 
 function parseArgs(argv: string[]): CliArgs | null {
-  const args: Record<string, string> = {};
+  const args: Record<string, string | undefined> = {};
   const positional: string[] = [];
+  const optionsWithValues = new Set([
+    "name",
+    "backend",
+    "model",
+    "parent",
+    "depth",
+    "max-seconds",
+    "report",
+    "briefing",
+    "briefing-file",
+  ]);
+
   for (let i = 0; i < argv.length; i++) {
     const cur = argv[i];
     if (cur === "--help" || cur === "-h") {
       printUsage();
       process.exit(0);
     }
+    if (cur === "--") {
+      positional.push(...argv.slice(i + 1));
+      break;
+    }
     if (cur.startsWith("--")) {
+      const equalIndex = cur.indexOf("=");
+      if (equalIndex > 2) {
+        const key = cur.slice(2, equalIndex);
+        if (!optionsWithValues.has(key)) {
+          console.error(`loom-subagent: unknown option --${key}`);
+          printUsage();
+          return null;
+        }
+        args[key] = cur.slice(equalIndex + 1);
+        continue;
+      }
+
       const key = cur.slice(2);
+      if (!optionsWithValues.has(key)) {
+        console.error(`loom-subagent: unknown option --${key}`);
+        printUsage();
+        return null;
+      }
+
       const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--")) {
+      if (next === undefined || (next.startsWith("--") && key !== "briefing")) {
+        args[key] = "";
+      } else {
         args[key] = next;
         i++;
-      } else {
-        args[key] = "true";
       }
     } else {
       positional.push(cur);
     }
   }
+
   const name = args.name;
   const backendRaw = args.backend;
   if (!name || (backendRaw !== "claude" && backendRaw !== "codex")) {
     printUsage();
     return null;
   }
+
+  const explicitBriefing = args.briefing?.trim();
   return {
     name,
     backend: backendRaw,
@@ -102,12 +143,20 @@ function parseArgs(argv: string[]): CliArgs | null {
     parentDepth: Number(args.depth ?? process.env.LOOM_PARENT_DEPTH ?? "0"),
     maxSeconds: Number(args["max-seconds"] ?? "900"),
     reportPath: args.report,
-    briefing: positional.join(" ").trim(),
+    briefingFile: args["briefing-file"],
+    briefing: explicitBriefing || positional.join(" ").trim(),
   };
 }
 
-async function readBriefing(fromArg: string): Promise<string> {
-  if (fromArg) return fromArg;
+async function readBriefing(fromArg: string, fromFile?: string): Promise<string> {
+  const argBriefing = fromArg.trim();
+  if (argBriefing) return argBriefing;
+
+  const filePath = fromFile?.trim();
+  if (filePath) {
+    return (await readFile(path.resolve(filePath), "utf8")).trim();
+  }
+
   if (process.stdin.isTTY) return "";
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -608,9 +657,9 @@ async function main(): Promise<void> {
   const parsedArgs = parseArgs(process.argv.slice(2));
   if (!parsedArgs) process.exit(2);
   const args: CliArgs = parsedArgs;
-  args.briefing = await readBriefing(args.briefing);
+  args.briefing = await readBriefing(args.briefing, args.briefingFile);
   if (!args.briefing) {
-    console.error("loom-subagent: empty BRIEFING");
+    console.error("loom-subagent: empty BRIEFING. Pass a non-empty task with --briefing, --briefing-file, a final positional argument after --, or a stdin pipe.");
     process.exit(2);
   }
 
