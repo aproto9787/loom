@@ -2,9 +2,30 @@
 
 > Local, YAML-backed orchestration for Claude Code and Codex CLI agents.
 
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg)](LICENSE)
+![Node 20+](https://img.shields.io/badge/Node-20%2B-339933.svg?logo=node.js&logoColor=white)
+![pnpm workspace](https://img.shields.io/badge/pnpm-workspace-F69220.svg?logo=pnpm&logoColor=white)
+![Status experimental](https://img.shields.io/badge/status-experimental-orange.svg)
+
 Loom is an experimental local agent runner. A flow is a plain YAML file with one root `orchestrator` agent and optional nested child agents. The server validates and stores flows, runs and run events. The studio edits/observes those flows in the browser. The CLI can launch a flow's root agent and uses `loom-subagent` for recursive child-agent execution.
 
 This README describes the code on the current `master` branch. It intentionally avoids claims that are not represented in the current TypeScript schema or runtime.
+
+## Table of Contents
+
+- [Current status](#current-status)
+- [Repository layout](#repository-layout)
+- [Quickstart](#quickstart)
+- [Develop from source](#develop-from-source)
+- [CLI usage from a built checkout](#cli-usage-from-a-built-checkout)
+- [Flow schema](#flow-schema)
+- [Minimal flow example](#minimal-flow-example)
+- [Server API surface](#server-api-surface)
+- [Runtime paths](#runtime-paths)
+- [Resource model](#resource-model)
+- [Security notes](#security-notes)
+- [Design direction](#design-direction)
+- [License](#license)
 
 ## Current status
 
@@ -44,6 +65,15 @@ loom/
 ├── hooks/            Hook YAML definitions
 ├── skills/           Skill YAML definitions
 └── docs/             Architecture and code-backed state notes
+```
+
+## Quickstart
+
+```bash
+pnpm install
+pnpm -r build
+pnpm --filter @loom/server dev
+pnpm --filter @loom/studio dev
 ```
 
 ## Develop from source
@@ -269,6 +299,9 @@ Loom has three workspace resource directories:
 
 Flow-level resources are merged with agent-level resources by name. Skills are appended to prompts. Hooks are executed by the server runner using `child_process.exec` with a 30-second timeout. MCP names are resolved from the user's Claude config and workspace `.mcp.json`; selected MCP servers are written into a temporary `.mcp.json` for a run.
 
+> [!WARNING]
+> Review the security notes below before running Loom. The current code can launch local CLI tools and shell hooks with dangerous permission and sandbox bypass flags.
+
 ## Security notes
 
 Loom executes local CLI tools and hook commands from your machine. Treat flow, role, hook, and skill files as trusted code/configuration.
@@ -288,4 +321,4 @@ The current code is closer to a local recursive agent harness than a general vis
 
 ## License
 
-MIT
+GPL-3.0-only. See [LICENSE](LICENSE).
