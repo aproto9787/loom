@@ -23,11 +23,15 @@ function handleFlags(): boolean {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`loom v${VERSION} — interactive flow launcher
 
-Usage: loom [options]
+Usage:
+  loom
+  loom --flow <path-to-flow.yaml>
+  loom <path-to-flow.yaml>
 
 Options:
-  -h, --help     Show this help
-  -v, --version  Show version
+  -f, --flow <path>  Launch a specific flow without the selection prompt
+  -h, --help         Show this help
+  -v, --version      Show version
 
 Scans for flow YAML files in the current directory and examples/,
 presents an interactive selection menu, and spawns the chosen
@@ -39,6 +43,28 @@ flow's orchestrator (claude/codex) with isolated config.`);
     return true;
   }
   return false;
+}
+
+function getExplicitFlowPath(): string | undefined {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const cur = args[i];
+    if (cur === "--") {
+      return args.slice(i + 1).find((value) => value.trim().length > 0);
+    }
+    if (cur === "--flow" || cur === "-f") {
+      const next = args[i + 1];
+      return next && !next.startsWith("-") ? next : undefined;
+    }
+    if (cur.startsWith("--flow=")) {
+      const value = cur.slice("--flow=".length).trim();
+      return value || undefined;
+    }
+    if (!cur.startsWith("-")) {
+      return cur;
+    }
+  }
+  return undefined;
 }
 
 interface LoadedCliFlow {
@@ -877,6 +903,14 @@ async function promptForSelection(flows: LoadedCliFlow[]): Promise<SelectionActi
 async function main(): Promise<void> {
   if (handleFlags()) return;
   const cwd = process.cwd();
+  const explicitFlowPath = getExplicitFlowPath();
+  if (explicitFlowPath) {
+    const flow = await loadCliFlow(explicitFlowPath, cwd);
+    const exitCode = await launchAgent(flow);
+    process.exitCode = exitCode;
+    return;
+  }
+
   const flowPaths = await listFlowPaths(cwd);
   const loadResults = await Promise.all(
     flowPaths.map(async (flowPath) => {
@@ -891,6 +925,10 @@ async function main(): Promise<void> {
   if (flows.length === 0) {
     console.log("No flow YAML files found. Launching flow-creation prompt.\n");
   }
+  if (!process.stdin.isTTY) {
+    throw new Error("loom: interactive flow selection requires a TTY. Pass --flow <path> or a positional flow path to skip the prompt.");
+  }
+
   const selection = await promptForSelection(flows);
   if (selection.kind === "created") {
     console.log(`\nCreated ${selection.absolutePath}`);
