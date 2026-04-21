@@ -1,11 +1,26 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/adapters" },
-    { "path": "./packages/nodes" },
-    { "path": "./packages/cli" },
-    { "path": "./apps/server" },
-    { "path": "./apps/studio" }
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/adapters"
+    },
+    {
+      "path": "./packages/nodes"
+    },
+    {
+      "path": "./packages/cli"
+    },
+    {
+      "path": "./apps/server"
+    },
+    {
+      "path": "./apps/studio"
+    },
+    {
+      "path": "./packages/runtime"
+    }
   ]
 }

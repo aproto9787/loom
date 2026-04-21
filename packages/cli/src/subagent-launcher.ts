@@ -16,12 +16,12 @@ import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 import type { AgentConfig, FlowDefinition, HookDefinition, SkillDefinition } from "@loom/core";
 import {
+  buildConfiguredAgent,
   createScopedMcpConfig,
   loadHookDefinitions,
   loadSkillDefinitions,
   resolveAgentResources,
-} from "../../../apps/server/dist/runner.js";
-import { buildConfiguredAgent } from "../../../apps/server/dist/runner-prompt-builder.js";
+} from "@loom/runtime";
 import { buildDelegationPrompt, findAgentByName } from "./delegation-prompt.js";
 
 type Backend = "claude" | "codex";

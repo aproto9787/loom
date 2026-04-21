@@ -3,19 +3,41 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@loom/core": ["../../packages/core/src/index.ts"],
-      "@loom/adapters": ["../../packages/adapters/src/index.ts"],
-      "@loom/nodes": ["../../packages/nodes/src/index.ts"]
+      "@loom/core": [
+        "../../packages/core/src/index.ts"
+      ],
+      "@loom/adapters": [
+        "../../packages/adapters/src/index.ts"
+      ],
+      "@loom/nodes": [
+        "../../packages/nodes/src/index.ts"
+      ],
+      "@loom/runtime": [
+        "../../packages/runtime/src/index.ts"
+      ]
     }
   },
-  "include": ["src/**/*.ts"],
+  "include": [
+    "src/**/*.ts"
+  ],
   "references": [
-    { "path": "../../packages/core" },
-    { "path": "../../packages/adapters" },
-    { "path": "../../packages/nodes" }
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/adapters"
+    },
+    {
+      "path": "../../packages/nodes"
+    },
+    {
+      "path": "../../packages/runtime"
+    }
   ]
 }

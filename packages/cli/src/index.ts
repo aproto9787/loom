@@ -10,8 +10,8 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import type { AgentConfig, AgentType } from "@loom/core";
-import { loadFlow } from "../../../apps/server/dist/runner.js";
-import { buildConfiguredAgent } from "../../../apps/server/dist/runner-prompt-builder.js";
+import { loadFlow } from "@loom/runtime";
+import { buildConfiguredAgent } from "@loom/runtime";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
 
 const VERSION = "0.1.0";
