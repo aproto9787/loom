@@ -18,3 +18,4 @@ packages/*/src/**/*.js.map
 outputs/
 .DS_Store
 vite.config.ts.timestamp-*
+.claude/
