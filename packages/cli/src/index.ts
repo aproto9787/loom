@@ -1019,13 +1019,6 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
   if (configuredAgent.type === "claude-code" && finalInstructions.trim().length > 0) {
     args.push("--append-system-prompt", finalInstructions);
   }
-  const litellmEnv: Record<string, string> = configuredAgent.type === "claude-code" && configuredAgent.model?.startsWith("chatgpt/")
-    ? {
-        ANTHROPIC_BASE_URL: "http://127.0.0.1:4000",
-        ANTHROPIC_AUTH_TOKEN: "dummy-token",
-      }
-    : {};
-
   if (options.headless) {
     return await runHeadlessAgent(
       flow,
@@ -1035,7 +1028,7 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
       flowCwd,
       registration,
       getServerOrigin(options.serverOrigin),
-      litellmEnv,
+      {},
     );
   }
 
@@ -1077,7 +1070,6 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
       LOOM_PARENT_AGENT: "leader",
       LOOM_PARENT_DEPTH: "0",
       LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
-      ...litellmEnv,
     },
   });
 

@@ -150,7 +150,7 @@ claudeMdLibrary:
     - 호출된 위치: isolated HOME (`$HOME/.loom/homes/run-*`). 원본 `~/.claude`,
       `~/.codex` 는 이 세션에서 보이지 않는다. 필요한 것은 isolated HOME 안에만 있음.
     - 주어진 tool: codex CLI 기본 tool (Read/Edit/Bash 등).
-    - REPORT 파일 경로: `LOOM_CONDUCTOR_REPORT_FILE` 환경변수. 종료 전 반드시 이
+    - REPORT 파일 경로: `LOOM_REPORT_FILE` 환경변수. 종료 전 반드시 이
       경로에 REPORT를 기록해야 호출자가 결과를 받는다.
 
     ## Worker 위임 (필수)
@@ -175,7 +175,7 @@ claudeMdLibrary:
     5. 하드 타임아웃이 임박하면 부분 진척을 그대로 REPORT에 `status: blocked`
        + `blockers:` 로 적고 즉시 종료.
 
-    ## REPORT 포맷 (LOOM_CONDUCTOR_REPORT_FILE 에 반드시 기록)
+    ## REPORT 포맷 (LOOM_REPORT_FILE 에 반드시 기록)
     ```
     status: done | blocked | needs_decision
     summary:

@@ -46,7 +46,7 @@ This document describes Loom as implemented in the current codebase. It avoids e
 │ packages/cli                │
 │ - loom                      │
 │ - loom-subagent             │
-│ - loom-conductor legacy     │
+│ - loom-subagent legacy     │
 └────────────────────────────┘
 ```
 
@@ -121,7 +121,7 @@ Provides three binaries:
 
 - `loom`: interactive flow launcher.
 - `loom-subagent`: generalized recursive child-agent launcher for Claude or Codex backends.
-- `loom-conductor`: legacy Codex conductor launcher, retained for compatibility.
+- `loom-subagent`: legacy Codex conductor launcher, retained for compatibility.
 
 `loom` currently imports built server modules from `apps/server/dist`, so the server package must be built before running the CLI from source.
 

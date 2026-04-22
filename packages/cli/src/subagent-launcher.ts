@@ -529,7 +529,7 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
 
   const childEnv: Record<string, string> = {
     ...process.env,
-    LOOM_CONDUCTOR_REPORT_FILE: reportPath,
+    LOOM_REPORT_FILE: reportPath,
     LOOM_PARENT_AGENT: args.name,
     LOOM_PARENT_DEPTH: String(args.parentDepth + 1),
     LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),

@@ -34,9 +34,8 @@ Implemented today:
 - Recursive agent-tree flow schema with `claude-code` and `codex` agent types.
 - Fastify server for flow CRUD, run history, run event ingestion, role/hook/skill CRUD, MCP/resource discovery, local CLI run spawning, and SSE streams.
 - React/Vite studio that talks to the local server.
-- CLI binaries: `loom`, `loom-subagent`, and legacy `loom-conductor`.
-- Adapter layer for Claude Code CLI and Codex CLI.
-- SQLite-backed run and event persistence under `.loom/traces.db`.
+- CLI binaries: `loom` and `loom-subagent`.
+- - SQLite-backed run and event persistence under `.loom/traces.db`.
 - Flow-level and agent-level resource names for MCPs, hooks, and skills.
 - Role YAML defaults for `type`, `model`, `system`, `effort`, `description`, and `mcps`.
 
@@ -56,8 +55,7 @@ loom/
 │   └── studio/       React 19 + Vite studio
 ├── packages/
 │   ├── core/         Zod schemas and shared run/flow types
-│   ├── adapters/     Claude Code and Codex CLI adapters
-│   ├── cli/          loom, loom-subagent, loom-conductor binaries
+│   ├── cli/          loom and loom-subagent binaries
 │   ├── nodes/        Flow validation helpers
 │   └── runtime/      Shared flow loading, resources, prompts, and hooks
 ├── examples/         Flow YAML files shown by the server/studio
@@ -121,7 +119,7 @@ node packages/cli/dist/index.js \
   --headless
 ```
 
-The `loom-subagent` binary is the current generalized child-agent launcher:
+The `loom-subagent` binary is the generalized child-agent launcher:
 
 ```bash
 node packages/cli/dist/subagent-launcher.js \
@@ -131,7 +129,6 @@ node packages/cli/dist/subagent-launcher.js \
   "Review the changed files and write a short report."
 ```
 
-`loom-conductor` is kept for compatibility with older prompts and is superseded by `loom-subagent` for new work.
 
 ## Flow schema
 
