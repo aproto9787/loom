@@ -10,7 +10,7 @@ Thanks for contributing to Loom.
 
 ## Development setup
 
-Loom is a pnpm workspace and currently targets Node.js 20+.
+Loom is a pnpm workspace and currently targets Node.js 22.13+.
 
 ```bash
 pnpm install
@@ -42,7 +42,7 @@ Feature requests should explain the problem being solved, the proposed behavior,
 - Add or update tests when behavior changes.
 - Avoid drive-by refactors and unrelated formatting changes.
 - Use clear, imperative commit messages.
-- Confirm `pnpm typecheck` passes before requesting review.
+- Confirm `pnpm check` passes before requesting review.
 
 ## Community expectations
 

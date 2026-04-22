@@ -20,7 +20,7 @@ This document describes Loom as implemented in the current codebase. It avoids e
 │ - Validates YAML flows with @loom/core + @loom/nodes           │
 │ - Stores run records/events in .loom/traces.db                 │
 │ - Provides CRUD for examples/, roles/, hooks/, skills/         │
-│ - Still owns the deprecated server-side run executor           │
+│ - Spawns the built `loom` CLI for local runs           │
 │ - Receives CLI run events from loom / loom-subagent            │
 └─────────────┬───────────────────────────────┬────────────────┘
               │                               │
@@ -276,3 +276,21 @@ Before broader distribution, the project should make trust boundaries explicit i
 - Schema/docs previously mentioned `isolated` and `capabilities`, but those fields are absent from the current core schema.
 - The example set currently centers on `examples/leader-conductor.yaml`; smaller onboarding flows would make the project easier to test and explain.
 - Golden-path recursive execution is still largely manual; a fake Claude/Codex harness would make it testable without launching real CLIs.
+
+
+## Local execution path
+
+For the source-checkout workflow, the CLI path is the primary runtime:
+
+```text
+Studio or API request
+  -> apps/server creates a run row
+  -> apps/server spawns node packages/cli/dist/index.js --headless
+  -> loom launches the root Claude/Codex process
+  -> root agents delegate through loom-subagent
+  -> loom / loom-subagent POST timeline events back to apps/server
+  -> apps/server persists events in .loom/traces.db
+  -> Studio watches /runs/:id/stream and reads /runs/:id/events
+```
+
+The older in-process server executor is kept only as a compatibility module. New local recursive-agent behavior should go into the CLI / loom-subagent path or the small shared helpers in `@loom/runtime`.

@@ -168,6 +168,21 @@ export interface RunAgentResult {
   finishedAt?: string;
 }
 
+export type TimelineEventType = "user" | "assistant" | "tool_use" | "tool_result" | "error";
+
+export interface TimelineEvent {
+  runId: string;
+  ts: number;
+  type: TimelineEventType;
+  summary?: string;
+  toolName?: string;
+  agentName?: string;
+  agentDepth?: number;
+  parentAgent?: string;
+  agentKind?: string;
+  raw?: unknown;
+}
+
 export type RunStatus = "success" | "failed" | "aborted" | "running" | "done" | "error" | "stale";
 export type RunSource = "server" | "cli";
 

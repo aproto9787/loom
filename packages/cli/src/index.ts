@@ -9,7 +9,7 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig, AgentType } from "@loom/core";
+import type { AgentConfig, AgentType, TimelineEvent } from "@loom/core";
 import { loadFlow } from "@loom/runtime";
 import { buildConfiguredAgent } from "@loom/runtime";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
@@ -27,15 +27,21 @@ Usage:
   loom
   loom --flow <path-to-flow.yaml>
   loom <path-to-flow.yaml>
+  loom --flow <path-to-flow.yaml> --prompt "Task" --headless
 
 Options:
-  -f, --flow <path>  Launch a specific flow without the selection prompt
-  -h, --help         Show this help
-  -v, --version      Show version
+  -f, --flow <path>       Launch a specific flow without the selection prompt
+  -p, --prompt <text>     Root task prompt for headless/non-interactive runs
+      --prompt-file <p>   Read the root task prompt from a file
+      --run-id <id>       Reuse a server-created run id
+      --server <origin>   Event/status server origin (default: http://localhost:8787)
+      --headless          Run without taking over the terminal; used by the local server
+  -h, --help              Show this help
+  -v, --version           Show version
 
-Scans for flow YAML files in the current directory and examples/,
-presents an interactive selection menu, and spawns the chosen
-flow's orchestrator (claude/codex) with isolated config.`);
+Without --headless, Loom scans for flow YAML files in the current
+directory and examples/, presents an interactive selection menu, and
+spawns the chosen flow's orchestrator with the host terminal.`);
     return true;
   }
   if (args.includes("--version") || args.includes("-v")) {
@@ -45,24 +51,114 @@ flow's orchestrator (claude/codex) with isolated config.`);
   return false;
 }
 
-function getExplicitFlowPath(): string | undefined {
-  const args = process.argv.slice(2);
-  for (let i = 0; i < args.length; i++) {
-    const cur = args[i];
+interface CliOptions {
+  flowPath?: string;
+  prompt?: string;
+  promptFile?: string;
+  runId?: string;
+  serverOrigin?: string;
+  headless: boolean;
+}
+
+function parseCliOptions(argv = process.argv.slice(2)): CliOptions {
+  const positional: string[] = [];
+  const options: CliOptions = { headless: false };
+
+  const readValue = (index: number, name: string, allowDashValue = false): [string | undefined, number] => {
+    const next = argv[index + 1];
+    if (next === undefined || (!allowDashValue && next.startsWith("-"))) {
+      throw new Error(`loom: ${name} requires a value`);
+    }
+    return [next, index + 1];
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const cur = argv[i];
     if (cur === "--") {
-      return args.slice(i + 1).find((value) => value.trim().length > 0);
+      positional.push(...argv.slice(i + 1));
+      break;
+    }
+    if (cur === "--headless") {
+      options.headless = true;
+      continue;
     }
     if (cur === "--flow" || cur === "-f") {
-      const next = args[i + 1];
-      return next && !next.startsWith("-") ? next : undefined;
+      const [value, nextIndex] = readValue(i, cur);
+      options.flowPath = value;
+      i = nextIndex;
+      continue;
     }
     if (cur.startsWith("--flow=")) {
-      const value = cur.slice("--flow=".length).trim();
-      return value || undefined;
+      options.flowPath = cur.slice("--flow=".length).trim() || undefined;
+      continue;
     }
-    if (!cur.startsWith("-")) {
-      return cur;
+    if (cur === "--prompt" || cur === "-p") {
+      const [value, nextIndex] = readValue(i, cur, true);
+      options.prompt = value;
+      i = nextIndex;
+      continue;
     }
+    if (cur.startsWith("--prompt=")) {
+      options.prompt = cur.slice("--prompt=".length);
+      continue;
+    }
+    if (cur === "--prompt-file") {
+      const [value, nextIndex] = readValue(i, cur);
+      options.promptFile = value;
+      i = nextIndex;
+      continue;
+    }
+    if (cur.startsWith("--prompt-file=")) {
+      options.promptFile = cur.slice("--prompt-file=".length).trim() || undefined;
+      continue;
+    }
+    if (cur === "--run-id") {
+      const [value, nextIndex] = readValue(i, cur);
+      options.runId = value;
+      i = nextIndex;
+      continue;
+    }
+    if (cur.startsWith("--run-id=")) {
+      options.runId = cur.slice("--run-id=".length).trim() || undefined;
+      continue;
+    }
+    if (cur === "--server") {
+      const [value, nextIndex] = readValue(i, cur);
+      options.serverOrigin = value;
+      i = nextIndex;
+      continue;
+    }
+    if (cur.startsWith("--server=")) {
+      options.serverOrigin = cur.slice("--server=".length).trim() || undefined;
+      continue;
+    }
+    if (cur.startsWith("-")) {
+      throw new Error(`loom: unknown option ${cur}`);
+    }
+    positional.push(cur);
+  }
+
+  options.flowPath ??= positional.shift();
+  if (!options.prompt && positional.length > 0) {
+    options.prompt = positional.join(" ").trim();
+  }
+  return options;
+}
+
+async function readHeadlessPrompt(options: CliOptions): Promise<string | undefined> {
+  if (options.promptFile) {
+    return (await readFile(path.resolve(options.promptFile), "utf8")).trim();
+  }
+  if (options.prompt?.trim()) {
+    return options.prompt.trim();
+  }
+  if (options.headless && !process.stdin.isTTY) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const piped = Buffer.concat(chunks).toString("utf8").trim();
+    return piped || undefined;
   }
   return undefined;
 }
@@ -84,18 +180,7 @@ interface RunRegistration {
   postEvents: (events: LoomRunEvent[]) => Promise<void>;
 }
 
-interface LoomRunEvent {
-  runId: string;
-  ts: number;
-  type: "user" | "assistant" | "tool_use" | "tool_result" | "error";
-  summary?: string;
-  toolName?: string;
-  agentName?: string;
-  agentDepth?: number;
-  parentAgent?: string;
-  agentKind?: string;
-  raw: unknown;
-}
+type LoomRunEvent = TimelineEvent;
 
 interface TranscriptTailState {
   readonly transcriptDir: string;
@@ -200,8 +285,8 @@ function buildSpawnArgs(agent: AgentConfig): { command: string; args: string[] }
   return { command: "codex", args };
 }
 
-function getServerOrigin(): string {
-  return process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
+function getServerOrigin(explicitOrigin?: string): string {
+  return explicitOrigin ?? process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
 }
 
 function summarizeText(value: string | undefined, maxLength = 120): string | undefined {
@@ -438,6 +523,50 @@ function mapTranscriptLine(runId: string, line: string, leaderName = "leader"): 
   return null;
 }
 
+function mapCodexHeadlessLine(runId: string, line: string, leaderName = "leader"): LoomRunEvent | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(line.trim()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (parsed.type !== "item.completed") return null;
+  const item = parsed.item;
+  if (!item || typeof item !== "object") return null;
+  const typedItem = item as Record<string, unknown>;
+  const itemType = typeof typedItem.type === "string" ? typedItem.type : undefined;
+  const ts = parseEventTimestamp(parsed.timestamp ?? parsed.ts);
+  if (itemType === "agent_message") {
+    const text = typeof typedItem.text === "string" ? typedItem.text : undefined;
+    const summary = summarizeText(text);
+    if (!summary) return null;
+    return { runId, ts, type: "assistant", summary, agentName: leaderName, agentDepth: 0, agentKind: "codex", raw: parsed };
+  }
+  if (itemType === "reasoning") {
+    const text = typeof typedItem.text === "string" ? typedItem.text : "reasoning";
+    return { runId, ts, type: "assistant", summary: summarizeText(`reasoning: ${text}`), toolName: "reasoning", agentName: leaderName, agentDepth: 0, agentKind: "codex", raw: parsed };
+  }
+  if (itemType === "command_execution") {
+    const command = typeof typedItem.command === "string" ? typedItem.command : "command";
+    return { runId, ts, type: "tool_use", summary: summarizeText(command), toolName: "Bash", agentName: leaderName, agentDepth: 0, agentKind: "codex", raw: parsed };
+  }
+  if (itemType === "file_change") {
+    const pathStr = typeof typedItem.path === "string" ? typedItem.path : "";
+    const op = typeof typedItem.operation === "string" ? typedItem.operation : "edit";
+    return { runId, ts, type: "tool_result", summary: summarizeText(`${op} ${pathStr}`), toolName: "Edit", agentName: leaderName, agentDepth: 0, agentKind: "codex", raw: parsed };
+  }
+  return { runId, ts, type: "tool_use", summary: summarizeText(itemType ?? "codex item"), toolName: itemType, agentName: leaderName, agentDepth: 0, agentKind: "codex", raw: parsed };
+}
+
+function mapHeadlessStdoutLine(runId: string, line: string, agentType: AgentType, leaderName = "leader"): LoomRunEvent[] {
+  if (agentType === "codex") {
+    const mapped = mapCodexHeadlessLine(runId, line, leaderName);
+    return mapped ? [mapped] : [];
+  }
+  const mapped = mapTranscriptLine(runId, line, leaderName);
+  return mapped ? [mapped] : [];
+}
+
 async function postRunEvents(origin: string, runId: string, events: LoomRunEvent[]): Promise<void> {
   if (events.length === 0) return;
   try {
@@ -665,10 +794,15 @@ async function createTranscriptTail(runId: string, homeDir: string, cwd: string,
   };
 }
 
-async function reportCliRunStart(flow: LoadedCliFlow, agentType: AgentType): Promise<RunRegistration> {
-  const runId = randomUUID();
+async function reportCliRunStart(
+  flow: LoadedCliFlow,
+  agentType: AgentType,
+  options: CliOptions,
+  userPrompt = "",
+): Promise<RunRegistration> {
+  const runId = options.runId ?? randomUUID();
   const startTime = new Date().toISOString();
-  const origin = getServerOrigin();
+  const origin = getServerOrigin(options.serverOrigin);
 
   try {
     await fetch(`${origin}/runs/register`, {
@@ -682,6 +816,7 @@ async function reportCliRunStart(flow: LoadedCliFlow, agentType: AgentType): Pro
         startTime,
         source: "cli",
         cwd: resolveFlowCwd(flow),
+        userPrompt,
       }),
     });
   } catch {
@@ -739,7 +874,118 @@ function resolveAgentClaudeMd(flow: LoadedCliFlow, agent: AgentConfig): string |
 }
 
 
-async function launchAgent(flow: LoadedCliFlow): Promise<number> {
+function buildHeadlessPrompt(instructions: string, userPrompt: string): string {
+  const parts = [];
+  if (instructions.trim()) {
+    parts.push(`# Loom instructions\n${instructions.trim()}`);
+  }
+  parts.push(`# User task\n${userPrompt.trim()}`);
+  return parts.join("\n\n");
+}
+
+function buildHeadlessSpawnArgs(agent: AgentConfig, finalInstructions: string, userPrompt: string): { command: string; args: string[] } {
+  if (agent.type === "claude-code") {
+    const args = [
+      "--print",
+      "--output-format", "stream-json",
+      "--verbose",
+      "--session-id", randomUUID(),
+      "--no-session-persistence",
+      "--dangerously-skip-permissions",
+    ];
+    if (agent.model) {
+      args.push("--model", agent.model);
+    }
+    if (finalInstructions.trim()) {
+      args.push("--append-system-prompt", finalInstructions);
+    }
+    args.push(userPrompt);
+    return { command: "claude", args };
+  }
+
+  const args = [
+    "exec",
+    "--json",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--skip-git-repo-check",
+  ];
+  if (agent.model) {
+    args.push("--model", agent.model);
+  }
+  args.push(buildHeadlessPrompt(finalInstructions, userPrompt));
+  return { command: "codex", args };
+}
+
+async function runHeadlessAgent(
+  flow: LoadedCliFlow,
+  configuredAgent: AgentConfig,
+  finalInstructions: string,
+  userPrompt: string,
+  flowCwd: string,
+  registration: RunRegistration,
+  serverOrigin: string,
+  extraEnv: Record<string, string>,
+): Promise<number> {
+  const { command, args } = buildHeadlessSpawnArgs(configuredAgent, finalInstructions, userPrompt);
+  const childEnv = {
+    ...process.env,
+    ...extraEnv,
+    LOOM_FLOW_PATH: flow.absolutePath,
+    LOOM_FLOW_NAME: flow.flow.name,
+    LOOM_FLOW_CWD: flowCwd,
+    LOOM_AGENT: configuredAgent.name,
+    LOOM_AGENT_TYPE: configuredAgent.type,
+    LOOM_RUN_ID: registration.runId,
+    LOOM_SERVER_ORIGIN: serverOrigin,
+    LOOM_PARENT_AGENT: "leader",
+    LOOM_PARENT_DEPTH: "0",
+    LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
+  };
+
+  return await new Promise<number>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: flowCwd,
+      stdio: ["ignore", "pipe", "inherit"],
+      env: childEnv,
+    });
+
+    let buffer = "";
+    const flushLine = (line: string) => {
+      const events = mapHeadlessStdoutLine(registration.runId, line, configuredAgent.type, configuredAgent.name);
+      if (events.length > 0) {
+        void registration.postEvents(events);
+      }
+    };
+    const flush = (chunk: string) => {
+      buffer += chunk;
+      let newlineIndex = buffer.indexOf("\n");
+      while (newlineIndex !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (line) flushLine(line);
+        newlineIndex = buffer.indexOf("\n");
+      }
+    };
+
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      process.stdout.write(chunk);
+      flush(chunk);
+    });
+    child.once("error", async (error) => {
+      await registration.cleanup(1).catch(() => undefined);
+      reject(error);
+    });
+    child.once("exit", async (code, signal) => {
+      if (buffer.trim()) flushLine(buffer.trim());
+      const resolvedCode = signal ? 1 : (code ?? 0);
+      await registration.cleanup(resolvedCode);
+      resolve(resolvedCode);
+    });
+  });
+}
+
+async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<number> {
   // Leader runs in the host's real HOME — same Claude Code experience the
   // user gets day-to-day (statusline, plugins, marketplaces, hooks, skills,
   // settings, theme, login session). No isolation, no carryover dance.
@@ -758,18 +1004,11 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   const agentClaudeMd = resolveAgentClaudeMd(flow, configuredAgent);
   const mergedInstructions = mergeClaudeMd(flow.flow.claudeMd, agentClaudeMd, configuredAgent);
   const flowCwd = resolveFlowCwd(flow);
-  const registration = await reportCliRunStart(flow, configuredAgent.type);
-  const realHome = os.homedir();
-  const transcriptTail = configuredAgent.type === "claude-code"
-    ? await createTranscriptTail(registration.runId, realHome, flowCwd, getServerOrigin())
-    : undefined;
-  const finalizeRun = async (exitCode: number) => {
-    if (transcriptTail) {
-      await transcriptTail.close();
-      await transcriptTail.flushBundle();
-    }
-    await registration.cleanup(exitCode);
-  };
+  const userPrompt = await readHeadlessPrompt(options);
+  if (options.headless && !userPrompt) {
+    throw new Error("loom: --headless requires --prompt, --prompt-file, or piped stdin");
+  }
+  const registration = await reportCliRunStart(flow, configuredAgent.type, options, userPrompt ?? "");
   const { command, args } = buildSpawnArgs(configuredAgent);
   const delegationPrompt = buildDelegationPrompt(flow.flow.orchestrator, "leader");
   const finalInstructions = delegationPrompt
@@ -780,12 +1019,37 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
   if (configuredAgent.type === "claude-code" && finalInstructions.trim().length > 0) {
     args.push("--append-system-prompt", finalInstructions);
   }
-  const litellmEnv = configuredAgent.type === "claude-code" && configuredAgent.model?.startsWith("chatgpt/")
+  const litellmEnv: Record<string, string> = configuredAgent.type === "claude-code" && configuredAgent.model?.startsWith("chatgpt/")
     ? {
         ANTHROPIC_BASE_URL: "http://127.0.0.1:4000",
         ANTHROPIC_AUTH_TOKEN: "dummy-token",
       }
     : {};
+
+  if (options.headless) {
+    return await runHeadlessAgent(
+      flow,
+      configuredAgent,
+      finalInstructions,
+      userPrompt ?? "",
+      flowCwd,
+      registration,
+      getServerOrigin(options.serverOrigin),
+      litellmEnv,
+    );
+  }
+
+  const realHome = os.homedir();
+  const transcriptTail = configuredAgent.type === "claude-code"
+    ? await createTranscriptTail(registration.runId, realHome, flowCwd, getServerOrigin(options.serverOrigin))
+    : undefined;
+  const finalizeRun = async (exitCode: number) => {
+    if (transcriptTail) {
+      await transcriptTail.close();
+      await transcriptTail.flushBundle();
+    }
+    await registration.cleanup(exitCode);
+  };
 
   // Hand the TTY back to the child cleanly: readline may have left stdin
   // in raw mode with bracketed-paste/mouse tracking off, which breaks
@@ -809,7 +1073,7 @@ async function launchAgent(flow: LoadedCliFlow): Promise<number> {
       LOOM_AGENT: agent.name,
       LOOM_AGENT_TYPE: agent.type,
       LOOM_RUN_ID: registration.runId,
-      LOOM_SERVER_ORIGIN: getServerOrigin(),
+      LOOM_SERVER_ORIGIN: getServerOrigin(options.serverOrigin),
       LOOM_PARENT_AGENT: "leader",
       LOOM_PARENT_DEPTH: "0",
       LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
@@ -903,12 +1167,15 @@ async function promptForSelection(flows: LoadedCliFlow[]): Promise<SelectionActi
 async function main(): Promise<void> {
   if (handleFlags()) return;
   const cwd = process.cwd();
-  const explicitFlowPath = getExplicitFlowPath();
-  if (explicitFlowPath) {
-    const flow = await loadCliFlow(explicitFlowPath, cwd);
-    const exitCode = await launchAgent(flow);
+  const options = parseCliOptions();
+  if (options.flowPath) {
+    const flow = await loadCliFlow(options.flowPath, cwd);
+    const exitCode = await launchAgent(flow, options);
     process.exitCode = exitCode;
     return;
+  }
+  if (options.headless) {
+    throw new Error("loom: --headless requires --flow <path>");
   }
 
   const flowPaths = await listFlowPaths(cwd);
@@ -935,7 +1202,7 @@ async function main(): Promise<void> {
     console.log("Edit the flow YAML then run 'loom' again to launch it.");
     return;
   }
-  const exitCode = await launchAgent(selection.flow);
+  const exitCode = await launchAgent(selection.flow, options);
   process.exitCode = exitCode;
 }
 
