@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@loom/core": "workspace:^",
-    "@loom/nodes": "workspace:^",
     "yaml": "^2.8.3"
   }
 }

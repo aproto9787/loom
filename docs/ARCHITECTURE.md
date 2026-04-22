@@ -71,7 +71,7 @@ Important current schema facts:
 - `RoleDefinition` currently defines `name`, `type`, `model`, `system`, `effort`, `description`, and `mcps`.
 - `RoleDefinition` does not currently define `hooks`, `skills`, `isolated`, or `capabilities`.
 
-### `packages/nodes`
+### `packages/core`
 
 Currently provides flow validation helpers, not a DAG node runtime. `validateFlow()` checks required flow/agent fields and recursively validates the agent tree.
 

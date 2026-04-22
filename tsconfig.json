@@ -8,9 +8,6 @@
       "path": "./packages/adapters"
     },
     {
-      "path": "./packages/nodes"
-    },
-    {
       "path": "./packages/cli"
     },
     {

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { flowDefinitionSchema, type FlowDefinition } from "@loom/core";
-import { validateFlow } from "@loom/nodes";
+import { validateFlow } from "@loom/core";
 import { defaultWorkspaceRoot } from "./paths.js";
 
 export interface LoadFlowOptions {

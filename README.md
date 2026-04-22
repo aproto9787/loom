@@ -56,7 +56,6 @@ loom/
 ├── packages/
 │   ├── core/         Zod schemas and shared run/flow types
 │   ├── cli/          loom and loom-subagent binaries
-│   ├── nodes/        Flow validation helpers
 │   └── runtime/      Shared flow loading, resources, prompts, and hooks
 ├── examples/         Flow YAML files shown by the server/studio
 ├── roles/            Reusable role YAML definitions

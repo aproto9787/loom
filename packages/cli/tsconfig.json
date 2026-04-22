@@ -15,9 +15,6 @@
       "@loom/adapters": [
         "../../packages/adapters/src/index.ts"
       ],
-      "@loom/nodes": [
-        "../../packages/nodes/src/index.ts"
-      ],
       "@loom/runtime": [
         "../../packages/runtime/src/index.ts"
       ]
@@ -32,9 +29,6 @@
     },
     {
       "path": "../../packages/adapters"
-    },
-    {
-      "path": "../../packages/nodes"
     },
     {
       "path": "../../packages/runtime"
