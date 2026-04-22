@@ -51,7 +51,7 @@ Not represented in the current schema/runtime:
 ```text
 loom/
 ├── apps/
-│   ├── server/       Fastify API, flow validation, legacy server runner, traces
+│   ├── server/       Fastify API, flow validation, local CLI runner and traces
 │   └── studio/       React 19 + Vite studio
 ├── packages/
 │   ├── core/         Zod schemas and shared run/flow types
@@ -289,9 +289,9 @@ The CLI/`loom-subagent` path is now the primary local execution path.
 
 This is the path new recursive child-agent work should target.
 
-### Server runner path
+### Local server run path
 
-`apps/server/src/runner-executor.ts` still powers `POST /runs` and `POST /runs/stream`, including the Studio save→run path. That file is marked deprecated in code and should not receive new runtime behavior except while the Studio remains wired to it.
+`apps/server/src/local-cli-runner.ts` still powers `POST /runs` and `POST /runs/stream`, including the Studio save→run path. That file is marked deprecated in code and should not receive new runtime behavior except while the Studio remains wired to it.
 
 ## Resource model
 
