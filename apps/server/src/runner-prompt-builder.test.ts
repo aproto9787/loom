@@ -42,8 +42,9 @@ test("buildAgentPrompt includes resource context and delegation instructions", (
   assert.match(prompt, /delegation: - to: none/);
   assert.match(prompt, /Delegation rules for this agent:\n- to: child\n  when: When code review is needed\./);
   assert.match(prompt, /description: Reviews code changes\./);
-  assert.match(prompt, /First analyze the task, then delegate to the most appropriate child based on the delegation rules/);
-  assert.match(prompt, /DELEGATE <child-agent-name>:/);
+  assert.match(prompt, /Use this child-agent metadata as planning guidance only\./);
+  assert.match(prompt, /Actual child-agent launch commands are injected by the CLI Subagent Delegation Protocol\./);
+  assert.match(prompt, /Do not emit DELEGATE lines or JSON delegation directives\./);
 });
 
 test("buildConfiguredAgent adds parallel child guidance when parallel is enabled", () => {
@@ -59,7 +60,7 @@ test("buildConfiguredAgent adds parallel child guidance when parallel is enabled
 
   const configured = buildConfiguredAgent(agent, flow, "/repo", resources);
   assert.ok(configured.system);
-  assert.match(configured.system, /When the task can be split across siblings/);
+  assert.match(configured.system, /Parallel hint: if this task should be split, use the CLI-injected loom-subagent commands for:/);
   assert.match(configured.system, /child-a, child-b/);
 });
 

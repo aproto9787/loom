@@ -7,6 +7,7 @@ import { SERVER_ORIGIN } from "./sse-run.js";
 export default function App() {
   const activeTab = useRunStore((s) => s.activeTab);
   const flowPath = useRunStore((s) => s.flowPath);
+  const availableFlows = useRunStore((s) => s.availableFlows);
   const setAvailableFlows = useRunStore((s) => s.setAvailableFlows);
   const setLoadedFlow = useRunStore((s) => s.setLoadedFlow);
   const setLoadError = useRunStore((s) => s.setLoadError);
@@ -35,6 +36,10 @@ export default function App() {
   }, [setAvailableFlows, setLoadError]);
 
   useEffect(() => {
+    if (availableFlows.length === 0 || !availableFlows.includes(flowPath)) {
+      return;
+    }
+
     let active = true;
     setLoadedFlow(undefined);
     fetch(`${SERVER_ORIGIN}/flows/get?path=${encodeURIComponent(flowPath)}`)
@@ -54,7 +59,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [flowPath, setLoadedFlow, setLoadError]);
+  }, [availableFlows, flowPath, setLoadedFlow, setLoadError]);
 
   return (
     <div className="flex flex-col min-h-screen bg-white">

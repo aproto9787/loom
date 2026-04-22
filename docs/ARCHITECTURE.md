@@ -17,7 +17,7 @@ This document describes Loom as implemented in the current codebase. It avoids e
 ┌──────────────────────────────▼───────────────────────────────┐
 │ apps/server                                                   │
 │ - Fastify API on PORT=8787 by default                         │
-│ - Validates YAML flows with @loom/core + @loom/nodes           │
+│ - Validates YAML flows with @loom/core                         │
 │ - Stores run records/events in .loom/traces.db                 │
 │ - Provides CRUD for examples/, roles/, hooks/, skills/         │
 │ - Spawns the built `loom` CLI for local runs           │

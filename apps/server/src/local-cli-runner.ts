@@ -15,6 +15,26 @@ export interface LocalCliRunInput {
 }
 
 export function startLocalCliRun(input: LocalCliRunInput): { runId: string; child: ChildProcess } {
+  if (process.env.LOOM_MOCK === "1") {
+    let settled = false;
+    const complete = (exitCode: number) => {
+      if (settled) return;
+      settled = true;
+      activeLocalCliRuns.delete(input.runId);
+      input.onExit?.(exitCode);
+    };
+    const timer = setTimeout(() => complete(0), 10);
+    const child = {
+      kill: () => {
+        clearTimeout(timer);
+        complete(1);
+        return true;
+      },
+    } as unknown as ChildProcess;
+    activeLocalCliRuns.set(input.runId, child);
+    return { runId: input.runId, child };
+  }
+
   const cliEntry = path.join(input.workspaceRoot, "packages", "cli", "dist", "index.js");
   const child = spawn(
     process.execPath,

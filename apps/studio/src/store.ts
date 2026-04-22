@@ -237,8 +237,10 @@ interface StudioState {
   deleteSkill: (origin: string, name: string) => Promise<void>;
 }
 
+const DEFAULT_FLOW_PATH = "examples/leader-conductor.yaml";
+
 export const useRunStore = create<StudioState>((set) => ({
-  flowPath: "examples/simple.yaml",
+  flowPath: DEFAULT_FLOW_PATH,
   availableFlows: [],
   isDirty: false,
   selectedAgentPath: [],
@@ -273,7 +275,27 @@ export const useRunStore = create<StudioState>((set) => ({
       loadError: undefined,
     }),
 
-  setAvailableFlows: (flows) => set({ availableFlows: flows }),
+  setAvailableFlows: (flows) =>
+    set((state) => {
+      const nextFlowPath = flows.includes(state.flowPath)
+        ? state.flowPath
+        : (flows[0] ?? DEFAULT_FLOW_PATH);
+
+      if (nextFlowPath === state.flowPath) {
+        return { availableFlows: flows };
+      }
+
+      return {
+        availableFlows: flows,
+        flowPath: nextFlowPath,
+        flowDraft: undefined,
+        loadedFlow: undefined,
+        isDirty: false,
+        selectedAgentPath: [],
+        saveError: undefined,
+        loadError: undefined,
+      };
+    }),
 
   setLoadedFlow: (flow) =>
     set({
@@ -510,7 +532,7 @@ export const useRunStore = create<StudioState>((set) => ({
         availableFlows: nextFlows,
         ...(needSwitch
           ? {
-              flowPath: nextFlows[0] ?? "examples/simple.yaml",
+              flowPath: nextFlows[0] ?? DEFAULT_FLOW_PATH,
               flowDraft: undefined,
               loadedFlow: undefined,
               isDirty: false,

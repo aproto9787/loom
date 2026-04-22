@@ -5,6 +5,9 @@ import type { FlowDefinition } from "@loom/core";
 import { buildServer } from "./index.js";
 import { markStaleRuns, resetTraceStore } from "./trace-store.js";
 
+const DEFAULT_FLOW_PATH = "examples/leader-conductor.yaml";
+const DEFAULT_FLOW_NAME = "Leader-Conductor-Workers";
+
 function loomTest(
   name: string,
   fn: (t: TestContext) => Promise<void> | void,
@@ -51,7 +54,109 @@ function parseSseBody(body: string): Array<{ event: string; data: unknown }> {
     });
 }
 
-loomTest("GET /flows lists only recursive orchestration examples", async (t) => {
+function parseSseChunk(chunk: string): { event: string; data: unknown } | null {
+  const trimmed = chunk.trim();
+  if (!trimmed || trimmed.startsWith(":")) {
+    return null;
+  }
+
+  const lines = trimmed.split("\n");
+  const event = lines
+    .find((line) => line.startsWith("event: "))
+    ?.slice("event: ".length);
+  const data = lines
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => line.slice("data: ".length))
+    .join("\n");
+
+  assert.ok(event);
+  return {
+    event,
+    data: JSON.parse(data) as unknown,
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForRunDetail(
+  app: ReturnType<typeof buildServer>,
+  runId: string,
+  predicate: (body: Record<string, unknown>) => boolean,
+  timeoutMs = 2000,
+): Promise<Record<string, unknown>> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const response = await app.inject({
+      method: "GET",
+      url: `/runs/${runId}`,
+    });
+
+    if (response.statusCode === 200) {
+      const body = response.json() as Record<string, unknown>;
+      if (predicate(body)) {
+        return body;
+      }
+    }
+
+    await sleep(25);
+  }
+
+  throw new Error(`timed out waiting for run ${runId}`);
+}
+
+async function readRunStreamEvents(
+  origin: string,
+  runId: string,
+  expectedCount: number,
+): Promise<{ contentType: string; events: Array<{ event: string; data: unknown }> }> {
+  const response = await fetch(`${origin}/runs/${runId}/stream`);
+  assert.equal(response.status, 200);
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const reader = response.body?.getReader();
+  assert.ok(reader);
+
+  const decoder = new TextDecoder();
+  const events: Array<{ event: string; data: unknown }> = [];
+  let buffer = "";
+
+  while (events.length < expectedCount) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+
+    while (true) {
+      const separatorIndex = buffer.indexOf("\n\n");
+      if (separatorIndex === -1) {
+        break;
+      }
+
+      const chunk = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      const parsed = parseSseChunk(chunk);
+      if (!parsed) {
+        continue;
+      }
+
+      events.push(parsed);
+      if (events.length >= expectedCount) {
+        await reader.cancel();
+        return { contentType, events };
+      }
+    }
+  }
+
+  await reader.cancel();
+  throw new Error(`timed out waiting for ${expectedCount} SSE events from ${runId}`);
+}
+
+loomTest("GET /flows lists the current example flow", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
@@ -61,180 +166,60 @@ loomTest("GET /flows lists only recursive orchestration examples", async (t) => 
 
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), {
-    flows: [
-      "examples/multi-repo.yaml",
-      "examples/nested.yaml",
-      "examples/simple.yaml",
-    ],
+    flows: [DEFAULT_FLOW_PATH],
   });
 });
 
-loomTest("GET /flows/get parses a nested recursive flow definition", async (t) => {
+loomTest("GET /flows/get loads the leader-conductor flow", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
     method: "GET",
     url: "/flows/get",
-    query: { path: "examples/nested.yaml" },
+    query: { path: DEFAULT_FLOW_PATH },
   });
 
   assert.equal(response.statusCode, 200);
   const body = response.json();
-  assert.equal(body.flowPath, "examples/nested.yaml");
-  assert.equal(body.flow.name, "Nested Agent Orchestration");
-  assert.equal(body.flow.repo, "..");
-  assert.equal(body.flow.orchestrator.name, "lead");
-  assert.equal(body.flow.orchestrator.agents[0].name, "backend-lead");
-  assert.equal(body.flow.orchestrator.agents[0].agents[0].name, "database-specialist");
-  assert.equal(body.flow.orchestrator.agents[1].name, "qa");
+  assert.equal(body.flowPath, DEFAULT_FLOW_PATH);
+  assert.equal(body.flow.name, DEFAULT_FLOW_NAME);
+  assert.equal(body.flow.repo, ".");
+  assert.equal(body.flow.orchestrator.name, "leader");
+  assert.equal(body.flow.orchestrator.agents[0].name, "conductor");
+  assert.equal(body.flow.orchestrator.agents[0].type, "codex");
 });
 
-loomTest("POST /runs returns a mock RunResponse for the new flow format", async (t) => {
+loomTest("POST /runs accepts the current flow and persists the mocked local CLI run", async (t) => {
   const app = createTestApp(t);
+  const userPrompt = "Inspect the local-only runtime path";
 
   const response = await app.inject({
     method: "POST",
     url: "/runs",
     payload: {
-      flowPath: "examples/simple.yaml",
-      userPrompt: "Plan the recursive orchestration refactor",
+      flowPath: DEFAULT_FLOW_PATH,
+      userPrompt,
     },
   });
 
-  assert.equal(response.statusCode, 200);
+  assert.equal(response.statusCode, 202);
   const body = response.json();
-  assert.equal(body.flowName, "Simple Agent Orchestration");
+  assert.equal(body.flowName, DEFAULT_FLOW_NAME);
+  assert.equal(body.status, "running");
+  assert.equal(body.source, "server");
   assert.equal(typeof body.runId, "string");
-  assert.equal(
-    body.output,
-    "Mock Claude Code response from lead: Plan the recursive orchestration refactor",
+
+  const detailBody = await waitForRunDetail(
+    app,
+    body.runId as string,
+    (run) => run.status === "done",
   );
-  assert.deepEqual(body.agentResults, [
-    {
-      agentName: "lead",
-      output: "Mock Claude Code response from lead: Plan the recursive orchestration refactor",
-      startedAt: body.agentResults[0].startedAt,
-      finishedAt: body.agentResults[0].finishedAt,
-    },
-  ]);
-  assert.equal(typeof body.agentResults[0].startedAt, "string");
-  assert.equal(typeof body.agentResults[0].finishedAt, "string");
-});
-
-loomTest("POST /runs/stream emits SSE lifecycle events for the orchestrator", async (t) => {
-  const app = createTestApp(t);
-
-  const response = await app.inject({
-    method: "POST",
-    url: "/runs/stream",
-    payload: {
-      flowPath: "examples/simple.yaml",
-      userPrompt: "Stream the lead agent response",
-    },
-  });
-
-  assert.equal(response.statusCode, 200);
-  assert.match(String(response.headers["content-type"]), /^text\/event-stream/);
-
-  const events = parseSseBody(response.body);
-  const eventTypes = events.map((event) => event.event);
-
-  assert.deepEqual(eventTypes[0], "run_start");
-  assert.ok(eventTypes.includes("agent_start"));
-  assert.ok(eventTypes.includes("agent_token"));
-  assert.ok(eventTypes.includes("agent_complete"));
-  assert.deepEqual(eventTypes.at(-1), "run_complete");
-
-  const runStart = events[0]?.data as { runId: string; flowName: string };
-  assert.equal(runStart.flowName, "Simple Agent Orchestration");
-  assert.equal(typeof runStart.runId, "string");
-
-  const agentStart = events.find((event) => event.event === "agent_start")?.data as {
-    agentName: string;
-    agentType: string;
-  };
-  assert.deepEqual(agentStart, {
-    agentName: "lead",
-    agentType: "claude-code",
-  });
-
-  const agentComplete = events.find((event) => event.event === "agent_complete")?.data as {
-    agentName: string;
-    output: string;
-  };
-  assert.deepEqual(agentComplete, {
-    agentName: "lead",
-    output: "Mock Claude Code response from lead: Stream the lead agent response",
-  });
-
-  const runComplete = events.at(-1)?.data as { output: string };
-  assert.equal(runComplete.output, "Mock Claude Code response from lead: Stream the lead agent response");
-});
-
-loomTest("GET /runs and GET /runs/:id return persisted runs from streamed executions", async (t) => {
-  const app = createTestApp(t);
-
-  const streamResponse = await app.inject({
-    method: "POST",
-    url: "/runs/stream",
-    payload: {
-      flowPath: "examples/multi-repo.yaml",
-      userPrompt: "Coordinate work inside one repo",
-    },
-  });
-
-  assert.equal(streamResponse.statusCode, 200);
-  const streamEvents = parseSseBody(streamResponse.body);
-  const runStart = streamEvents.find((event) => event.event === "run_start")?.data as {
-    runId: string;
-    flowName: string;
-  };
-
-  const listResponse = await app.inject({
-    method: "GET",
-    url: "/runs?page=1&pageSize=10",
-  });
-
-  assert.equal(listResponse.statusCode, 200);
-  const listBody = listResponse.json();
-  assert.equal(listBody.page, 1);
-  assert.equal(listBody.pageSize, 10);
-  assert.equal(listBody.runs.length, 1);
-  assert.deepEqual(listBody.runs[0], {
-    runId: runStart.runId,
-    flowName: "Single Repo Agent Orchestration",
-    status: "success",
-    createdAt: listBody.runs[0].createdAt,
-    agentCount: 1,
-  });
-  assert.equal(typeof listBody.runs[0].createdAt, "string");
-
-  const detailResponse = await app.inject({
-    method: "GET",
-    url: `/runs/${runStart.runId}`,
-  });
-
-  assert.equal(detailResponse.statusCode, 200);
-  const detailBody = detailResponse.json();
-  assert.equal(detailBody.runId, runStart.runId);
-  assert.equal(detailBody.flowName, "Single Repo Agent Orchestration");
-  assert.equal(detailBody.flowPath, "examples/multi-repo.yaml");
-  assert.equal(detailBody.userPrompt, "Coordinate work inside one repo");
-  assert.equal(
-    detailBody.output,
-    "Mock Claude Code response from coordinator: Coordinate work inside one repo",
-  );
-  assert.equal(detailBody.agentResults.length, 1);
-  assert.deepEqual(detailBody.agentResults[0], {
-    agentName: "coordinator",
-    output: "Mock Claude Code response from coordinator: Coordinate work inside one repo",
-    startedAt: detailBody.agentResults[0].startedAt,
-    finishedAt: detailBody.agentResults[0].finishedAt,
-    createdAt: detailBody.agentResults[0].createdAt,
-  });
-  assert.equal(typeof detailBody.agentResults[0].startedAt, "string");
-  assert.equal(typeof detailBody.agentResults[0].finishedAt, "string");
-  assert.equal(typeof detailBody.agentResults[0].createdAt, "string");
+  assert.equal(detailBody.flowName, DEFAULT_FLOW_NAME);
+  assert.equal(detailBody.flowPath, DEFAULT_FLOW_PATH);
+  assert.equal(detailBody.userPrompt, userPrompt);
+  assert.equal(detailBody.status, "done");
+  assert.equal(detailBody.exitCode, 0);
+  assert.equal(detailBody.source, "server");
 });
 
 loomTest("GET /runs/:id returns 404 for a missing run", async (t) => {
@@ -249,19 +234,20 @@ loomTest("GET /runs/:id returns 404 for a missing run", async (t) => {
   assert.deepEqual(response.json(), { error: { message: "run not found" } });
 });
 
-loomTest("runs register, events, stale transitions, and per-run SSE work together", async (t) => {
+loomTest("runs register, batched events, stale transitions, and per-run SSE work together", async (t) => {
   const app = createTestApp(t);
   const runId = "run-events-smoke";
   const now = Date.now();
   const staleStart = new Date(now - (11 * 60 * 1000)).toISOString();
+  const origin = await app.listen({ port: 0, host: "127.0.0.1" });
 
   const registerResponse = await app.inject({
     method: "POST",
     url: "/runs/register",
     payload: {
       runId,
-      flowPath: "examples/simple.yaml",
-      flowName: "Simple Agent Orchestration",
+      flowPath: DEFAULT_FLOW_PATH,
+      flowName: DEFAULT_FLOW_NAME,
       agentType: "claude-code",
       startTime: new Date(now).toISOString(),
       source: "cli",
@@ -272,12 +258,28 @@ loomTest("runs register, events, stale transitions, and per-run SSE work togethe
   assert.equal(registerResponse.statusCode, 201);
   assert.deepEqual(registerResponse.json(), { runId });
 
+  const secondRegisterResponse = await app.inject({
+    method: "POST",
+    url: "/runs/register",
+    payload: {
+      runId,
+      flowPath: DEFAULT_FLOW_PATH,
+      flowName: DEFAULT_FLOW_NAME,
+      agentType: "claude-code",
+      startTime: new Date(now).toISOString(),
+      source: "cli",
+      cwd: "/tmp/workspace",
+    },
+  });
+  assert.equal(secondRegisterResponse.statusCode, 200);
+  assert.deepEqual(secondRegisterResponse.json(), { runId });
+
   const staleRegisterResponse = await app.inject({
     method: "POST",
     url: "/runs/register",
     payload: {
       runId: "stale-run",
-      flowPath: "examples/simple.yaml",
+      flowPath: DEFAULT_FLOW_PATH,
       flowName: "Stale Flow",
       agentType: "claude-code",
       startTime: staleStart,
@@ -286,37 +288,33 @@ loomTest("runs register, events, stale transitions, and per-run SSE work togethe
   });
   assert.equal(staleRegisterResponse.statusCode, 201);
 
-  const ssePromise = app.inject({
-    method: "GET",
-    url: `/runs/${runId}/stream`,
-  });
+  const ssePromise = readRunStreamEvents(origin, runId, 2);
 
-  await new Promise((resolve) => setTimeout(resolve, 25));
+  await sleep(25);
 
-  const postSecondResponse = await app.inject({
+  const eventsPostResponse = await app.inject({
     method: "POST",
     url: `/runs/${runId}/events`,
     payload: {
-      ts: now + 2000,
-      type: "assistant",
-      summary: "assistant reply",
-      agentName: "lead",
-      raw: { text: "world" },
+      events: [
+        {
+          ts: now + 2000,
+          type: "assistant",
+          summary: "assistant reply",
+          agentName: "leader",
+          raw: { text: "world" },
+        },
+        {
+          ts: now + 1000,
+          type: "user",
+          summary: "user prompt",
+          raw: { text: "hello" },
+        },
+      ],
     },
   });
-  assert.equal(postSecondResponse.statusCode, 201);
-
-  const postFirstResponse = await app.inject({
-    method: "POST",
-    url: `/runs/${runId}/events`,
-    payload: {
-      ts: now + 1000,
-      type: "user",
-      summary: "user prompt",
-      raw: { text: "hello" },
-    },
-  });
-  assert.equal(postFirstResponse.statusCode, 201);
+  assert.equal(eventsPostResponse.statusCode, 201);
+  assert.deepEqual(eventsPostResponse.json(), { runId, count: 2 });
 
   const eventsResponse = await app.inject({
     method: "GET",
@@ -347,14 +345,14 @@ loomTest("runs register, events, stale transitions, and per-run SSE work togethe
   assert.equal(detailResponse.statusCode, 200);
   const detailBody = detailResponse.json();
   assert.equal(detailBody.cwd, "/tmp/workspace");
+  assert.equal(detailBody.flowPath, DEFAULT_FLOW_PATH);
 
   const sseResponse = await Promise.race([
     ssePromise,
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out waiting for SSE stream")), 1000)),
   ]);
-  assert.equal(sseResponse.statusCode, 200);
-  assert.match(String(sseResponse.headers["content-type"]), /^text\/event-stream/);
-  const sseEvents = parseSseBody(sseResponse.body);
+  assert.match(sseResponse.contentType, /^text\/event-stream/);
+  const sseEvents = sseResponse.events;
   assert.equal(sseEvents.length, 2);
   assert.deepEqual(sseEvents.map((event) => event.event), ["run_event", "run_event"]);
   assert.deepEqual((sseEvents[0]?.data as { ts: number }).ts, now + 2000);
@@ -375,7 +373,7 @@ loomTest("POST /runs/:id/abort returns 404 when the run does not exist", async (
   assert.deepEqual(response.json(), { error: { message: "run not found" } });
 });
 
-loomTest("PUT /flows/save round-trips a recursive flow through YAML", async (t) => {
+loomTest("PUT /flows/save round-trips the current recursive flow through YAML", async (t) => {
   const app = createTestApp(t);
   const flowPath = "examples/_roundtrip.yaml";
 
@@ -386,7 +384,7 @@ loomTest("PUT /flows/save round-trips a recursive flow through YAML", async (t) 
   const originalResponse = await app.inject({
     method: "GET",
     url: "/flows/get",
-    query: { path: "examples/simple.yaml" },
+    query: { path: DEFAULT_FLOW_PATH },
   });
 
   assert.equal(originalResponse.statusCode, 200);
@@ -443,9 +441,9 @@ loomTest("PUT /flows/save rejects invalid recursive flow bodies and bad paths", 
 
   const validFlow: FlowDefinition = {
     name: "Valid Saved Flow",
-    repo: "..",
+    repo: ".",
     orchestrator: {
-      name: "lead",
+      name: "leader",
       type: "claude-code",
     },
   };
