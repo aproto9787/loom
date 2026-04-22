@@ -7,7 +7,6 @@
   "types": "dist/index.d.ts",
   "bin": {
     "loom": "dist/index.js",
-    "loom-conductor": "dist/conductor-launcher.js",
     "loom-subagent": "dist/subagent-launcher.js"
   },
   "exports": {
@@ -21,9 +20,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@loom/adapters": "workspace:^",
     "@loom/core": "workspace:^",
-    "@loom/nodes": "workspace:^",
     "@loom/runtime": "workspace:^",
     "yaml": "^2.8.3"
   }
