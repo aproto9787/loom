@@ -8,7 +8,6 @@ import YAML from "yaml";
 import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@loom/core";
 import type { PersistedRunEvent } from "./trace-store.js";
 import { validateFlow } from "@loom/nodes";
-import { abortRun } from "./runner.js";
 import { stringifyFlow } from "./flow-writer.js";
 import { abortLocalCliRun, startLocalCliRun } from "./local-cli-runner.js";
 import {
@@ -385,7 +384,7 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
 
-    const aborted = abortLocalCliRun(parsed.data.id) || abortRun(parsed.data.id);
+    const aborted = abortLocalCliRun(parsed.data.id);
     if (!aborted) {
       return reply.code(404).send({ error: { message: "run not found" } });
     }

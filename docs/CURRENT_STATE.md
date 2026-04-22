@@ -68,7 +68,7 @@ Do not document these as implemented unless the code changes first:
 
 New subagent behavior still belongs in `packages/cli/src/subagent-launcher.ts`.
 
-Shared flow/resource/prompt/hook helpers now live in `packages/runtime`. Server/studio run routes now go through the local CLI path. `apps/server/src/runner-executor.ts` remains in the tree as a legacy compatibility path, not as the place for new runtime behavior.
+Shared flow/resource/prompt/hook helpers now live in `packages/runtime`. Server/studio run routes now go through the local CLI path. `apps/server/src/local-cli-runner.ts` remains in the tree as a legacy compatibility path, not as the place for new runtime behavior.
 
 ## Safe wording for docs
 

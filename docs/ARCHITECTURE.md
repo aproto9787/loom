@@ -190,7 +190,7 @@ This is the newer path.
 7. The server stores those events through `/runs/:id/events`.
 8. Studio can follow `/runs/:id/stream` for persisted event updates.
 
-### 2. Server runner path
+### 2. Local server run path
 
 This path remains active for server `POST /runs`, `POST /runs/stream`, and the current Studio save→run path.
 
