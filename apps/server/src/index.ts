@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -7,8 +8,9 @@ import YAML from "yaml";
 import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@loom/core";
 import type { PersistedRunEvent } from "./trace-store.js";
 import { validateFlow } from "@loom/nodes";
-import { abortRun, runFlow, streamRunFlow } from "./runner.js";
+import { abortRun } from "./runner.js";
 import { stringifyFlow } from "./flow-writer.js";
+import { abortLocalCliRun, startLocalCliRun } from "./local-cli-runner.js";
 import {
   appendRunEvent,
   createRunRecord,
@@ -72,6 +74,7 @@ const registerRunSchema = z.object({
   startTime: z.string().datetime(),
   source: z.literal("cli"),
   cwd: z.string().optional(),
+  userPrompt: z.string().optional(),
 });
 
 const updateRunStatusSchema = z.object({
@@ -135,6 +138,29 @@ function toRunEvent(runId: string, payload: z.infer<typeof runEventRequestSchema
 
 function ensureStaleRunsMarked(): void {
   markStaleRuns();
+}
+
+function getServerOriginFromRequest(request: { headers: { origin?: string | string[] } }): string {
+  const originHeader = request.headers.origin;
+  const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
+  if (typeof origin === "string" && origin.trim()) {
+    return origin;
+  }
+  return `http://localhost:${port}`;
+}
+
+async function loadFlowForRun(flowPath: string): Promise<z.infer<typeof flowSchema>> {
+  const absolutePath = path.resolve(workspaceRoot, flowPath);
+  const raw = await readFile(absolutePath, "utf8");
+  const parsedFlow = flowSchema.safeParse(YAML.parse(raw));
+  if (!parsedFlow.success) {
+    throw parsedFlow.error;
+  }
+  const validationErrors = validateFlow(parsedFlow.data);
+  if (validationErrors.length > 0) {
+    throw new Error(validationErrors.join("\n"));
+  }
+  return parsedFlow.data;
 }
 
 export function buildServer() {
@@ -359,7 +385,7 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
 
-    const aborted = abortRun(parsed.data.id);
+    const aborted = abortLocalCliRun(parsed.data.id) || abortRun(parsed.data.id);
     if (!aborted) {
       return reply.code(404).send({ error: { message: "run not found" } });
     }
@@ -373,8 +399,57 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
 
-    const result = await runFlow(parsed.data.flowPath, parsed.data.userPrompt);
-    return reply.code(200).send(result);
+    let flow;
+    try {
+      flow = await loadFlowForRun(parsed.data.flowPath);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ error: flattenValidationError(error) });
+      }
+      return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } });
+    }
+
+    const runId = randomUUID();
+    const startTime = new Date().toISOString();
+    const flowCwd = flow.repo ? (path.isAbsolute(flow.repo) ? flow.repo : path.resolve(workspaceRoot, flow.repo)) : workspaceRoot;
+    createRunRecord({
+      runId,
+      flowName: flow.name,
+      flowPath: parsed.data.flowPath,
+      userPrompt: parsed.data.userPrompt,
+      output: "",
+      status: "running",
+      source: "server",
+      startedAt: startTime,
+      cwd: flowCwd,
+      agentType: flow.orchestrator.type,
+      agentResults: [{ agentName: flow.orchestrator.name, output: "", startedAt: startTime }],
+    });
+
+    const serverOrigin = getServerOriginFromRequest(request);
+    startLocalCliRun({
+      runId,
+      flowPath: parsed.data.flowPath,
+      userPrompt: parsed.data.userPrompt,
+      workspaceRoot,
+      serverOrigin,
+      onStdout: (chunk) => request.log.info({ runId, chunk }, "loom cli stdout"),
+      onStderr: (chunk) => request.log.warn({ runId, chunk }, "loom cli stderr"),
+      onExit: (exitCode) => {
+        updateRunRecord(runId, {
+          status: exitCode === 0 ? "done" : "error",
+          exitCode,
+          endedAt: new Date().toISOString(),
+        });
+      },
+    });
+
+    return reply.code(202).send({
+      runId,
+      flowName: flow.name,
+      status: "running",
+      source: "server",
+    });
   });
 
   app.post("/runs/register", async (request, reply) => {
@@ -383,11 +458,14 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
 
+    if (getRun(parsed.data.runId)) {
+      return reply.code(200).send({ runId: parsed.data.runId });
+    }
     createRunRecord({
       runId: parsed.data.runId,
       flowName: parsed.data.flowName,
       flowPath: parsed.data.flowPath,
-      userPrompt: "",
+      userPrompt: parsed.data.userPrompt ?? "",
       output: "",
       status: "running",
       source: parsed.data.source,
@@ -517,30 +595,91 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
 
+    let flow;
+    try {
+      flow = await loadFlowForRun(parsed.data.flowPath);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ error: flattenValidationError(error) });
+      }
+      return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } });
+    }
+
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
     });
-
+    let streamClosed = false;
     const write = (eventType: string, data: unknown) => {
-      reply.raw.write(`event: ${eventType}\n`);
-      reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+      if (streamClosed) return;
+      reply.raw.write(`event: ${eventType}
+`);
+      reply.raw.write(`data: ${JSON.stringify(data)}
+
+`);
     };
 
-    try {
-      for await (const event of streamRunFlow(parsed.data.flowPath, parsed.data.userPrompt)) {
-        const { type, ...payload } = event;
-        write(type, payload);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      write("run_error", { error: message });
-    } finally {
-      reply.raw.end();
-    }
+    const runId = randomUUID();
+    const startTime = new Date().toISOString();
+    const flowCwd = flow.repo ? (path.isAbsolute(flow.repo) ? flow.repo : path.resolve(workspaceRoot, flow.repo)) : workspaceRoot;
+    createRunRecord({
+      runId,
+      flowName: flow.name,
+      flowPath: parsed.data.flowPath,
+      userPrompt: parsed.data.userPrompt,
+      output: "",
+      status: "running",
+      source: "server",
+      startedAt: startTime,
+      cwd: flowCwd,
+      agentType: flow.orchestrator.type,
+      agentResults: [{ agentName: flow.orchestrator.name, output: "", startedAt: startTime }],
+    });
 
+    write("run_start", { runId, flowName: flow.name });
+    const listener = (event: PersistedRunEvent) => write("run_event", event);
+    const listeners = runEventStreams.get(runId) ?? new Set<(event: PersistedRunEvent) => void>();
+    listeners.add(listener);
+    runEventStreams.set(runId, listeners);
+
+    const cleanupListener = () => {
+      const currentListeners = runEventStreams.get(runId);
+      currentListeners?.delete(listener);
+      if (currentListeners && currentListeners.size === 0) {
+        runEventStreams.delete(runId);
+      }
+    };
+
+    const serverOrigin = getServerOriginFromRequest(request);
+    startLocalCliRun({
+      runId,
+      flowPath: parsed.data.flowPath,
+      userPrompt: parsed.data.userPrompt,
+      workspaceRoot,
+      serverOrigin,
+      onStderr: (chunk) => request.log.warn({ runId, chunk }, "loom cli stderr"),
+      onExit: (exitCode) => {
+        updateRunRecord(runId, {
+          status: exitCode === 0 ? "done" : "error",
+          exitCode,
+          endedAt: new Date().toISOString(),
+        });
+        write(exitCode === 0 ? "run_complete" : "run_error", exitCode === 0 ? { output: "" } : { error: `exit ${exitCode}` });
+        cleanupListener();
+        if (!streamClosed) {
+          streamClosed = true;
+          reply.raw.end();
+        }
+      },
+    });
+
+    request.raw.on("close", () => {
+      streamClosed = true;
+      cleanupListener();
+      abortLocalCliRun(runId);
+    });
     return reply;
   });
 

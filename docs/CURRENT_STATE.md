@@ -55,7 +55,7 @@ Do not document these as implemented unless the code changes first:
 
 - A recursive agent-tree YAML schema.
 - `examples/`-scoped flow CRUD and validation.
-- Server-side synchronous/SSE run routes using the deprecated server runner.
+- Server run routes that create local run records and spawn the built `loom` CLI in `--headless` mode.
 - CLI-launched runs with event registration and persisted event streaming.
 - `@loom/runtime` as the shared home for flow loading, resource loading, prompt building, scoped MCP config generation, and hook execution.
 - `loom-subagent` as the generalized child-agent launcher.
@@ -68,7 +68,7 @@ Do not document these as implemented unless the code changes first:
 
 New subagent behavior still belongs in `packages/cli/src/subagent-launcher.ts`.
 
-Shared flow/resource/prompt/hook helpers now live in `packages/runtime`. `apps/server/src/runner-executor.ts` is still wired to server/studio run routes, but it is marked deprecated and should be treated as a compatibility path.
+Shared flow/resource/prompt/hook helpers now live in `packages/runtime`. Server/studio run routes now go through the local CLI path. `apps/server/src/runner-executor.ts` remains in the tree as a legacy compatibility path, not as the place for new runtime behavior.
 
 ## Safe wording for docs
 

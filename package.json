@@ -5,11 +5,16 @@
   "packageManager": "pnpm@10.7.1",
   "scripts": {
     "dev": "pnpm -r --parallel --stream run dev",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "check": "pnpm -r build && pnpm -r typecheck"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

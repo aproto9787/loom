@@ -3,7 +3,7 @@
 > Local, YAML-backed orchestration for Claude Code and Codex CLI agents.
 
 [![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg)](LICENSE)
-![Node 20+](https://img.shields.io/badge/Node-20%2B-339933.svg?logo=node.js&logoColor=white)
+![Node 22+](https://img.shields.io/badge/Node-22%2B-339933.svg?logo=node.js&logoColor=white)
 ![pnpm workspace](https://img.shields.io/badge/pnpm-workspace-F69220.svg?logo=pnpm&logoColor=white)
 ![Status experimental](https://img.shields.io/badge/status-experimental-orange.svg)
 
@@ -32,7 +32,7 @@ This README describes the code on the current `master` branch. It intentionally 
 Implemented today:
 
 - Recursive agent-tree flow schema with `claude-code` and `codex` agent types.
-- Fastify server for flow CRUD, run history, run event ingestion, role/hook/skill CRUD, MCP/resource discovery, and SSE streams.
+- Fastify server for flow CRUD, run history, run event ingestion, role/hook/skill CRUD, MCP/resource discovery, local CLI run spawning, and SSE streams.
 - React/Vite studio that talks to the local server.
 - CLI binaries: `loom`, `loom-subagent`, and legacy `loom-conductor`.
 - Adapter layer for Claude Code CLI and Codex CLI.
@@ -78,7 +78,7 @@ pnpm --filter @loom/studio dev
 
 ## Develop from source
 
-Loom is a pnpm workspace. Use Node.js 20+.
+Loom is a pnpm workspace. Use Node.js 22.13+; the local trace store uses `node:sqlite`.
 
 ```bash
 pnpm install
@@ -112,7 +112,14 @@ pnpm --filter loom build
 node packages/cli/dist/index.js
 ```
 
-The `loom` binary scans the current directory and `examples/` for `.yaml` flows, lets you pick one interactively, then launches the selected flow's root orchestrator.
+The `loom` binary scans the current directory and `examples/` for `.yaml` flows, lets you pick one interactively, then launches the selected flow's root orchestrator. For local-server initiated runs, the same binary also supports a headless mode:
+
+```bash
+node packages/cli/dist/index.js \
+  --flow examples/leader-conductor.yaml \
+  --prompt "Review this workspace and delegate as needed." \
+  --headless
+```
 
 The `loom-subagent` binary is the current generalized child-agent launcher:
 
@@ -257,8 +264,8 @@ The server is local-first and permissive for development CORS. Important routes:
 - `POST /flows/new`
 - `POST /flows/duplicate`
 - `DELETE /flows/:path`
-- `POST /runs`
-- `POST /runs/stream`
+- `POST /runs` (creates a run record and starts the local CLI headless path)
+- `POST /runs/stream` (compatibility SSE wrapper over the local CLI path)
 - `GET /runs`
 - `GET /runs/:id`
 - `POST /runs/:id/abort`
@@ -277,7 +284,7 @@ Flow paths accepted by server run/save/get routes must stay under `examples/` an
 
 ## Runtime paths
 
-There are two runtime paths in the code right now.
+The CLI/`loom-subagent` path is now the primary local execution path.
 
 ### CLI path
 
@@ -317,7 +324,7 @@ Use Loom only inside repositories and workspaces you trust.
 
 ## Design direction
 
-The current code is closer to a local recursive agent harness than a general visual DAG builder. The most important next cleanup is to collapse the split runtime story: keep the CLI/`loom-subagent` path as the primary runtime, then rewire Studio run actions to that path or a shared runtime package.
+The current code is closer to a local recursive agent harness than a general visual DAG builder. The most important cleanup now is smaller: keep the local CLI path boring and reliable, then reduce or remove the legacy in-process server runner once nothing imports it.
 
 ## License
 

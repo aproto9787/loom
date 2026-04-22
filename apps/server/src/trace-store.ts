@@ -1,22 +1,10 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AgentType, RunRecord, RunSource, RunStatus, RunSummary } from "@loom/core";
+import type { AgentType, RunRecord, RunSource, RunStatus, RunSummary, TimelineEvent, TimelineEventType } from "@loom/core";
 
-export type PersistedRunEventType = "user" | "assistant" | "tool_use" | "tool_result" | "error";
-
-export interface PersistedRunEvent {
-  runId: string;
-  ts: number;
-  type: PersistedRunEventType;
-  summary?: string;
-  toolName?: string;
-  agentName?: string;
-  agentDepth?: number;
-  parentAgent?: string;
-  agentKind?: string;
-  raw?: unknown;
-}
+export type PersistedRunEventType = TimelineEventType;
+export type PersistedRunEvent = TimelineEvent;
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
 const traceDir = path.join(workspaceRoot, ".loom");
