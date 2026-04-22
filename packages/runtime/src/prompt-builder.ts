@@ -6,10 +6,8 @@ function buildParallelChildPrompt(parentPrompt: string, siblingNames: string[]):
   return [
     parentPrompt,
     "",
-    `When the task can be split across siblings, delegate independently to any of: ${siblingNames.join(", ")}.`,
-    "If you need true sibling concurrency, emit one JSON line with this shape:",
-    '{"parallel": [{"childAgent": "name", "reason": "subtask"}]}',
-    "Do not use this JSON form for a single child.",
+    `Parallel hint: if this task should be split, use the CLI-injected loom-subagent commands for: ${siblingNames.join(", ")}.`,
+    "Do not emit DELEGATE lines or JSON delegation directives.",
   ].join("\n");
 }
 
@@ -106,10 +104,9 @@ export function buildAgentPrompt(
         agent.delegation?.length
           ? `Delegation rules for this agent:\n${formatDelegation(agent.delegation)}`
           : "No explicit delegation rules are configured.",
-        "First analyze the task, then delegate to the most appropriate child based on the delegation rules, description, role, and team tags.",
-        "If you need to delegate, respond with exactly one line in this format:",
-        "DELEGATE <child-agent-name>: <brief reason/task>",
-        "Do not add any extra text when delegating.",
+        "Use this child-agent metadata as planning guidance only.",
+        "Actual child-agent launch commands are injected by the CLI Subagent Delegation Protocol.",
+        "Do not emit DELEGATE lines or JSON delegation directives.",
         "If you can finish the task yourself, respond with the final answer normally.",
       ].join("\n"),
     );
