@@ -262,7 +262,7 @@ The server is local-first and permissive for development CORS. Important routes:
 - `POST /flows/duplicate`
 - `DELETE /flows/:path`
 - `POST /runs` (creates a run record and starts the local CLI headless path)
-- `POST /runs/stream` (compatibility SSE wrapper over the local CLI path)
+- `POST /runs + GET /runs/:id/stream` (compatibility SSE wrapper over the local CLI path)
 - `GET /runs`
 - `GET /runs/:id`
 - `POST /runs/:id/abort`
@@ -291,7 +291,7 @@ This is the path new recursive child-agent work should target.
 
 ### Local server run path
 
-`apps/server/src/local-cli-runner.ts` still powers `POST /runs` and `POST /runs/stream`, including the Studio save→run path. That file is marked deprecated in code and should not receive new runtime behavior except while the Studio remains wired to it.
+`apps/server/src/local-cli-runner.ts` still powers `POST /runs` and including the Studio save→run path. That file is marked deprecated in code and should not receive new runtime behavior except while the Studio remains wired to it.
 
 ## Resource model
 
