@@ -7,7 +7,7 @@ import { z } from "zod";
 import YAML from "yaml";
 import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@loom/core";
 import type { PersistedRunEvent } from "./trace-store.js";
-import { validateFlow } from "@loom/nodes";
+import { validateFlow } from "@loom/core";
 import { stringifyFlow } from "./flow-writer.js";
 import { abortLocalCliRun, startLocalCliRun } from "./local-cli-runner.js";
 import {

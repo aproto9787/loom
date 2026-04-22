@@ -243,3 +243,66 @@ export type RunEvent =
   | { type: "run_complete"; output: string }
   | { type: "run_aborted"; runId: string }
   | { type: "run_error"; error: string };
+
+// ── Flow validation helpers ───────────────────────────────────────
+const VALID_AGENT_TYPES_FOR_VALIDATION = new Set<AgentType>(["claude-code", "codex"]);
+
+function isNonEmptyValidationString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+export function validateAgentConfig(agent: AgentConfig, path = "agent"): string[] {
+  const errors: string[] = [];
+
+  if (!isNonEmptyValidationString(agent.name)) {
+    errors.push(`[${path}.name] name is required`);
+  }
+
+  if (!VALID_AGENT_TYPES_FOR_VALIDATION.has(agent.type)) {
+    errors.push(`[${path}.type] type must be one of: claude-code, codex`);
+  }
+
+  if (agent.system !== undefined && !isNonEmptyValidationString(agent.system)) {
+    errors.push(`[${path}.system] system must be a non-empty string when provided`);
+  }
+
+  if (agent.agents === undefined) {
+    return errors;
+  }
+
+  if (!Array.isArray(agent.agents)) {
+    errors.push(`[${path}.agents] agents must be an array when provided`);
+    return errors;
+  }
+
+  agent.agents.forEach((child, index) => {
+    errors.push(...validateAgentConfig(child, `${path}.agents.${index}`));
+  });
+
+  return errors;
+}
+
+export function validateFlow(flow: FlowDefinition): string[] {
+  const errors: string[] = [];
+
+  if (!isNonEmptyValidationString(flow.name)) {
+    errors.push("[flow.name] name is required");
+  }
+
+  if (flow.description !== undefined && !isNonEmptyValidationString(flow.description)) {
+    errors.push("[flow.description] description must be a non-empty string when provided");
+  }
+
+  if (!isNonEmptyValidationString(flow.repo)) {
+    errors.push("[flow.repo] repo is required");
+  }
+
+  if (!flow.orchestrator) {
+    errors.push("[flow.orchestrator] orchestrator is required");
+    return errors;
+  }
+
+  errors.push(...validateAgentConfig(flow.orchestrator, "orchestrator"));
+  return errors;
+}
+
