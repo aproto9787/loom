@@ -156,7 +156,7 @@ Flow path validation rejects absolute paths, path escapes outside `examples/`, a
 ### Run routes
 
 - `POST /runs` executes through the deprecated server runner and returns a collected response.
-- `POST /runs/stream` executes through the deprecated server runner and emits SSE lifecycle events.
+- `POST /runs + GET /runs/:id/stream` executes through the deprecated server runner and emits SSE lifecycle events.
 - `POST /runs/register` creates a running record for a CLI-launched run.
 - `POST /runs/:id/events` appends CLI-launched run events.
 - `GET /runs/:id/events` returns stored events.
@@ -192,7 +192,7 @@ This is the newer path.
 
 ### 2. Local server run path
 
-This path remains active for server `POST /runs`, `POST /runs/stream`, and the current Studio save→run path.
+This path remains active for server `POST /runs`, and the current Studio save→run path.
 
 1. Server validates `flowPath` under `examples/`.
 2. `loadFlow()` parses YAML through `flowDefinitionSchema` and `validateFlow()`.
