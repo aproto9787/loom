@@ -17,8 +17,9 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, selfName: string):
   lines.push("");
   if (preferMcp) {
     lines.push("You have Loom MCP delegation tools for child-agent work. Use `loom_delegate` or `loom_delegate_many` when those tools are available.");
+    lines.push("In Codex host sessions, Loom MCP tools may be lazily discoverable. Before deciding they are unavailable, call `tool_search` with a query like `loom delegate MCP tools` and then use the discovered `mcp__loom__` tools.");
     lines.push("The MCP tool returns the child agent's final REPORT. Read `status:`, `summary:`, `artifacts:`, and `blockers:` before deciding the next step.");
-    lines.push("If Loom MCP tools are not visible in this host session, fall back to the Bash commands listed below.");
+    lines.push("Only fall back to the Bash commands listed below after the MCP tools are still unavailable or the MCP call fails.");
   } else {
     lines.push(`You have subagents. **Delegate by running Bash ${invoker} ... — do NOT use the Agent tool.** The subagent's final REPORT arrives as the Bash tool_result.`);
   }
@@ -37,7 +38,7 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, selfName: string):
   }
   lines.push("");
   lines.push("Rules:");
-  lines.push("1. Prefer Loom MCP tools for delegation when they are available.");
+  lines.push("1. Prefer Loom MCP tools for delegation when they are available; in Codex, search for them with `tool_search` before using Bash fallback.");
   lines.push("2. Replace the TODO briefing with a concrete, non-empty task before running any fallback command.");
   lines.push("3. Prefer `--briefing` for one-line fallback tasks. For long or multiline tasks, pipe stdin or use `--briefing-file <path>`.");
   lines.push("4. If a positional fallback briefing starts with `--`, place it after a literal `--` so it is not parsed as an option.");
