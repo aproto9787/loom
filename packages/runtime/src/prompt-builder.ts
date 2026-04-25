@@ -1,4 +1,5 @@
 import type { AgentConfig, FlowDefinition, RoleDefinition, SkillDefinition } from "@loom/core";
+import { directChildren } from "./agent-tree.js";
 import type { RunResources } from "./resource-loader.js";
 import { resolveAgentResources } from "./resource-loader.js";
 
@@ -83,8 +84,9 @@ export function buildAgentPrompt(
     sections.push(`Hook resources available to you: ${scopedResources.hooks.join(", ")}`);
   }
 
-  if (agent.agents?.length) {
-    const children = agent.agents.map((child) =>
+  const children = directChildren(agent);
+  if (children.length) {
+    const childDescriptions = children.map((child) =>
       [
         `- name: ${child.name}`,
         `  type: ${child.type}`,
@@ -97,7 +99,7 @@ export function buildAgentPrompt(
     sections.push(
       [
         "You can delegate tasks to these agents:",
-        ...children,
+        ...childDescriptions,
         agent.team?.length
           ? `Team tags for this agent:\n${formatTeams(agent.team)}`
           : "No team tags are configured for this agent.",
@@ -105,7 +107,7 @@ export function buildAgentPrompt(
           ? `Delegation rules for this agent:\n${formatDelegation(agent.delegation)}`
           : "No explicit delegation rules are configured.",
         "Use this child-agent metadata as planning guidance only.",
-        "Actual child-agent launch commands are injected by the CLI Subagent Delegation Protocol.",
+        "Actual child-agent launch mechanics are injected by the Loom Delegation Protocol.",
         "If the user explicitly asks to delegate, assign work, use workers/agents/team members, or parallelize, delegate the relevant non-trivial work instead of completing the whole task yourself.",
         "Do not emit DELEGATE lines or JSON delegation directives.",
         "If you can finish the task yourself, respond with the final answer normally.",

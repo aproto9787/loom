@@ -43,7 +43,7 @@ test("buildAgentPrompt includes resource context and delegation instructions", (
   assert.match(prompt, /Delegation rules for this agent:\n- to: child\n  when: When code review is needed\./);
   assert.match(prompt, /description: Reviews code changes\./);
   assert.match(prompt, /Use this child-agent metadata as planning guidance only\./);
-  assert.match(prompt, /Actual child-agent launch commands are injected by the CLI Subagent Delegation Protocol\./);
+  assert.match(prompt, /Actual child-agent launch mechanics are injected by the Loom Delegation Protocol\./);
   assert.match(prompt, /If the user explicitly asks to delegate, assign work, use workers\/agents\/team members, or parallelize/);
   assert.match(prompt, /Do not emit DELEGATE lines or JSON delegation directives\./);
 });

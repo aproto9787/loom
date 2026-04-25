@@ -10,6 +10,8 @@ export interface CodexInstructionHome {
 
 interface CreateCodexInstructionHomeOptions {
   instructions: string;
+  configAppend?: string;
+  writeAgents?: boolean;
   realCodexHome?: string;
   parentDir?: string;
 }
@@ -51,18 +53,33 @@ export async function createCodexInstructionHome(
       if (entry.name === "AGENTS.md") {
         return;
       }
+      if (entry.name === "config.toml" && options.configAppend?.trim()) {
+        return;
+      }
       await mirrorCodexEntry(path.join(realCodexHome, entry.name), path.join(codexHome, entry.name));
     }));
   } catch {
     // A missing real Codex home is not fatal; the flow instructions still seed this home.
   }
 
-  const globalAgents = await readOptional(path.join(realCodexHome, "AGENTS.md"));
-  await writeFile(
-    path.join(codexHome, "AGENTS.md"),
-    buildInteractiveCodexAgentsMd(globalAgents, options.instructions),
-    "utf8",
-  );
+  const configPath = path.join(codexHome, "config.toml");
+  if (options.configAppend?.trim()) {
+    const existing = await readOptional(path.join(realCodexHome, "config.toml"));
+    await writeFile(
+      configPath,
+      `${existing?.trimEnd() ?? ""}\n\n${options.configAppend.trim()}\n`,
+      "utf8",
+    );
+  }
+
+  if (options.writeAgents !== false) {
+    const globalAgents = await readOptional(path.join(realCodexHome, "AGENTS.md"));
+    await writeFile(
+      path.join(codexHome, "AGENTS.md"),
+      buildInteractiveCodexAgentsMd(globalAgents, options.instructions),
+      "utf8",
+    );
+  }
 
   return {
     codexHome,

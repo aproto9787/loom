@@ -15,6 +15,9 @@
       "@loom/adapters": [
         "../../packages/adapters/src/index.ts"
       ],
+      "@loom/mcp": [
+        "../../packages/mcp/src/index.ts"
+      ],
       "@loom/runtime": [
         "../../packages/runtime/src/index.ts"
       ]
@@ -32,6 +35,9 @@
     },
     {
       "path": "../../packages/runtime"
+    },
+    {
+      "path": "../../packages/mcp"
     }
   ]
 }

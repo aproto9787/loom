@@ -20,9 +20,10 @@ import {
   createScopedMcpConfig,
   loadHookDefinitions,
   loadSkillDefinitions,
+  findAgentByName,
   resolveAgentResources,
 } from "@loom/runtime";
-import { buildDelegationPrompt, findAgentByName } from "./delegation-prompt.js";
+import { buildDelegationPrompt } from "./delegation-prompt.js";
 
 type Backend = "claude" | "codex";
 type LoomEventType = "tool_use" | "tool_result" | "user" | "assistant" | "error";

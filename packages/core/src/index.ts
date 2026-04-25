@@ -3,6 +3,29 @@ import { z } from "zod";
 export const agentTypeSchema = z.enum(["claude-code", "codex"]);
 export type AgentType = z.infer<typeof agentTypeSchema>;
 
+export const providerAuthStateSchema = z.enum(["ready", "missing", "unknown"]);
+export type ProviderAuthState = z.infer<typeof providerAuthStateSchema>;
+
+export interface ProviderProfile {
+  id: string;
+  kind: AgentType;
+  displayName: string;
+  command: string;
+  version?: string;
+  authState: ProviderAuthState;
+  configSources: string[];
+}
+
+export const providerProfileSchema: z.ZodType<ProviderProfile> = z.object({
+  id: z.string().min(1),
+  kind: agentTypeSchema,
+  displayName: z.string().min(1),
+  command: z.string().min(1),
+  version: z.string().min(1).optional(),
+  authState: providerAuthStateSchema,
+  configSources: z.array(z.string().min(1)),
+});
+
 // ── Hook / Skill definitions ─────────────────────────────────────
 
 export type HookEvent = 'on_start' | 'on_complete' | 'on_error' | 'on_delegate';
@@ -57,9 +80,28 @@ export const agentTeamTagSchema: z.ZodType<AgentTeamTag> = z.object({
   role: z.string().min(1).optional(),
 });
 
+export type AgentRuntimeMode = "host" | "isolated";
+export type AgentResourceApplication = "prompt-only" | "scoped-home";
+export type DelegationTransport = "mcp" | "bash";
+
+export interface AgentRuntimeConfig {
+  mode?: AgentRuntimeMode;
+  profile?: string;
+  applyResources?: AgentResourceApplication;
+  delegationTransport?: DelegationTransport;
+}
+
+export const agentRuntimeConfigSchema: z.ZodType<AgentRuntimeConfig> = z.object({
+  mode: z.enum(["host", "isolated"]).optional(),
+  profile: z.string().min(1).optional(),
+  applyResources: z.enum(["prompt-only", "scoped-home"]).optional(),
+  delegationTransport: z.enum(["mcp", "bash"]).optional(),
+});
+
 export interface AgentConfig {
   name: string;
   type: AgentType;
+  enabled?: boolean;
   role?: string;
   team?: AgentTeamTag[];
   model?: string;
@@ -73,12 +115,14 @@ export interface AgentConfig {
   mcps?: string[];
   hooks?: string[];
   skills?: string[];
+  runtime?: AgentRuntimeConfig;
   agents?: AgentConfig[];
 }
 
 export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   name: z.string().min(1),
   type: agentTypeSchema,
+  enabled: z.boolean().optional(),
   role: z.string().min(1).optional(),
   team: z.array(agentTeamTagSchema).optional(),
   model: z.string().min(1).optional(),
@@ -92,6 +136,7 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   mcps: z.array(z.string().min(1)).optional(),
   hooks: z.array(z.string().min(1)).optional(),
   skills: z.array(z.string().min(1)).optional(),
+  runtime: agentRuntimeConfigSchema.optional(),
   agents: z.array(agentConfigSchema).optional(),
 }));
 
@@ -266,6 +311,10 @@ export function validateAgentConfig(agent: AgentConfig, path = "agent"): string[
     errors.push(`[${path}.system] system must be a non-empty string when provided`);
   }
 
+  if (agent.runtime?.profile !== undefined && !isNonEmptyValidationString(agent.runtime.profile)) {
+    errors.push(`[${path}.runtime.profile] profile must be a non-empty string when provided`);
+  }
+
   if (agent.agents === undefined) {
     return errors;
   }
@@ -305,4 +354,3 @@ export function validateFlow(flow: FlowDefinition): string[] {
   errors.push(...validateAgentConfig(flow.orchestrator, "orchestrator"));
   return errors;
 }
-

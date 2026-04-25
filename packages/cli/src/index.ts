@@ -3,14 +3,15 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
-import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import type { AgentConfig, AgentType, TimelineEvent } from "@loom/core";
-import { loadFlow } from "@loom/runtime";
+import { runLoomMcpServer } from "@loom/mcp";
+import { loadFlow, resolveAgentRuntime } from "@loom/runtime";
 import { buildConfiguredAgent } from "@loom/runtime";
 import { createCodexInstructionHome, type CodexInstructionHome } from "./codex-home.js";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
@@ -27,6 +28,7 @@ function handleFlags(): boolean {
 
 Usage:
   loom
+  loom mcp
   loom --flow <path-to-flow.yaml>
   loom <path-to-flow.yaml>
   loom --flow <path-to-flow.yaml> --prompt "Task" --headless
@@ -43,7 +45,11 @@ Options:
 
 Without --headless, Loom scans for flow YAML files in the current
 directory and examples/, presents an interactive selection menu, and
-spawns the chosen flow's orchestrator with the host terminal.`);
+spawns the chosen flow's orchestrator with the host terminal.
+
+\`loom mcp\` starts the stdio MCP delegation bridge for a Loom host
+leader. It expects LOOM_FLOW_PATH, LOOM_AGENT, and LOOM_SUBAGENT_BIN
+in the environment.`);
     return true;
   }
   if (args.includes("--version") || args.includes("-v")) {
@@ -182,6 +188,12 @@ interface RunRegistration {
   postEvents: (events: LoomRunEvent[]) => Promise<void>;
 }
 
+interface LeaderMcpConfig {
+  claudeConfigPath: string;
+  codexConfigToml: string;
+  cleanup: () => Promise<void>;
+}
+
 type LoomRunEvent = TimelineEvent;
 
 interface TranscriptTailState {
@@ -285,6 +297,68 @@ function buildSpawnArgs(agent: AgentConfig): { command: string; args: string[] }
     args.push("-m", agent.model);
   }
   return { command: "codex", args };
+}
+
+function quoteTomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function buildCodexMcpConfigToml(env: Record<string, string>, command: string, args: string[]): string {
+  const envEntries = Object.entries(env)
+    .map(([key, value]) => `${key} = ${quoteTomlString(value)}`)
+    .join(", ");
+  const argsArray = args.map(quoteTomlString).join(", ");
+  return [
+    "[mcp_servers.loom]",
+    `command = ${quoteTomlString(command)}`,
+    `args = [${argsArray}]`,
+    `env = { ${envEntries} }`,
+  ].join("\n");
+}
+
+async function createLeaderMcpConfig(
+  flow: LoadedCliFlow,
+  configuredAgent: AgentConfig,
+  flowCwd: string,
+  registration: RunRegistration,
+  serverOrigin: string,
+): Promise<LeaderMcpConfig> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-leader-mcp-"));
+  const cliBin = fileURLToPath(new URL("./index.js", import.meta.url));
+  const subagentBin = fileURLToPath(new URL("./subagent-launcher.js", import.meta.url));
+  const env: Record<string, string> = {
+    LOOM_FLOW_PATH: flow.absolutePath,
+    LOOM_FLOW_NAME: flow.flow.name,
+    LOOM_FLOW_CWD: flowCwd,
+    LOOM_AGENT: configuredAgent.name,
+    LOOM_AGENT_TYPE: configuredAgent.type,
+    LOOM_RUN_ID: registration.runId,
+    LOOM_SERVER_ORIGIN: serverOrigin,
+    LOOM_PARENT_AGENT: configuredAgent.name,
+    LOOM_PARENT_DEPTH: "0",
+    LOOM_SUBAGENT_BIN: subagentBin,
+  };
+  const claudeConfigPath = path.join(tempDir, "mcp.json");
+  await writeFile(
+    claudeConfigPath,
+    JSON.stringify({
+      mcpServers: {
+        loom: {
+          command: process.execPath,
+          args: [cliBin, "mcp"],
+          env,
+        },
+      },
+    }, null, 2),
+    "utf8",
+  );
+  return {
+    claudeConfigPath,
+    codexConfigToml: buildCodexMcpConfigToml(env, process.execPath, [cliBin, "mcp"]),
+    cleanup: async () => {
+      await rm(tempDir, { recursive: true, force: true });
+    },
+  };
 }
 
 function getServerOrigin(explicitOrigin?: string): string {
@@ -876,7 +950,7 @@ function resolveAgentFlowMd(flow: LoadedCliFlow, agent: AgentConfig): string | u
 }
 
 
-function buildHeadlessSpawnArgs(agent: AgentConfig, finalInstructions: string, userPrompt: string): { command: string; args: string[] } {
+function buildHeadlessSpawnArgs(agent: AgentConfig, finalInstructions: string, userPrompt: string, mcpConfigPath?: string): { command: string; args: string[] } {
   if (agent.type === "claude-code") {
     const args = [
       "--print",
@@ -888,6 +962,9 @@ function buildHeadlessSpawnArgs(agent: AgentConfig, finalInstructions: string, u
     ];
     if (agent.model) {
       args.push("--model", agent.model);
+    }
+    if (mcpConfigPath) {
+      args.push("--mcp-config", mcpConfigPath);
     }
     if (finalInstructions.trim()) {
       args.push("--append-system-prompt", finalInstructions);
@@ -918,8 +995,9 @@ async function runHeadlessAgent(
   registration: RunRegistration,
   serverOrigin: string,
   extraEnv: Record<string, string>,
+  mcpConfigPath?: string,
 ): Promise<number> {
-  const { command, args } = buildHeadlessSpawnArgs(configuredAgent, finalInstructions, userPrompt);
+  const { command, args } = buildHeadlessSpawnArgs(configuredAgent, finalInstructions, userPrompt, mcpConfigPath);
   const childEnv = {
     ...process.env,
     ...extraEnv,
@@ -996,6 +1074,10 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
     throw new Error("loom: --headless requires --prompt, --prompt-file, or piped stdin");
   }
   const registration = await reportCliRunStart(flow, configuredAgent.type, options, userPrompt ?? "");
+  const configuredRuntime = resolveAgentRuntime(configuredAgent, true);
+  const leaderMcpConfig = configuredRuntime.delegationTransport === "mcp"
+    ? await createLeaderMcpConfig(flow, configuredAgent, flowCwd, registration, getServerOrigin(options.serverOrigin))
+    : undefined;
   const delegationPrompt = buildDelegationPrompt(configuredAgent, configuredAgent.name);
   const finalInstructions = delegationPrompt
     ? (mergedInstructions.trim()
@@ -1003,16 +1085,33 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
         : delegationPrompt)
     : mergedInstructions;
   if (options.headless) {
-    return await runHeadlessAgent(
-      flow,
-      configuredAgent,
-      finalInstructions,
-      userPrompt ?? "",
-      flowCwd,
-      registration,
-      getServerOrigin(options.serverOrigin),
-      {},
-    );
+    let headlessCodexHome: CodexInstructionHome | undefined;
+    const extraEnv: Record<string, string> = {};
+    if (configuredAgent.type === "codex" && leaderMcpConfig) {
+      headlessCodexHome = await createCodexInstructionHome({
+        instructions: "",
+        configAppend: leaderMcpConfig.codexConfigToml,
+        writeAgents: false,
+      });
+      extraEnv.CODEX_HOME = headlessCodexHome.codexHome;
+      extraEnv.CODEX_CONFIG_DIR = headlessCodexHome.codexHome;
+    }
+    try {
+      return await runHeadlessAgent(
+        flow,
+        configuredAgent,
+        finalInstructions,
+        userPrompt ?? "",
+        flowCwd,
+        registration,
+        getServerOrigin(options.serverOrigin),
+        extraEnv,
+        configuredAgent.type === "claude-code" ? leaderMcpConfig?.claudeConfigPath : undefined,
+      );
+    } finally {
+      await headlessCodexHome?.cleanup().catch(() => undefined);
+      await leaderMcpConfig?.cleanup().catch(() => undefined);
+    }
   }
 
   const { command, args } = buildSpawnArgs(configuredAgent);
@@ -1020,8 +1119,14 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
   if (configuredAgent.type === "claude-code" && finalInstructions.trim().length > 0) {
     args.push("--append-system-prompt", finalInstructions);
   }
-  if (configuredAgent.type === "codex" && finalInstructions.trim().length > 0) {
-    codexInstructionHome = await createCodexInstructionHome({ instructions: finalInstructions });
+  if (configuredAgent.type === "claude-code" && leaderMcpConfig) {
+    args.push("--mcp-config", leaderMcpConfig.claudeConfigPath);
+  }
+  if (configuredAgent.type === "codex" && (finalInstructions.trim().length > 0 || leaderMcpConfig)) {
+    codexInstructionHome = await createCodexInstructionHome({
+      instructions: finalInstructions,
+      configAppend: leaderMcpConfig?.codexConfigToml,
+    });
   }
 
   const realHome = os.homedir();
@@ -1034,6 +1139,7 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
       await transcriptTail.flushBundle();
     }
     await codexInstructionHome?.cleanup().catch(() => undefined);
+    await leaderMcpConfig?.cleanup().catch(() => undefined);
     await registration.cleanup(exitCode);
   };
 
@@ -1105,6 +1211,11 @@ flowMdLibrary: {}
 orchestrator:
   name: leader
   type: claude-code
+  runtime:
+    mode: host
+    profile: claude-default
+    applyResources: prompt-only
+    delegationTransport: mcp
   model: claude-opus-4-7
   system: |
     You are the orchestrator for ${name}. Delegate work to your team.
@@ -1156,6 +1267,15 @@ async function promptForSelection(flows: LoadedCliFlow[]): Promise<SelectionActi
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "mcp") {
+    await runLoomMcpServer({
+      env: {
+        ...process.env,
+        LOOM_SUBAGENT_BIN: process.env.LOOM_SUBAGENT_BIN ?? fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
+      },
+    });
+    return;
+  }
   if (handleFlags()) return;
   const cwd = process.cwd();
   const options = parseCliOptions();

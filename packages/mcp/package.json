@@ -1,14 +1,11 @@
 {
-  "name": "loom",
+  "name": "@loom/mcp",
   "version": "0.1.0",
   "license": "GPL-3.0-only",
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "bin": {
-    "loom": "dist/index.js",
-    "loom-subagent": "dist/subagent-launcher.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -17,12 +14,11 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
     "@loom/core": "workspace:^",
-    "@loom/mcp": "workspace:^",
-    "@loom/runtime": "workspace:^",
-    "yaml": "^2.8.3"
+    "@loom/runtime": "workspace:^"
   }
 }

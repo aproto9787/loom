@@ -277,6 +277,7 @@ export function AgentConfigForm({
   const roles = useRunStore((s) => s.roles);
   const availableMcps = useRunStore((s) => s.availableMcps);
   const discoveredResources = useRunStore((s) => s.discoveredResources);
+  const providers = useRunStore((s) => s.providers);
   const fetchMcps = useRunStore((s) => s.fetchMcps);
   const discoverResources = useRunStore((s) => s.discoverResources);
 
@@ -346,6 +347,11 @@ export function AgentConfigForm({
   const libraryEntries = useMemo(() => Object.entries(flowDraft?.flowMdLibrary ?? {}), [flowDraft?.flowMdLibrary]);
   const hasFlowMdSelection = flowMdRef !== "none";
   const delegationRules = agent.delegation ?? [];
+  const isRoot = path.length <= 1;
+  const runtimeMode = agent.runtime?.mode ?? (isRoot ? "host" : "isolated");
+  const applyResources = agent.runtime?.applyResources ?? (isRoot ? "prompt-only" : "scoped-home");
+  const delegationTransport = agent.runtime?.delegationTransport ?? (isRoot ? "mcp" : "bash");
+  const providerOptions = providers.filter((provider) => provider.kind === effectiveType);
 
   const toggleResource = useCallback(
     (field: ResourceField, value: string) => {
@@ -358,7 +364,17 @@ export function AgentConfigForm({
     [agent, path, updateAgent],
   );
 
-  const isRoot = path.length <= 1;
+  const updateRuntime = useCallback(
+    (runtime: NonNullable<AgentConfig["runtime"]>) => {
+      updateAgent(path, {
+        runtime: {
+          ...(agent.runtime ?? {}),
+          ...runtime,
+        },
+      });
+    },
+    [agent.runtime, path, updateAgent],
+  );
 
   return (
     <div className="border-b border-slate-800">
@@ -449,6 +465,67 @@ export function AgentConfigForm({
                   <option value="codex">codex</option>
                 </select>
               </label>
+              {!isRoot ? (
+                <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <span>Enabled</span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-blue-500"
+                    checked={agent.enabled !== false}
+                    onChange={(e) => updateAgent(path, { enabled: e.target.checked ? undefined : false })}
+                  />
+                </label>
+              ) : null}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <span>Runtime Mode</span>
+                  <select
+                    className={selectDark}
+                    value={runtimeMode}
+                    onChange={(e) => updateRuntime({ mode: e.target.value as NonNullable<AgentConfig["runtime"]>["mode"] })}
+                  >
+                    <option value="host">host</option>
+                    <option value="isolated">isolated</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <span>Resources</span>
+                  <select
+                    className={selectDark}
+                    value={applyResources}
+                    onChange={(e) => updateRuntime({ applyResources: e.target.value as NonNullable<AgentConfig["runtime"]>["applyResources"] })}
+                  >
+                    <option value="prompt-only">prompt-only</option>
+                    <option value="scoped-home">scoped-home</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <span>Provider Profile</span>
+                  <select
+                    className={selectDark}
+                    value={agent.runtime?.profile ?? ""}
+                    onChange={(e) => updateRuntime({ profile: e.target.value || undefined })}
+                  >
+                    <option value="">Default profile</option>
+                    {providerOptions.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.displayName} ({provider.authState})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <span>Delegation Transport</span>
+                  <select
+                    className={selectDark}
+                    value={delegationTransport}
+                    onChange={(e) => updateRuntime({ delegationTransport: e.target.value as NonNullable<AgentConfig["runtime"]>["delegationTransport"] })}
+                  >
+                    <option value="mcp">mcp</option>
+                    <option value="bash">bash</option>
+                  </select>
+                </label>
+              </div>
               <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
                 <span>Model</span>
                 <select

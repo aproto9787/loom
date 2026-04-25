@@ -6,6 +6,7 @@ import Fastify from "fastify";
 import { z } from "zod";
 import YAML from "yaml";
 import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@loom/core";
+import { discoverProviderProfiles } from "@loom/runtime";
 import type { PersistedRunEvent } from "./trace-store.js";
 import { validateFlow } from "@loom/core";
 import { stringifyFlow } from "./flow-writer.js";
@@ -315,6 +316,12 @@ export function buildServer() {
       orchestrator: {
         name: "leader",
         type: "claude-code" as const,
+        runtime: {
+          mode: "host" as const,
+          profile: "claude-default",
+          applyResources: "prompt-only" as const,
+          delegationTransport: "mcp" as const,
+        },
         model: "claude-opus-4-7",
         system: `You are the orchestrator for ${name}. Delegate work to your team.\n`,
         effort: "high" as const,
@@ -620,6 +627,7 @@ export function buildServer() {
       prompt?: string;
     }
     const resources: DiscoveredResource[] = [];
+    const providers = await discoverProviderProfiles();
 
     // ── Claude resources ────────────────────────────────────────
 
@@ -738,7 +746,7 @@ export function buildServer() {
       }
     } catch { /* skip */ }
 
-    return { resources };
+    return { providers, resources };
   });
 
   // ── Role endpoints ──────────────────────────────────────────────

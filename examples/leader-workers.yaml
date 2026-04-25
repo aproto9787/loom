@@ -157,6 +157,11 @@ teams:
 orchestrator:
   name: leader
   type: codex
+  runtime:
+    mode: host
+    profile: codex-default
+    applyResources: prompt-only
+    delegationTransport: mcp
   role: leader
   team:
     - id: execution

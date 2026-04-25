@@ -1,21 +1,27 @@
 import type { AgentConfig } from "@loom/core";
+import { directChildren, resolveAgentRuntime } from "@loom/runtime";
 
-// Build a system-prompt snippet that instructs an agent to use Bash
-// `loom-subagent ...` for sub-agent work instead of Claude Code's Agent tool.
-// The snippet enumerates the direct children of `selfAgent` with a
-// copy-paste-ready command template for each.
-//
-// When `selfAgent.agents` is empty or missing, returns an empty string.
+// Build a system-prompt snippet that instructs an agent to delegate through
+// Loom. MCP tools are the preferred transport; Bash `loom-subagent` commands
+// remain as an explicit fallback while MCP support rolls out.
 export function buildDelegationPrompt(selfAgent: AgentConfig, selfName: string): string {
-  const children = selfAgent.agents ?? [];
+  const children = directChildren(selfAgent);
   if (children.length === 0) return "";
+  const runtime = resolveAgentRuntime(selfAgent, true);
+  const preferMcp = runtime.delegationTransport === "mcp";
 
   const lines: string[] = [];
   const invoker = `node "\$LOOM_SUBAGENT_BIN"`;
   lines.push("");
   lines.push("## Subagent Delegation Protocol (Loom)");
   lines.push("");
-  lines.push(`You have subagents. **Delegate by running Bash ${invoker} ... — do NOT use the Agent tool.** The subagent's final REPORT arrives as the Bash tool_result.`);
+  if (preferMcp) {
+    lines.push("You have Loom MCP delegation tools for child-agent work. Use `loom_delegate` or `loom_delegate_many` when those tools are available.");
+    lines.push("The MCP tool returns the child agent's final REPORT. Read `status:`, `summary:`, `artifacts:`, and `blockers:` before deciding the next step.");
+    lines.push("If Loom MCP tools are not visible in this host session, fall back to the Bash commands listed below.");
+  } else {
+    lines.push(`You have subagents. **Delegate by running Bash ${invoker} ... — do NOT use the Agent tool.** The subagent's final REPORT arrives as the Bash tool_result.`);
+  }
   lines.push("If the user explicitly asks to delegate, assign work, use workers/agents/team members, or parallelize, treat delegation as required for the relevant non-trivial work. Do not complete the whole task yourself unless no suitable subagent exists.");
   lines.push("");
   lines.push("Available subagents:");
@@ -31,14 +37,15 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, selfName: string):
   }
   lines.push("");
   lines.push("Rules:");
-  lines.push("1. Replace the TODO briefing with a concrete, non-empty task before running the command.");
-  lines.push("2. Prefer `--briefing` for one-line tasks. For long or multiline tasks, pipe stdin or use `--briefing-file <path>`.");
-  lines.push("3. If a positional briefing starts with `--`, place it after a literal `--` so it is not parsed as an option.");
-  lines.push("4. Never invoke the Agent tool for these roles — the Loom runtime tracks only Bash-spawned subagents.");
-  lines.push("5. Explicit user delegation requests override the low-complexity direct-execution default.");
-  lines.push("6. Without an explicit delegation request, direct execution is fine for low-complexity work; spawn subagents for independent slices, specialist work, broad parallel investigation, or review/fix gates.");
-  lines.push("7. You may call multiple subagents in parallel only when their tasks are independent.");
-  lines.push("8. Read the REPORT from stdout; decide next step based on `status:` and `summary:` lines.");
+  lines.push("1. Prefer Loom MCP tools for delegation when they are available.");
+  lines.push("2. Replace the TODO briefing with a concrete, non-empty task before running any fallback command.");
+  lines.push("3. Prefer `--briefing` for one-line fallback tasks. For long or multiline tasks, pipe stdin or use `--briefing-file <path>`.");
+  lines.push("4. If a positional fallback briefing starts with `--`, place it after a literal `--` so it is not parsed as an option.");
+  lines.push("5. Never invoke the Agent tool for these roles — Loom tracks MCP-delegated or Bash-spawned subagents.");
+  lines.push("6. Explicit user delegation requests override the low-complexity direct-execution default.");
+  lines.push("7. Without an explicit delegation request, direct execution is fine for low-complexity work; spawn subagents for independent slices, specialist work, broad parallel investigation, or review/fix gates.");
+  lines.push("8. You may call multiple subagents in parallel only when their tasks are independent.");
+  lines.push("9. Read the REPORT before responding; decide next step based on `status:` and `summary:` lines.");
   lines.push("");
   return lines.join("\n");
 }
@@ -50,15 +57,4 @@ function backendFor(type: AgentConfig["type"]): "claude" | "codex" {
 function shellQuote(value: string): string {
   if (/^[A-Za-z0-9_.\-/:=]+$/.test(value)) return value;
   return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-// Walk the flow's agent tree to find a node by name. Returns undefined if
-// the name does not match any node.
-export function findAgentByName(root: AgentConfig, name: string): AgentConfig | undefined {
-  if (root.name === name) return root;
-  for (const child of root.agents ?? []) {
-    const found = findAgentByName(child, name);
-    if (found) return found;
-  }
-  return undefined;
 }

@@ -43,6 +43,7 @@ function draftFromDiscovered(res: DiscoveredResource): Draft {
 
 export function CustomPanel() {
   const discoveredResources = useRunStore((s) => s.discoveredResources);
+  const providers = useRunStore((s) => s.providers);
   const discoverResources = useRunStore((s) => s.discoverResources);
   const hooks = useRunStore((s) => s.hooks);
   const skills = useRunStore((s) => s.skills);
@@ -162,6 +163,30 @@ export function CustomPanel() {
         </div>
 
         <div className="p-4 flex flex-col gap-3">
+          {providers.length > 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <p className="m-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Detected providers
+              </p>
+              <div className="mt-2 flex flex-col gap-1.5">
+                {providers.map((provider) => (
+                  <div key={provider.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-medium text-slate-700">{provider.displayName}</span>
+                    <span className={`rounded-full px-2 py-0.5 font-semibold ${
+                      provider.authState === "ready"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : provider.authState === "missing"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-amber-50 text-amber-700"
+                    }`}>
+                      {provider.authState}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {/* Actions */}
           <div className="flex gap-1.5">
             <button

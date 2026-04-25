@@ -2,6 +2,11 @@
 
 This document describes Loom as implemented in the current codebase. It avoids earlier DAG-era and roadmap claims that are not present in the active schemas or runtime.
 
+For the target product/runtime direction, read
+[`docs/LOCAL_AGENT_CONTROL_PLANE.md`](LOCAL_AGENT_CONTROL_PLANE.md). That
+document is the implementation north star for host leader sessions,
+Loom-managed workers, and MCP-based delegation.
+
 ## System overview
 
 ```text
@@ -45,6 +50,7 @@ This document describes Loom as implemented in the current codebase. It avoids e
 ┌─────────────▼──────────────┐
 │ packages/cli                │
 │ - loom                      │
+│ - loom mcp                  │
 │ - loom-subagent             │
 │ - loom-subagent legacy     │
 └────────────────────────────┘
@@ -66,7 +72,7 @@ Owns the current recursive agent-tree schema:
 Important current schema facts:
 
 - Agent types are exactly `claude-code` and `codex`.
-- `AgentConfig` has `team`, `delegation`, `flowMdRef`, `timeout`, `parallel`, `mcps`, `hooks`, `skills`, and recursive `agents`.
+- `AgentConfig` has `enabled`, `runtime`, `team`, `delegation`, `flowMdRef`, `timeout`, `parallel`, `mcps`, `hooks`, `skills`, and recursive `agents`.
 - `AgentConfig` does not currently define `isolated` or `capabilities`.
 - `RoleDefinition` currently defines `name`, `type`, `model`, `system`, `effort`, `description`, and `mcps`.
 - `RoleDefinition` does not currently define `hooks`, `skills`, `isolated`, or `capabilities`.
@@ -117,9 +123,10 @@ Parallel delegation can be emitted as:
 
 ### `packages/cli`
 
-Provides three binaries:
+Provides the main CLI plus subcommands/binaries:
 
 - `loom`: interactive flow launcher.
+- `loom mcp`: stdio MCP delegation bridge for host leader sessions.
 - `loom-subagent`: generalized recursive child-agent launcher for Claude or Codex backends.
 - `loom-subagent`: legacy Codex conductor launcher, retained for compatibility.
 
@@ -168,7 +175,7 @@ Flow path validation rejects absolute paths, path escapes outside `examples/`, a
 ### Resource routes
 
 - `GET /mcps` discovers MCP server names from Claude/workspace config.
-- `GET /discover` discovers MCPs, hooks, and skills from Claude, Codex, and Loom workspace locations.
+- `GET /discover` discovers provider profiles plus MCPs, hooks, and skills from Claude, Codex, and Loom workspace locations.
 - `GET /roles`, `GET /roles/:name`, `PUT /roles/save`, `DELETE /roles/:name`.
 - `GET /hooks`, `PUT /hooks/save`, `DELETE /hooks/:name`.
 - `GET /skills`, `PUT /skills/save`, `DELETE /skills/:name`.
@@ -185,7 +192,7 @@ This is the newer path.
 2. It builds the configured root agent.
 3. It injects a delegation protocol into the root agent prompt.
 4. The root agent is spawned as Claude Code or Codex.
-5. Child work is delegated by Bash-spawning `loom-subagent`.
+5. When `runtime.delegationTransport` is `mcp`, the root agent receives a temporary Loom MCP server config and can call `loom_delegate`; Bash `loom-subagent` commands remain in the prompt as fallback.
 6. `loom-subagent` maps Claude/Codex stream frames to Loom events.
 7. The server stores those events through `/runs/:id/events`.
 8. Studio can follow `/runs/:id/stream` for persisted event updates.
@@ -276,6 +283,7 @@ Before broader distribution, the project should make trust boundaries explicit i
 - Schema/docs previously mentioned `isolated` and `capabilities`, but those fields are absent from the current core schema.
 - The example set currently centers on `examples/leader-workers.yaml`; smaller onboarding flows would make the project easier to test and explain.
 - Golden-path recursive execution is still largely manual; a fake Claude/Codex harness would make it testable without launching real CLIs.
+- MCP cancellation is best-effort and currently depends on local process signaling.
 
 
 ## Local execution path

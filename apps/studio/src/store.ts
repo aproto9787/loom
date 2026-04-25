@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, RoleDefinition, RunEvent, RunSource, RunStatus, SkillDefinition } from "@loom/core";
+import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, ProviderProfile, RoleDefinition, RunEvent, RunSource, RunStatus, SkillDefinition } from "@loom/core";
 import { duplicateFlow as duplicateFlowRequest } from "./api.js";
 
 // --- Agent path helpers ---
@@ -177,6 +177,7 @@ interface StudioState {
   availableMcps: string[];
   hooks: HookDefinition[];
   skills: SkillDefinition[];
+  providers: ProviderProfile[];
   discoveredResources: DiscoveredResource[];
 
   // Run state
@@ -262,6 +263,7 @@ export const useRunStore = create<StudioState>((set) => ({
   availableMcps: [],
   hooks: [],
   skills: [],
+  providers: [],
   discoveredResources: [],
 
   setFlowPath: (value) =>
@@ -577,8 +579,8 @@ export const useRunStore = create<StudioState>((set) => ({
     try {
       const res = await fetch(`${origin}/discover`);
       if (!res.ok) return;
-      const data = (await res.json()) as { resources: DiscoveredResource[] };
-      set({ discoveredResources: data.resources });
+      const data = (await res.json()) as { providers?: ProviderProfile[]; resources: DiscoveredResource[] };
+      set({ providers: data.providers ?? [], discoveredResources: data.resources });
     } catch { /* skip */ }
   },
 

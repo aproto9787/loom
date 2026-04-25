@@ -2,6 +2,9 @@
 
 This note is the short, code-backed baseline for Loom's current implementation. It is meant to keep README and architecture claims honest while the project continues to change quickly.
 
+Target product/runtime direction lives in `docs/LOCAL_AGENT_CONTROL_PLANE.md`.
+Treat that document as an implementation plan, not as current shipped behavior.
+
 ## Current source of truth
 
 The active schema lives in `packages/core/src/index.ts`.
@@ -15,6 +18,8 @@ Current `AgentConfig` fields:
 
 - `name`
 - `type`
+- `enabled`
+- `runtime`
 - `role`
 - `team`
 - `model`
@@ -58,6 +63,12 @@ Do not document these as implemented unless the code changes first:
 - Server run routes that create local run records and spawn the built `loom` CLI in `--headless` mode.
 - CLI-launched runs with event registration and persisted event streaming.
 - `@loom/runtime` as the shared home for flow loading, resource loading, prompt building, scoped MCP config generation, and hook execution.
+- Provider profile discovery for local Claude Code and Codex installs.
+- `@loom/mcp` as a stdio MCP delegation bridge.
+- `loom mcp` as the CLI subcommand that exposes Loom delegation tools to host leaders.
+- Agent-specific dynamic MCP tools such as `loom_delegate_reviewer`, alongside stable generic tools such as `loom_delegate`.
+- Best-effort async cancellation for MCP-delegated subagent processes started with `wait: false`.
+- Root leader MCP config injection for Claude Code and Codex host sessions, with Bash delegation retained as fallback.
 - `loom-subagent` as the generalized child-agent launcher.
 - Claude Code and Codex CLI adapters.
 - Role/hook/skill YAML CRUD.
