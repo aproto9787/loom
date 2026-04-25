@@ -209,6 +209,27 @@ loomTest("leader-workers routes casual debate prompts through debater agents", a
   assert.ok(delegationRules.some((rule) => rule.includes("synthesizer") && rule.includes("final answer")));
 });
 
+loomTest("leader-workers gates phased work with user-advocate before next phase", async (t) => {
+  const app = createTestApp(t);
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/flows/get",
+    query: { path: DEFAULT_FLOW_PATH },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  const flow = body.flow as FlowDefinition;
+  const rootLeaderRules = flow.flowMdLibrary?.["root-leader-rules"] ?? "";
+
+  assert.match(rootLeaderRules, /"페이즈", "phase", "단계별", "순차", "roadmap", "milestone"/);
+  assert.match(rootLeaderRules, /Phase Loop/);
+  assert.match(rootLeaderRules, /user-advocate가 PASS를 반환해야 다음 phase로 넘어간다/);
+  assert.match(rootLeaderRules, /user-advocate가 FAIL을 반환하면 다음 phase로 진행하지 않는다/);
+  assert.match(rootLeaderRules, /수정-검증 루프를 반복한다/);
+});
+
 loomTest("POST /runs accepts the current flow and persists the mocked local CLI run", async (t) => {
   const app = createTestApp(t);
   const userPrompt = "Inspect the local-only runtime path";

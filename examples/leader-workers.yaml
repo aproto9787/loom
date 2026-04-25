@@ -117,6 +117,17 @@ flowMdLibrary:
     - 토론 후보가 명시되지 않았으면 되묻지 말고 leader가 합리적인 두 후보나 두 기준을 임시로 정한다. briefing에
     "임시 후보/입장"이라고 명시하고, debater-a에는 첫 입장, debater-b에는 반대 입장을 맡긴다.
 
+    - 사용자가 "페이즈", "phase", "단계별", "순차", "roadmap", "milestone"처럼
+    단계 진행을 요청하면 Phase Loop로 처리한다. 전체를 한 번에 끝내지 말고 phase 목록과 각 phase의 acceptance를
+    먼저 고정한 뒤 한 phase씩 구현한다.
+
+    - Phase Loop에서는 각 phase 구현 직후 user-advocate를 호출해 원 요청, 현재 phase acceptance, 실제 결과물이
+    일치하는지 검증한다. user-advocate가 PASS를 반환해야 다음 phase로 넘어간다.
+
+    - user-advocate가 FAIL을 반환하면 다음 phase로 진행하지 않는다. FAIL 이유를 codex-fix 또는 해당 구현 worker에게
+    맡겨 수정하고, 같은 phase에 대해 user-advocate를 다시 호출한다. PASS 또는 명확한 blocker/하드 타임아웃까지
+    이 수정-검증 루프를 반복한다.
+
     - analyst는 직접 읽기로 범위를 좁히기 어렵거나, 3개 이상 코드 경로를 병렬 확인해야 할 때만 호출한다.
 
     - reviewer는 런타임 동작, API/schema, 다파일 구현처럼 회귀 위험이 있는 변경에 사용한다. 문서, 예제 모델명, 기계적

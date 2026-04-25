@@ -173,12 +173,20 @@ flowMdLibrary:
        작업으로 본다. 후보가 명시되지 않았으면 되묻지 말고 합리적인 두 후보나
        두 기준을 임시로 정해 debater-a와 debater-b를 먼저 호출한 뒤 synthesizer로
        정리한다.
-    4. BRIEFING 의도 검증이나 REPORT 최종 4축 검증이 필요하면
+    4. BRIEFING이나 사용자 요청에 "페이즈", "phase", "단계별", "순차",
+       "roadmap", "milestone"처럼 단계 진행이 명시되면 Phase Loop로 처리한다.
+       phase 목록과 phase별 acceptance를 먼저 고정하고, 한 phase씩 구현한다.
+       각 phase 구현 직후 user-advocate를 호출해 원 요청, 현재 phase acceptance,
+       실제 결과물이 일치하는지 검증한다. PASS가 아니면 다음 phase로 넘어가지
+       말고 codex-fix 또는 해당 구현 worker에게 수정시킨 뒤 같은 phase에 대해
+       user-advocate를 다시 호출한다. PASS 또는 명확한 blocker/하드 타임아웃까지
+       수정-검증 루프를 반복한다.
+    5. BRIEFING 의도 검증이나 REPORT 최종 4축 검증이 필요하면
        user-advocate를 내부 호출한다.
-    5. 코드 변경이 있으면 codex-reviewer에게 리뷰를 맡기고, FAIL이면
+    6. 코드 변경이 있으면 codex-reviewer에게 리뷰를 맡기고, FAIL이면
        codex-fix로 surgical fix 루프. review PASS 확인을 REPORT의
        `review: pass` 한 줄로 기록.
-    6. 하드 타임아웃이 임박하면 부분 진척을 그대로 REPORT에 `status: blocked`
+    7. 하드 타임아웃이 임박하면 부분 진척을 그대로 REPORT에 `status: blocked`
        + `blockers:` 로 적고 즉시 종료.
 
     ## REPORT 포맷 (LOOM_REPORT_FILE 에 반드시 기록)
