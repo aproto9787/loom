@@ -44,7 +44,7 @@ Not represented in the current schema/runtime:
 - DAG node editing, typed edge execution, node routers, loop/join nodes, or cost/latency meters.
 - `capabilities` and `isolated` fields on `AgentConfig` or `RoleDefinition`.
 - Published-package quickstart guarantees for `npx loom` or `npm install -g loom`.
-- Automated golden-path verification for full leader → conductor → worker recursion.
+- Automated golden-path verification for full leader → worker recursion.
 
 ## Repository layout
 
@@ -113,7 +113,7 @@ The `loom` binary scans the current directory and `examples/` for `.yaml` flows,
 
 ```bash
 node packages/cli/dist/index.js \
-  --flow examples/leader-conductor.yaml \
+  --flow examples/leader-workers.yaml \
   --prompt "Review this workspace and delegate as needed." \
   --headless
 ```
@@ -139,8 +139,8 @@ interface FlowDefinition {
   name: string;
   description?: string;
   repo: string;
-  claudeMd?: string;
-  claudeMdLibrary?: Record<string, string>;
+  flowMd?: string;
+  flowMdLibrary?: Record<string, string>;
   teams?: TeamDefinition[];
   orchestrator: AgentConfig;
   resources?: {
@@ -161,7 +161,7 @@ interface AgentConfig {
   team?: Array<{ id: string; role?: string }>;
   model?: string;
   system?: string;
-  claudeMdRef?: string;
+  flowMdRef?: string;
   description?: string;
   effort?: "low" | "medium" | "high" | "xhigh";
   timeout?: number;
@@ -241,7 +241,7 @@ orchestrator:
       team:
         - id: review
           role: reviewer
-      model: gpt-5.4
+      model: gpt-5.5
       system: |
         Review the assigned work and report concrete findings.
       timeout: 600000

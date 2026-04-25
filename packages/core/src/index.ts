@@ -64,7 +64,7 @@ export interface AgentConfig {
   team?: AgentTeamTag[];
   model?: string;
   system?: string;
-  claudeMdRef?: string;
+  flowMdRef?: string;
   description?: string;
   effort?: 'low' | 'medium' | 'high' | 'xhigh';
   timeout?: number;
@@ -83,7 +83,7 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   team: z.array(agentTeamTagSchema).optional(),
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
-  claudeMdRef: z.string().min(1).optional(),
+  flowMdRef: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
   effort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
   timeout: z.number().int().positive().optional(),
@@ -98,13 +98,13 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
 export interface TeamDefinition {
   id: string;
   description?: string;
-  claudeMdRef?: string;
+  flowMdRef?: string;
 }
 
 export const teamDefinitionSchema: z.ZodType<TeamDefinition> = z.object({
   id: z.string().min(1),
   description: z.string().min(1).optional(),
-  claudeMdRef: z.string().min(1).optional(),
+  flowMdRef: z.string().min(1).optional(),
 });
 
 export interface FlowDefinition {
@@ -112,8 +112,8 @@ export interface FlowDefinition {
   name: string;
   description?: string;
   repo: string;
-  claudeMd?: string;
-  claudeMdLibrary?: Record<string, string>;
+  flowMd?: string;
+  flowMdLibrary?: Record<string, string>;
   teams?: TeamDefinition[];
   orchestrator: AgentConfig;
   resources?: {
@@ -128,8 +128,8 @@ export const flowDefinitionSchema: z.ZodType<FlowDefinition> = z.object({
   name: z.string().min(1),
   description: z.string().min(1).optional(),
   repo: z.string().min(1),
-  claudeMd: z.string().min(1).optional(),
-  claudeMdLibrary: z.record(z.string(), z.string()).optional(),
+  flowMd: z.string().min(1).optional(),
+  flowMdLibrary: z.record(z.string(), z.string()).optional(),
   teams: z.array(teamDefinitionSchema).optional(),
   orchestrator: agentConfigSchema,
   resources: z.object({

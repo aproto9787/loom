@@ -4,16 +4,16 @@ import { SERVER_ORIGIN } from "./sse-run.js";
 import { darkButtonLink, darkCardMuted, inputDark, selectDark } from "./panelStyles.js";
 import { getAgentAtPath, useRunStore, type DiscoveredResource } from "./store.js";
 
-function toTabId(tab: "claudeMd" | "delegation"): AgentConfigTab {
-  return tab === "claudeMd" ? "claude-md" : "delegation";
+function toTabId(tab: "flowMd" | "delegation"): AgentConfigTab {
+  return tab === "flowMd" ? "flow-md" : "delegation";
 }
 
 type ResourceField = "mcps" | "hooks" | "skills";
-type AgentConfigTab = "basic" | "claude-md" | "delegation" | "resources";
+type AgentConfigTab = "basic" | "flow-md" | "delegation" | "resources";
 
 const TAB_ORDER: Array<{ id: AgentConfigTab; label: string }> = [
   { id: "basic", label: "Basic" },
-  { id: "claude-md", label: "CLAUDE.md" },
+  { id: "flow-md", label: "flow.md" },
   { id: "delegation", label: "Delegation" },
   { id: "resources", label: "Resources" },
 ];
@@ -285,7 +285,7 @@ export function AgentConfigForm({
   const [model, setModel] = useState(agent.model ?? "");
   const [effort, setEffort] = useState(agent.effort ?? "");
   const [teamId, setTeamId] = useState(agent.team?.[0]?.id ?? "");
-  const [claudeMdRef, setClaudeMdRef] = useState(agent.claudeMdRef ?? "none");
+  const [flowMdRef, setFlowMdRef] = useState(agent.flowMdRef ?? "none");
   const [activeTab, setActiveTab] = useState<AgentConfigTab>("basic");
   const setStudioTab = useRunStore((s) => s.setActiveTab);
   const [resourceSearch, setResourceSearch] = useState<Record<ResourceField, string>>({
@@ -300,10 +300,10 @@ export function AgentConfigForm({
     setModel(agent.model ?? "");
     setEffort(agent.effort ?? "");
     setTeamId(agent.team?.[0]?.id ?? "");
-    setClaudeMdRef(agent.claudeMdRef ?? "none");
+    setFlowMdRef(agent.flowMdRef ?? "none");
     setActiveTab("basic");
     setResourceSearch({ mcps: "", hooks: "", skills: "" });
-  }, [agent.name, agent.type, agent.model, agent.effort, agent.team, agent.claudeMdRef, agent.delegation]);
+  }, [agent.name, agent.type, agent.model, agent.effort, agent.team, agent.flowMdRef, agent.delegation]);
 
   const role = useMemo(() => roles.find((entry) => entry.name === agent.role), [agent.role, roles]);
 
@@ -311,7 +311,7 @@ export function AgentConfigForm({
   const modelOptions =
     effectiveType === "claude-code"
       ? ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
-      : ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
+      : ["gpt-5.5", "gpt-5.5-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
 
   useEffect(() => {
     fetchMcps(SERVER_ORIGIN);
@@ -343,8 +343,8 @@ export function AgentConfigForm({
     return collectRelatedAgentNames(flowDraft.orchestrator, path);
   }, [flowDraft, path]);
 
-  const libraryEntries = useMemo(() => Object.entries(flowDraft?.claudeMdLibrary ?? {}), [flowDraft?.claudeMdLibrary]);
-  const hasClaudeMdSelection = claudeMdRef !== "none";
+  const libraryEntries = useMemo(() => Object.entries(flowDraft?.flowMdLibrary ?? {}), [flowDraft?.flowMdLibrary]);
+  const hasFlowMdSelection = flowMdRef !== "none";
   const delegationRules = agent.delegation ?? [];
 
   const toggleResource = useCallback(
@@ -560,17 +560,17 @@ export function AgentConfigForm({
             </div>
           ) : null}
 
-          {activeTab === "claude-md" ? (
+          {activeTab === "flow-md" ? (
             <div className={`flex flex-col gap-3 p-4 ${darkCardMuted}`}>
               <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                <span>CLAUDE.md Ref</span>
+                <span>flow.md Ref</span>
                 <select
                   className={selectDark}
-                  value={claudeMdRef}
+                  value={flowMdRef}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setClaudeMdRef(value);
-                    updateAgent(path, { claudeMdRef: value === "none" ? undefined : value });
+                    setFlowMdRef(value);
+                    updateAgent(path, { flowMdRef: value === "none" ? undefined : value });
                   }}
                 >
                   <option value="none">none</option>
@@ -582,17 +582,17 @@ export function AgentConfigForm({
                 </select>
               </label>
               <p className="m-0 text-xs leading-5 text-slate-500">
-                Pick a library entry here, then manage its content in the global CLAUDE.md tab.
+                Pick a library entry here, then manage its content in the global flow.md tab.
               </p>
               <button
                 type="button"
                 className={`${darkButtonLink} self-start`}
                 onClick={() => {
-                  setStudioTab("claudeMd");
-                  setActiveTab(toTabId("claudeMd"));
+                  setStudioTab("flowMd");
+                  setActiveTab(toTabId("flowMd"));
                 }}
               >
-                {hasClaudeMdSelection ? "Open selected entry in CLAUDE.md tab" : "Open CLAUDE.md tab"}
+                {hasFlowMdSelection ? "Open selected entry in flow.md tab" : "Open flow.md tab"}
               </button>
             </div>
           ) : null}

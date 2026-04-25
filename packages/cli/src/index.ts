@@ -12,7 +12,9 @@ import { fileURLToPath } from "node:url";
 import type { AgentConfig, AgentType, TimelineEvent } from "@loom/core";
 import { loadFlow } from "@loom/runtime";
 import { buildConfiguredAgent } from "@loom/runtime";
+import { createCodexInstructionHome, type CodexInstructionHome } from "./codex-home.js";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
+import { buildHeadlessPrompt } from "./session-prompts.js";
 
 const VERSION = "0.1.0";
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -635,14 +637,14 @@ async function collectTranscriptFiles(projectsRoot: string): Promise<string[]> {
   return files.flat().sort((a, b) => a.localeCompare(b));
 }
 
-async function createTranscriptTail(runId: string, homeDir: string, cwd: string, origin: string): Promise<TranscriptTailState> {
+async function createTranscriptTail(runId: string, homeDir: string, cwd: string, origin: string, rootAgentName: string): Promise<TranscriptTailState> {
   // Scope the watch to THIS cwd's project directory only. Claude Code
   // stores transcripts at `~/.claude/projects/<cwd-with-slashes-as-dashes>/<uuid>.jsonl`,
   // so watching the top-level `projects/` on the real HOME would scan every
   // previous project the user has ever touched — enormous disk/inotify cost.
   const cwdMangled = cwd.replace(/\//g, "-");
   const scopedProjectDir = path.join(homeDir, ".claude", "projects", cwdMangled);
-  // Also snapshot which jsonl files already exist before the leader starts,
+  // Also snapshot which jsonl files already exist before the root agent starts,
   // so we ignore pre-existing session transcripts. Only files that appear
   // AFTER this function runs are treated as belonging to the current run.
   const preExistingFiles = new Set<string>();
@@ -705,9 +707,9 @@ async function createTranscriptTail(runId: string, homeDir: string, cwd: string,
       ? chunk.length
       : completeLines.reduce((total, entry) => total + entry.length + 1, 0);
     const mappedEvents = completeLines
-      .map((entry) => mapTranscriptLine(runId, entry))
+      .map((entry) => mapTranscriptLine(runId, entry, rootAgentName))
       .filter((entry): entry is LoomRunEvent => entry !== null);
-    const eventLines = completeLines.filter((entry) => mapTranscriptLine(runId, entry) !== null);
+    const eventLines = completeLines.filter((entry) => mapTranscriptLine(runId, entry, rootAgentName) !== null);
     return {
       events: dedupeEvents(file, startOffset, eventLines, mappedEvents),
       nextOffset: startOffset + consumedLength,
@@ -854,34 +856,25 @@ function summarizeTeamMembers(agent: AgentConfig): string {
 
   const lines = [
     "# Team members available",
-    "<!-- Use TeamCreate / Agent(name=<member>) to delegate. -->",
+    "<!-- Delegate only through the CLI-injected loom-subagent Bash commands. Do not use TeamCreate or Agent(name=...). -->",
     ...children.map((child) => `- ${child.name} (${child.type}): ${child.system ?? ""}`.trimEnd()),
   ];
 
   return lines.join("\n");
 }
 
-function mergeClaudeMd(flowClaudeMd: string | undefined, agentClaudeMd: string | undefined, configuredAgent: AgentConfig): string {
-  return [flowClaudeMd?.trim(), agentClaudeMd?.trim(), summarizeTeamMembers(configuredAgent)].filter(Boolean).join("\n\n");
+function mergeFlowMd(flowFlowMd: string | undefined, agentFlowMd: string | undefined, configuredAgent: AgentConfig): string {
+  return [flowFlowMd?.trim(), agentFlowMd?.trim(), summarizeTeamMembers(configuredAgent)].filter(Boolean).join("\n\n");
 }
 
-function resolveAgentClaudeMd(flow: LoadedCliFlow, agent: AgentConfig): string | undefined {
-  const ref = agent.claudeMdRef?.trim();
+function resolveAgentFlowMd(flow: LoadedCliFlow, agent: AgentConfig): string | undefined {
+  const ref = agent.flowMdRef?.trim();
   if (!ref) {
     return undefined;
   }
-  return flow.flow.claudeMdLibrary?.[ref];
+  return flow.flow.flowMdLibrary?.[ref];
 }
 
-
-function buildHeadlessPrompt(instructions: string, userPrompt: string): string {
-  const parts = [];
-  if (instructions.trim()) {
-    parts.push(`# Loom instructions\n${instructions.trim()}`);
-  }
-  parts.push(`# User task\n${userPrompt.trim()}`);
-  return parts.join("\n\n");
-}
 
 function buildHeadlessSpawnArgs(agent: AgentConfig, finalInstructions: string, userPrompt: string): { command: string; args: string[] } {
   if (agent.type === "claude-code") {
@@ -937,7 +930,7 @@ async function runHeadlessAgent(
     LOOM_AGENT_TYPE: configuredAgent.type,
     LOOM_RUN_ID: registration.runId,
     LOOM_SERVER_ORIGIN: serverOrigin,
-    LOOM_PARENT_AGENT: "leader",
+    LOOM_PARENT_AGENT: configuredAgent.name,
     LOOM_PARENT_DEPTH: "0",
     LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
   };
@@ -986,39 +979,29 @@ async function runHeadlessAgent(
 }
 
 async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<number> {
-  // Leader runs in the host's real HOME — same Claude Code experience the
-  // user gets day-to-day (statusline, plugins, marketplaces, hooks, skills,
-  // settings, theme, login session). No isolation, no carryover dance.
-  //
-  // Flow customization lands on the leader purely through the prompt layer
-  // (`--append-system-prompt` with the flow's claudeMd + leader-rules + the
-  // Subagent Delegation Protocol). That's what teaches the leader how to
-  // use its team. Anything settings-shaped (hooks/skills/mcps/plugins) is
-  // subagent-only — leader stays "vanilla host Claude".
+  // The root agent runs with the host's normal config/login. Claude accepts
+  // hidden prompt injection directly; Codex gets an ephemeral CODEX_HOME whose
+  // AGENTS.md combines the real global AGENTS.md with this flow's instructions.
   const agent: AgentConfig = { ...flow.flow.orchestrator };
   const configuredAgent = buildConfiguredAgent(agent, flow.flow, flow.flow.repo, {
     roles: new Map(),
     hooks: new Map(),
     skills: new Map(),
   });
-  const agentClaudeMd = resolveAgentClaudeMd(flow, configuredAgent);
-  const mergedInstructions = mergeClaudeMd(flow.flow.claudeMd, agentClaudeMd, configuredAgent);
+  const agentFlowMd = resolveAgentFlowMd(flow, configuredAgent);
+  const mergedInstructions = mergeFlowMd(flow.flow.flowMd, agentFlowMd, configuredAgent);
   const flowCwd = resolveFlowCwd(flow);
   const userPrompt = await readHeadlessPrompt(options);
   if (options.headless && !userPrompt) {
     throw new Error("loom: --headless requires --prompt, --prompt-file, or piped stdin");
   }
   const registration = await reportCliRunStart(flow, configuredAgent.type, options, userPrompt ?? "");
-  const { command, args } = buildSpawnArgs(configuredAgent);
-  const delegationPrompt = buildDelegationPrompt(flow.flow.orchestrator, "leader");
+  const delegationPrompt = buildDelegationPrompt(configuredAgent, configuredAgent.name);
   const finalInstructions = delegationPrompt
     ? (mergedInstructions.trim()
         ? `${mergedInstructions}\n\n${delegationPrompt}`
         : delegationPrompt)
     : mergedInstructions;
-  if (configuredAgent.type === "claude-code" && finalInstructions.trim().length > 0) {
-    args.push("--append-system-prompt", finalInstructions);
-  }
   if (options.headless) {
     return await runHeadlessAgent(
       flow,
@@ -1032,15 +1015,25 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
     );
   }
 
+  const { command, args } = buildSpawnArgs(configuredAgent);
+  let codexInstructionHome: CodexInstructionHome | undefined;
+  if (configuredAgent.type === "claude-code" && finalInstructions.trim().length > 0) {
+    args.push("--append-system-prompt", finalInstructions);
+  }
+  if (configuredAgent.type === "codex" && finalInstructions.trim().length > 0) {
+    codexInstructionHome = await createCodexInstructionHome({ instructions: finalInstructions });
+  }
+
   const realHome = os.homedir();
   const transcriptTail = configuredAgent.type === "claude-code"
-    ? await createTranscriptTail(registration.runId, realHome, flowCwd, getServerOrigin(options.serverOrigin))
+    ? await createTranscriptTail(registration.runId, realHome, flowCwd, getServerOrigin(options.serverOrigin), configuredAgent.name)
     : undefined;
   const finalizeRun = async (exitCode: number) => {
     if (transcriptTail) {
       await transcriptTail.close();
       await transcriptTail.flushBundle();
     }
+    await codexInstructionHome?.cleanup().catch(() => undefined);
     await registration.cleanup(exitCode);
   };
 
@@ -1067,9 +1060,15 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
       LOOM_AGENT_TYPE: agent.type,
       LOOM_RUN_ID: registration.runId,
       LOOM_SERVER_ORIGIN: getServerOrigin(options.serverOrigin),
-      LOOM_PARENT_AGENT: "leader",
+      LOOM_PARENT_AGENT: configuredAgent.name,
       LOOM_PARENT_DEPTH: "0",
       LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
+      ...(codexInstructionHome
+        ? {
+            CODEX_HOME: codexInstructionHome.codexHome,
+            CODEX_CONFIG_DIR: codexInstructionHome.codexHome,
+          }
+        : {}),
     },
   });
 
@@ -1099,10 +1098,10 @@ function buildFlowTemplate(name: string): string {
 description: |
   TODO: describe this flow.
 repo: .
-claudeMd: |
+flowMd: |
   # Flow Common Policy
   - 범위 엄수. 인접 불가침. 가정 명시.
-claudeMdLibrary: {}
+flowMdLibrary: {}
 orchestrator:
   name: leader
   type: claude-code

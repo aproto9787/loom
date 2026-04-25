@@ -5,8 +5,8 @@ import type { FlowDefinition } from "@loom/core";
 import { buildServer } from "./index.js";
 import { markStaleRuns, resetTraceStore } from "./trace-store.js";
 
-const DEFAULT_FLOW_PATH = "examples/leader-conductor.yaml";
-const DEFAULT_FLOW_NAME = "Leader-Conductor-Workers";
+const DEFAULT_FLOW_PATH = "examples/leader-workers.yaml";
+const DEFAULT_FLOW_NAME = "Leader-Workers";
 
 function loomTest(
   name: string,
@@ -156,7 +156,7 @@ async function readRunStreamEvents(
   throw new Error(`timed out waiting for ${expectedCount} SSE events from ${runId}`);
 }
 
-loomTest("GET /flows lists the current example flow", async (t) => {
+loomTest("GET /flows lists the leader-workers flow", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
@@ -165,12 +165,11 @@ loomTest("GET /flows lists the current example flow", async (t) => {
   });
 
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.json(), {
-    flows: [DEFAULT_FLOW_PATH],
-  });
+  const body = response.json();
+  assert.ok(body.flows.includes(DEFAULT_FLOW_PATH));
 });
 
-loomTest("GET /flows/get loads the leader-conductor flow", async (t) => {
+loomTest("GET /flows/get loads the leader-workers flow", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
@@ -185,8 +184,7 @@ loomTest("GET /flows/get loads the leader-conductor flow", async (t) => {
   assert.equal(body.flow.name, DEFAULT_FLOW_NAME);
   assert.equal(body.flow.repo, ".");
   assert.equal(body.flow.orchestrator.name, "leader");
-  assert.equal(body.flow.orchestrator.agents[0].name, "conductor");
-  assert.equal(body.flow.orchestrator.agents[0].type, "codex");
+  assert.equal(body.flow.orchestrator.type, "codex");
 });
 
 loomTest("POST /runs accepts the current flow and persists the mocked local CLI run", async (t) => {

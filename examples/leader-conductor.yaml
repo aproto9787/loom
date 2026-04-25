@@ -2,18 +2,18 @@ version: "1"
 name: Leader-Conductor-Workers
 description: |
   The only flow. Leader (Opus) orchestrates and receives conductor REPORTs.
-  Conductor (Claude+GPT5.4) runs autonomously, owns optional advocate
+  Conductor (Claude+GPT5.5) runs autonomously, owns optional advocate
   validation, and picks workers from a wide
   roster based on task shape — impl, fix, review, analyst, frontend,
   debate team. Delegation rules decide which few fire per BRIEFING.
 repo: .
-claudeMd: |
+flowMd: |
   # Flow Common Policy (적용: 모든 에이전트)
 
   ## 지시 우선순위
   1. system prompt (Claude Code 내장)
-  2. 이 파일 (flow-level CLAUDE.md)
-  3. 각 agent의 claudeMdRef — 역할별 규칙
+  2. 이 파일 (flow-level flow.md)
+  3. 각 agent의 flowMdRef — 역할별 규칙
   같은 레벨 충돌은 더 구체적인 규칙이 우선. 하위가 상위와 모순이면 상위 따름 + 모순 사실 보고.
 
   ## 공통 원칙 (모든 에이전트)
@@ -27,7 +27,7 @@ claudeMd: |
   - 리소스: 메모리 100% 도달 금지 — 가용 3Gi 이하면 추가 spawn 보류.
 
   사용자와 직접 대화하는 에이전트(리더)만 적용되는 원칙은 leader-rules 참조.
-claudeMdLibrary:
+flowMdLibrary:
   base-worker-rules: |
     # Worker Rules
     - 할당된 범위 밖 파일/모듈 건드리지 말 것. 범위 엄수.
@@ -226,7 +226,7 @@ orchestrator:
     yourself, delegate anything mid or high to the team. Never explore or
     modify code on mid/high tasks — write a BRIEFING, route through
     conductor, and report the final outcome.
-  claudeMdRef: leader-rules
+  flowMdRef: leader-rules
   effort: xhigh
   delegation:
     - to: conductor
@@ -251,12 +251,12 @@ orchestrator:
       team:
         - id: execution
           role: conductor
-      model: gpt-5.4
+      model: gpt-5.5
       system: |
         Autonomous executor. Read the BRIEFING, spawn the right workers
         from your team, chain them through review/fix if code changes,
         and emit a REPORT with file:line artifacts.
-      claudeMdRef: conductor-rules
+      flowMdRef: conductor-rules
       effort: xhigh
       delegation:
         - to: codex-impl-1
@@ -306,7 +306,7 @@ orchestrator:
             Validate the BRIEFING or REPORT against the user's original request
             on four axes: intent alignment, over-engineering, goal shrinking,
             direction drift. Return PASS or FAIL with a concise reason.
-          claudeMdRef: user-advocate-rules
+          flowMdRef: user-advocate-rules
           delegation:
             - to: conductor
               when: Validation complete.
@@ -319,9 +319,9 @@ orchestrator:
           team:
             - id: execution
               role: implementer
-          model: gpt-5.4
+          model: gpt-5.5
           system: Backend implementer. Stay inside the assigned slice.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - commit-style
@@ -332,9 +332,9 @@ orchestrator:
           team:
             - id: execution
               role: implementer
-          model: gpt-5.4
+          model: gpt-5.5
           system: Second backend implementer for parallel work.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - commit-style
@@ -345,9 +345,9 @@ orchestrator:
           team:
             - id: execution
               role: implementer
-          model: gpt-5.4
+          model: gpt-5.5
           system: Third backend implementer for parallel work.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - commit-style
@@ -362,7 +362,7 @@ orchestrator:
           system: |
             Frontend specialist (Opus only). Build/modify UI, validate
             in browser when possible. Never hand off UI work to Codex.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           mcps:
             - stitch
@@ -376,9 +376,9 @@ orchestrator:
           team:
             - id: research
               role: analyst
-          model: gpt-5.4
+          model: gpt-5.5
           system: Read-only investigator. Trace, cite, report. No edits.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - concise
@@ -388,9 +388,9 @@ orchestrator:
           team:
             - id: research
               role: analyst
-          model: gpt-5.4
+          model: gpt-5.5
           system: Second analyst for parallel or cross-angle investigation.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - concise
@@ -400,11 +400,11 @@ orchestrator:
           team:
             - id: review
               role: reviewer
-          model: gpt-5.4
+          model: gpt-5.5
           system: |
             Review impl output against BRIEFING acceptance. Return PASS or
             FAIL with concrete file:line findings.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - review-checklist
@@ -415,11 +415,11 @@ orchestrator:
           team:
             - id: execution
               role: fixer
-          model: gpt-5.4
+          model: gpt-5.5
           system: |
             Apply surgical fixes only to reviewer-flagged lines. No
             refactoring, no scope creep.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - concise
@@ -431,7 +431,7 @@ orchestrator:
               role: debater
           model: claude-sonnet-4-6
           system: First-stance debater. Argue the position with evidence.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - concise
@@ -443,7 +443,7 @@ orchestrator:
               role: debater
           model: claude-sonnet-4-6
           system: Counter-stance debater. Argue the opposing position.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - concise
@@ -457,7 +457,7 @@ orchestrator:
           system: |
             Read both debater outputs, pick a side or escalate. No bland
             compromise nobody argued for.
-          claudeMdRef: base-worker-rules
+          flowMdRef: base-worker-rules
           effort: high
           skills:
             - concise

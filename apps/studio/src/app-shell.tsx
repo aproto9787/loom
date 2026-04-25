@@ -1,11 +1,19 @@
 import { type ReactNode } from "react";
 import { CustomPanel } from "./CustomPanel.js";
-import ClaudeMdTab from "./ClaudeMdTab.js";
+import FlowMdTab from "./FlowMdTab.js";
 import DelegationTab from "./DelegationTab.js";
 import { RolesPanel } from "./RolesPanel.js";
 import { RunsPanel } from "./AppSections.js";
 
-export const TABS = ["workflow", "claudeMd", "delegation", "runs", "roles", "custom"] as const;
+export const TABS = ["workflow", "flowMd", "delegation", "runs", "roles", "custom"] as const;
+const TAB_LABELS: Record<(typeof TABS)[number], string> = {
+  workflow: "Workflow",
+  flowMd: "flow.md",
+  delegation: "Delegation",
+  runs: "Runs",
+  roles: "Roles",
+  custom: "Custom",
+};
 
 export function TabBar({
   activeTab,
@@ -27,7 +35,7 @@ export function TabBar({
           }`}
           onClick={() => onSelect(tab)}
         >
-          {tab}
+          {TAB_LABELS[tab]}
         </button>
       ))}
     </nav>
@@ -35,8 +43,8 @@ export function TabBar({
 }
 
 export function StaticTabView({ activeTab }: { activeTab: (typeof TABS)[number] }) {
-  if (activeTab === "claudeMd") {
-    return <ClaudeMdTab />;
+  if (activeTab === "flowMd") {
+    return <FlowMdTab />;
   }
   if (activeTab === "delegation") {
     return <DelegationTab />;

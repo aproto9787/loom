@@ -1,9 +1,9 @@
 import type { AgentConfig } from "@loom/core";
 
-// Build a system-prompt snippet that instructs an agent to delegate
-// ALL sub-agent work to Bash `loom-subagent ...` instead of Claude Code's
-// Agent tool. The snippet enumerates the direct children of `selfAgent`
-// with a copy-paste-ready command template for each.
+// Build a system-prompt snippet that instructs an agent to use Bash
+// `loom-subagent ...` for sub-agent work instead of Claude Code's Agent tool.
+// The snippet enumerates the direct children of `selfAgent` with a
+// copy-paste-ready command template for each.
 //
 // When `selfAgent.agents` is empty or missing, returns an empty string.
 export function buildDelegationPrompt(selfAgent: AgentConfig, selfName: string): string {
@@ -16,6 +16,7 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, selfName: string):
   lines.push("## Subagent Delegation Protocol (Loom)");
   lines.push("");
   lines.push(`You have subagents. **Delegate by running Bash ${invoker} ... — do NOT use the Agent tool.** The subagent's final REPORT arrives as the Bash tool_result.`);
+  lines.push("If the user explicitly asks to delegate, assign work, use workers/agents/team members, or parallelize, treat delegation as required for the relevant non-trivial work. Do not complete the whole task yourself unless no suitable subagent exists.");
   lines.push("");
   lines.push("Available subagents:");
   for (const child of children) {
@@ -34,10 +35,12 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, selfName: string):
   lines.push("2. Prefer `--briefing` for one-line tasks. For long or multiline tasks, pipe stdin or use `--briefing-file <path>`.");
   lines.push("3. If a positional briefing starts with `--`, place it after a literal `--` so it is not parsed as an option.");
   lines.push("4. Never invoke the Agent tool for these roles — the Loom runtime tracks only Bash-spawned subagents.");
-  lines.push("5. You may call multiple subagents in parallel by running Bash commands in the same turn.");
-  lines.push("6. Read the REPORT from stdout; decide next step based on `status:` and `summary:` lines.");
+  lines.push("5. Explicit user delegation requests override the low-complexity direct-execution default.");
+  lines.push("6. Without an explicit delegation request, direct execution is fine for low-complexity work; spawn subagents for independent slices, specialist work, broad parallel investigation, or review/fix gates.");
+  lines.push("7. You may call multiple subagents in parallel only when their tasks are independent.");
+  lines.push("8. Read the REPORT from stdout; decide next step based on `status:` and `summary:` lines.");
   lines.push("");
-  return lines.join("\\n");
+  return lines.join("\n");
 }
 
 function backendFor(type: AgentConfig["type"]): "claude" | "codex" {

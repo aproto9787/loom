@@ -389,7 +389,7 @@ Real MCP `tools/call` from an agent node | shipped
 
 ## Operational notes for next session
 
-- `foreman-run.sh` (GPT-5.4 headless worker) was used for Phase 1
+- `foreman-run.sh` (GPT-5.5 headless worker) was used for Phase 1
   and Phase 2A with mixed success: it ships code but keeps
   forgetting to write the REPORT file (Write tool), and in Phase
   2B-1 the spawned codex worker never replied. Going forward the
@@ -397,7 +397,7 @@ Real MCP `tools/call` from an agent node | shipped
   escape-hatch territory; foreman stays available for larger
   surface-area passes but is no longer the default.
 - Frontend work is team-lead-direct by policy (Claude Opus),
-  because the foreman backend runs on GPT-5.4.
+  because the foreman backend runs on GPT-5.5.
 - Every commit so far is a normal merge into `master`. No branches,
   no rebases, no force-pushes.
 - The `.loom/traces.db`, `outputs/`, `node_modules` and all dist

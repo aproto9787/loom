@@ -66,7 +66,7 @@ Owns the current recursive agent-tree schema:
 Important current schema facts:
 
 - Agent types are exactly `claude-code` and `codex`.
-- `AgentConfig` has `team`, `delegation`, `claudeMdRef`, `timeout`, `parallel`, `mcps`, `hooks`, `skills`, and recursive `agents`.
+- `AgentConfig` has `team`, `delegation`, `flowMdRef`, `timeout`, `parallel`, `mcps`, `hooks`, `skills`, and recursive `agents`.
 - `AgentConfig` does not currently define `isolated` or `capabilities`.
 - `RoleDefinition` currently defines `name`, `type`, `model`, `system`, `effort`, `description`, and `mcps`.
 - `RoleDefinition` does not currently define `hooks`, `skills`, `isolated`, or `capabilities`.
@@ -274,7 +274,7 @@ Before broader distribution, the project should make trust boundaries explicit i
 - The CLI imports built files from `apps/server/dist`; shared runtime/load/prompt/resource logic should move into a package.
 - `runner-executor.ts` is deprecated but still active for server/studio run routes.
 - Schema/docs previously mentioned `isolated` and `capabilities`, but those fields are absent from the current core schema.
-- The example set currently centers on `examples/leader-conductor.yaml`; smaller onboarding flows would make the project easier to test and explain.
+- The example set currently centers on `examples/leader-workers.yaml`; smaller onboarding flows would make the project easier to test and explain.
 - Golden-path recursive execution is still largely manual; a fake Claude/Codex harness would make it testable without launching real CLIs.
 
 

@@ -106,6 +106,7 @@ export function buildAgentPrompt(
           : "No explicit delegation rules are configured.",
         "Use this child-agent metadata as planning guidance only.",
         "Actual child-agent launch commands are injected by the CLI Subagent Delegation Protocol.",
+        "If the user explicitly asks to delegate, assign work, use workers/agents/team members, or parallelize, delegate the relevant non-trivial work instead of completing the whole task yourself.",
         "Do not emit DELEGATE lines or JSON delegation directives.",
         "If you can finish the task yourself, respond with the final answer normally.",
       ].join("\n"),

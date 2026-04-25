@@ -310,8 +310,8 @@ export function buildServer() {
       name,
       description: "TODO: describe this flow.\n",
       repo: ".",
-      claudeMd: "# Flow Common Policy\n- 범위 엄수. 인접 불가침. 가정 명시.\n",
-      claudeMdLibrary: {},
+      flowMd: "# Flow Common Policy\n- 범위 엄수. 인접 불가침. 가정 명시.\n",
+      flowMdLibrary: {},
       orchestrator: {
         name: "leader",
         type: "claude-code" as const,

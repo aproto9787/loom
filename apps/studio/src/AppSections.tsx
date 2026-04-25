@@ -168,7 +168,7 @@ function FlowSettingsForm() {
   return (
     <div className="flex flex-col gap-4 p-4">
       <p className="m-0 rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-4 py-5 text-sm text-slate-400">
-        Manage flow-level CLAUDE.md in the CLAUDE.md tab.
+        Manage flow-level flow.md in the flow.md tab.
       </p>
     </div>
   );

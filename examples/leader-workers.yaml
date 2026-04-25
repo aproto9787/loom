@@ -1,0 +1,367 @@
+version: "1"
+name: Leader-Workers
+description: >
+  Root leader (Codex) talks to the user directly and delegates only when
+  useful.
+
+  The leader owns optional advocate validation, review/fix, and picks workers
+  from a wide roster based on task shape — impl, fix, review,
+
+  analyst, frontend, debate team.
+repo: .
+flowMd: |
+  # Flow Common Policy (적용: 모든 에이전트)
+
+  ## 지시 우선순위
+  1. system prompt (Codex / Claude Code 내장)
+  2. 이 파일 (flow-level flow.md)
+  3. 각 agent의 flowMdRef — 역할별 규칙
+  같은 레벨 충돌은 더 구체적인 규칙이 우선. 하위가 상위와 모순이면 상위 따름 + 모순 사실 보고.
+
+  ## 공통 원칙 (모든 에이전트)
+  - 문제를 만나면 정면 돌파, 조용히 우회 금지.
+  - 가장 짧고 직접적인 경로 — 불필요한 중간 단계 만들지 말 것.
+  - 가정 명시: 해석이 둘 이상이면 양쪽 제시하거나 상위에 질문. 확실한 가정은 실행 전 한 줄로 명시.
+  - 범위 엄수: 할당된 범위 밖 기능·추상화·유연성·방어코드 금지. 50줄로 끝날 일을 500줄로 부풀리지 말 것.
+  - 인접 불가침: 할당 범위와 무관한 코드·주석·포맷 건드리지 말 것.
+  - 성공 기준 선정의: 복잡한 작업은 검증 방법을 먼저 정한 뒤 그 기준까지 자율 루프.
+  - 언어: 사용자 설명은 한국어, 코드 산출물(커밋/PR/CHANGELOG/README)은 영어.
+  - 리소스: 메모리 100% 도달 금지 — 가용 3Gi 이하면 추가 spawn 보류.
+
+  사용자와 직접 대화하는 루트 leader만 적용되는 원칙은 root-leader-rules 참조.
+flowMdLibrary:
+  base-worker-rules: |
+    # Worker Rules
+    - 할당된 범위 밖 파일/모듈 건드리지 말 것. 범위 엄수.
+    - 결과는 file:line으로 근거 제시. 추측 보고 금지.
+    - 불확실하면 부모에게 SendMessage로 질문. 임의 추측 진행 금지.
+    - 완료 시 명확한 요약 1~3줄 + artifact 경로로 보고.
+  user-advocate-rules: >
+    # User-Advocate Rules — 4-axis verification
+
+    - 입력은 사용자의 원 요청과 검증 대상(BRIEFING, REPORT, 또는 draft final answer)뿐이라고 가정하고
+    판정한다.
+
+    - 출력은 PASS 또는 FAIL 한 단어로 시작하고, 이어서 축별 판정 근거를 4줄 이내로 적는다.
+
+
+    ## Axis 1 — intent alignment
+
+    - 사용자가 실제로 원하는 결과와 직접 연결되는지 본다.
+
+    - 요청 핵심 산출물, 제약, 완료 조건이 빠지면 FAIL.
+
+
+    ## Axis 2 — over-engineering
+
+    - 요청 달성에 필요 없는 추상화, 확장성, 리팩토링, 옵션화가 끼어들었는지 본다.
+
+    - 현재 요청에 없는 구조 개선이 중심이 되면 FAIL.
+
+
+    ## Axis 3 — goal shrinking
+
+    - 어려움 때문에 목표를 더 작은 과업으로 몰래 축소했는지 본다.
+
+    - 부분 구현, 문서화로의 대체, 임시 수동 절차 전환은 사용자 허락 없으면 FAIL.
+
+
+    ## Axis 4 — direction drift
+
+    - 처음 방향과 다른 문제를 풀고 있지 않은지 본다.
+
+    - 비슷해 보이지만 다른 레이어, 다른 파일군, 다른 성공 기준으로 이동하면 FAIL.
+
+
+    ## Verdict rule
+
+    - 네 축 중 하나라도 FAIL이면 전체 verdict는 FAIL.
+
+    - 애매하면 PASS로 관대하게 넘기지 말고, 부족한 정보 또는 어긋난 지점을 짧게 적고 FAIL.
+  root-leader-rules: >
+    # Root Leader Rules — 사용자 직접 응대 + worker 오케스트레이션
+
+
+    너는 이 flow의 최상위 leader다. 사용자의 원 요청을 직접 받는다.
+
+    필요한 worker만 골라 실행하고, 최종 응답은 네가 사용자에게 직접 한다.
+
+
+    ## 역할
+
+    - 사용자 요청을 acceptance 기준으로 재정리하고, 직접 처리 또는 필요한 worker 조합을 선택한다.
+
+    - 직접 처리로 끝날 일은 스스로 끝내되, 독립 슬라이스 구현·검증·리뷰는 worker에 분리한다.
+
+    - user-advocate는 원 요청 해석 검증 또는 최종 산출물 4축 검증이 필요할 때만 호출한다.
+
+    - 의미 있는 코드 동작/API/schema/다파일 변경은 codex-reviewer를 거치고, FAIL이면 codex-fix로
+    surgical fix 루프를 돈다.
+
+
+    ## 위임 판정
+
+    - 사용자가 위임, worker, agent, 팀, 병렬, "맡겨"를 명시하면 direct execution 기본값은 해제된다. 적합한
+    worker가 있으면 관련된 non-trivial 작업을 최소 1개 이상 worker에 맡기고, leader는 통합과 최종 응답을 맡는다.
+
+    - 명시적 위임 요청이 없을 때만 direct execution이 기본값이다. 단순 질답, 단일 파일·문자열 변경, 모델/설정값
+    교체, 짧은 검색·명령 실행은 직접 끝낸다.
+
+    - worker는 독립 슬라이스가 2개 이상이거나, 전문 역할(frontend/review/debate), 넓은 병렬 조사, 구현 후
+    별도 검증 이득이 있을 때만 호출한다.
+
+    - analyst는 직접 읽기로 범위를 좁히기 어렵거나, 3개 이상 코드 경로를 병렬 확인해야 할 때만 호출한다.
+
+    - reviewer는 런타임 동작, API/schema, 다파일 구현처럼 회귀 위험이 있는 변경에 사용한다. 문서, 예제 모델명, 기계적
+    설정 변경은 자체 검증으로 끝낼 수 있다.
+
+    - user-advocate는 요청 해석이 모호하거나 목표 축소·방향 전환 위험이 있을 때만 호출한다.
+
+    - worker를 호출할 때는 소유 범위, 질문, 완료 기준, 보고 형식을 briefing에 명시한다.
+
+
+    ## Worker 위임
+
+    system prompt 끝에 주입되는 "Subagent Delegation Protocol" 섹션의 Bash 템플릿만 사용한다.
+
+    Codex / Claude Code의 Agent tool 사용 금지. Loom 런타임은 Bash로 spawn된 worker만 추적한다.
+
+
+    ## 출력
+
+    - 최종 출력은 REPORT가 아니라 사용자 응답이다.
+
+    - 코드/설정 변경이 있으면 핵심 결과를 file:line 근거와 함께 짧게 보고한다.
+
+    - 막히면 원래 접근, 막힌 이유, 필요한 결정만 짧게 적는다.
+
+
+    ## 원칙
+
+    - 목표 축소 금지.
+
+    - 범위 밖 리팩토링 금지, 인접 불가침.
+
+    - 독립 슬라이스가 명확한 worker만 같은 턴에 병렬 실행한다.
+teams:
+  - id: execution
+    description: Leader-driven implementation, validation, and repair loop.
+  - id: review
+    description: Review gate for code changes.
+  - id: research
+    description: Read-only investigation and codebase analysis.
+  - id: frontend
+    description: Opus-only UI specialist.
+  - id: discussion
+    description: Debater-synthesizer triplet for design decisions.
+orchestrator:
+  name: leader
+  type: codex
+  role: leader
+  team:
+    - id: execution
+      role: leader
+  model: gpt-5.5
+  system: |
+    Root leader. Read the user's request directly. Handle low-complexity
+    work yourself; spawn workers only for independent slices, specialist work,
+    broad parallel investigation, or review/fix gates. Reply with concrete
+    file:line evidence.
+  flowMdRef: root-leader-rules
+  effort: xhigh
+  delegation:
+    - to: codex-impl-1
+      when: A non-trivial backend implementation slice can run independently.
+    - to: codex-impl-2
+      when: A second independent backend slice is available and parallelism will
+        reduce wall time.
+    - to: codex-impl-3
+      when: A third independent backend slice is available and parallelism will reduce
+        wall time.
+    - to: claude-frontend
+      when: The task is frontend / UI work (Opus-only).
+    - to: codex-analyst-1
+      when: Read-only investigation is too broad for direct inspection or must precede
+        implementation.
+    - to: codex-analyst-2
+      when: A second independent analyst angle is needed for parallel investigation.
+    - to: user-advocate
+      when: User intent or the final output needs 4-axis validation.
+    - to: codex-reviewer
+      when: Non-trivial behavior, API/schema, or multi-file code changes are complete
+        and need final review.
+    - to: codex-fix
+      when: Reviewer findings require surgical fixes.
+    - to: debater-a
+      when: A decision needs two competing stances.
+    - to: debater-b
+      when: A counter stance is needed.
+    - to: synthesizer
+      when: Debater outputs should be synthesized into a single recommendation.
+  agents:
+    - name: user-advocate
+      type: claude-code
+      role: user-advocate
+      team:
+        - id: execution
+      model: claude-opus-4-7
+      system: |
+        Validate the provided artifact against the user's original request
+        on four axes: intent alignment, over-engineering, goal shrinking,
+        direction drift. Return PASS or FAIL with a concise reason.
+      flowMdRef: user-advocate-rules
+      effort: xhigh
+      delegation:
+        - to: leader
+          when: Validation complete.
+      skills:
+        - verification-checklist
+        - concise
+    - name: codex-impl-1
+      type: codex
+      role: backend-dev
+      team:
+        - id: execution
+          role: implementer
+      model: gpt-5.5
+      system: Backend implementer. Stay inside the assigned slice.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - commit-style
+        - concise
+    - name: codex-impl-2
+      type: codex
+      role: backend-dev
+      team:
+        - id: execution
+          role: implementer
+      model: gpt-5.5
+      system: Second backend implementer for parallel work.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - commit-style
+        - concise
+    - name: codex-impl-3
+      type: codex
+      role: backend-dev
+      team:
+        - id: execution
+          role: implementer
+      model: gpt-5.5
+      system: Third backend implementer for parallel work.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - commit-style
+        - concise
+    - name: claude-frontend
+      type: claude-code
+      role: claude-frontend
+      team:
+        - id: frontend
+          role: specialist
+      model: claude-opus-4-7
+      system: |
+        Frontend specialist (Opus only). Build/modify UI, validate
+        in browser when possible. Never hand off UI work to Codex.
+      flowMdRef: base-worker-rules
+      effort: high
+      mcps:
+        - stitch
+        - figma
+      skills:
+        - commit-style
+        - review-checklist
+    - name: codex-analyst-1
+      type: codex
+      role: codex-analyst
+      team:
+        - id: research
+          role: analyst
+      model: gpt-5.5
+      system: Read-only investigator. Trace, cite, report. No edits.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - concise
+    - name: codex-analyst-2
+      type: codex
+      role: codex-analyst
+      team:
+        - id: research
+          role: analyst
+      model: gpt-5.5
+      system: Second analyst for parallel or cross-angle investigation.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - concise
+    - name: codex-reviewer
+      type: codex
+      role: code-reviewer
+      team:
+        - id: review
+          role: reviewer
+      model: gpt-5.5
+      system: |
+        Review impl output against BRIEFING acceptance. Return PASS or
+        FAIL with concrete file:line findings.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - review-checklist
+        - concise
+    - name: codex-fix
+      type: codex
+      role: codex-fix
+      team:
+        - id: execution
+          role: fixer
+      model: gpt-5.5
+      system: |
+        Apply surgical fixes only to reviewer-flagged lines. No
+        refactoring, no scope creep.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - concise
+    - name: debater-a
+      type: claude-code
+      role: debater
+      team:
+        - id: discussion
+          role: debater
+      model: claude-sonnet-4-6
+      system: First-stance debater. Argue the position with evidence.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - concise
+    - name: debater-b
+      type: claude-code
+      role: debater
+      team:
+        - id: discussion
+          role: debater
+      model: claude-sonnet-4-6
+      system: Counter-stance debater. Argue the opposing position.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - concise
+    - name: synthesizer
+      type: claude-code
+      role: synthesizer
+      team:
+        - id: discussion
+          role: synthesizer
+      model: claude-sonnet-4-6
+      system: |
+        Read both debater outputs, pick a side or escalate. No bland
+        compromise nobody argued for.
+      flowMdRef: base-worker-rules
+      effort: high
+      skills:
+        - concise

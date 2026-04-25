@@ -42,6 +42,9 @@ interface CliArgs {
 const RUN_ID = process.env.LOOM_RUN_ID;
 const SERVER_ORIGIN = process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
 const DEFAULT_REPORT_DIR = path.join(os.tmpdir(), "loom-subagent");
+const REPORT_POLL_MS = 500;
+const REPORT_STABLE_MS = 1000;
+const REPORT_SHUTDOWN_GRACE_MS = 3000;
 
 function printUsage(): void {
   console.error(`loom-subagent — generalized child-agent runner for Loom flows
@@ -168,6 +171,21 @@ async function readBriefing(fromArg: string, fromFile?: string): Promise<string>
 function truncate(value: string, max = 160): string {
   const clean = value.replace(/\s+/g, " ").trim();
   return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
+}
+
+function initialReport(name: string): string {
+  return `status: blocked\nsummary:\n  - ${name} did not start\n`;
+}
+
+function isCompleteReport(report: string, args: CliArgs): boolean {
+  const trimmed = report.trim();
+  if (!trimmed || trimmed === initialReport(args.name).trim()) {
+    return false;
+  }
+
+  return /^status:\s*(done|blocked|needs_decision)\s*$/m.test(report)
+    && /^summary:\s*$/m.test(report)
+    && /^\s*-\s+\S/m.test(report);
 }
 
 async function postEvent(
@@ -342,7 +360,7 @@ async function loadFlowContext(selfName: string): Promise<FlowContext | undefine
 // Minimal helpers duplicated from packages/cli/src/index.ts createIsolatedHome.
 // Subagent is headless (--print / codex exec) so it skips the interactive
 // onboarding carryover the leader needs — just credentials, hooks, skills,
-// and merged CLAUDE.md / AGENTS.md.
+// and merged flow.md / AGENTS.md.
 async function readOptional(filePath: string): Promise<string | undefined> {
   try {
     return await readFile(filePath, "utf8");
@@ -379,8 +397,8 @@ async function writeSkillFiles(claudeDir: string, skills: SkillDefinition[]): Pr
   }));
 }
 
-function mergeInstructions(flowClaudeMd: string | undefined, agentClaudeMd: string | undefined, system: string | undefined): string {
-  return [flowClaudeMd?.trim(), agentClaudeMd?.trim(), system?.trim()].filter(Boolean).join("\n\n");
+function mergeInstructions(flowFlowMd: string | undefined, agentFlowMd: string | undefined, system: string | undefined): string {
+  return [flowFlowMd?.trim(), agentFlowMd?.trim(), system?.trim()].filter(Boolean).join("\n\n");
 }
 
 async function createSubagentHome(
@@ -394,10 +412,10 @@ async function createSubagentHome(
   await mkdir(root, { recursive: true });
   const home = await mkdtemp(path.join(root, `${args.name}-`));
   const realHome = os.homedir();
-  const agentClaudeMd = configuredAgent.claudeMdRef
-    ? flow.claudeMdLibrary?.[configuredAgent.claudeMdRef]
+  const agentFlowMd = configuredAgent.flowMdRef
+    ? flow.flowMdLibrary?.[configuredAgent.flowMdRef]
     : undefined;
-  const merged = mergeInstructions(flow.claudeMd, agentClaudeMd, configuredAgent.system);
+  const merged = mergeInstructions(flow.flowMd, agentFlowMd, configuredAgent.system);
 
   if (args.backend === "claude") {
     const claudeDir = path.join(home, ".claude");
@@ -421,6 +439,8 @@ async function createSubagentHome(
 
     await writeSkillFiles(claudeDir, scopedSkills);
     if (merged.trim()) {
+      // Loom models this content as flow.md, but Claude Code discovers it
+      // through its backend-specific CLAUDE.md filename.
       await writeFile(path.join(claudeDir, "CLAUDE.md"), merged, "utf8");
     }
   } else {
@@ -550,7 +570,7 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
   let parseLine: (line: string) => MappedEvent[];
 
   if (args.backend === "codex") {
-    const model = args.model ?? "gpt-5.4";
+    const model = args.model ?? "gpt-5.5";
     const prompt = buildCodexPrompt(args, reportPath, delegation);
     command = "codex";
     childArgs = [
@@ -610,6 +630,13 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
     });
 
     let buffer = "";
+    let reportSnapshot = "";
+    let reportSeenAt = 0;
+    let reportDrivenExit = false;
+    let reportShutdownStarted = false;
+    let childExited = false;
+    let reportShutdownKiller: ReturnType<typeof setTimeout> | undefined;
+
     const flushLines = (chunk: string) => {
       buffer += chunk;
       let newlineIndex = buffer.indexOf("\n");
@@ -625,25 +652,66 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
       }
     };
 
+    const cleanupTimers = () => {
+      clearTimeout(killer);
+      clearInterval(reportWatcher);
+      if (reportShutdownKiller) clearTimeout(reportShutdownKiller);
+    };
+
+    const checkReport = async () => {
+      if (reportShutdownStarted) return;
+      let report: string;
+      try {
+        report = await readFile(reportPath, "utf8");
+      } catch {
+        return;
+      }
+      if (!isCompleteReport(report, args)) {
+        reportSnapshot = "";
+        reportSeenAt = 0;
+        return;
+      }
+
+      if (report !== reportSnapshot) {
+        reportSnapshot = report;
+        reportSeenAt = Date.now();
+        return;
+      }
+
+      if (Date.now() - reportSeenAt < REPORT_STABLE_MS) return;
+      reportDrivenExit = true;
+      reportShutdownStarted = true;
+      child.kill("SIGTERM");
+      reportShutdownKiller = setTimeout(() => {
+        if (!childExited) child.kill("SIGKILL");
+      }, REPORT_SHUTDOWN_GRACE_MS);
+    };
+
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (chunk: string) => flushLines(chunk));
 
     const killer = setTimeout(() => {
       child.kill("SIGTERM");
     }, args.maxSeconds * 1000);
+    const reportWatcher = setInterval(() => {
+      void checkReport();
+    }, REPORT_POLL_MS);
+    void checkReport();
+
     child.once("exit", (code) => {
-      clearTimeout(killer);
+      childExited = true;
+      cleanupTimers();
       if (buffer.trim()) {
         for (const mapped of parseLine(buffer.trim())) {
           postEvent(args, mapped.type, mapped.summary, { toolName: mapped.toolName }).catch(() => undefined);
         }
         buffer = "";
       }
-      resolve(code ?? 1);
+      resolve(reportDrivenExit || isCompleteReport(reportSnapshot, args) ? 0 : (code ?? 1));
     });
     child.once("error", () => {
-      clearTimeout(killer);
-      resolve(1);
+      cleanupTimers();
+      resolve(reportDrivenExit ? 0 : 1);
     });
   });
 
@@ -666,7 +734,7 @@ async function main(): Promise<void> {
   const reportPath = args.reportPath
     ?? path.join(DEFAULT_REPORT_DIR, `report-${args.name}-${process.pid}-${Date.now()}.txt`);
   await mkdir(path.dirname(reportPath), { recursive: true });
-  await writeFile(reportPath, `status: blocked\nsummary:\n  - ${args.name} did not start\n`, "utf8");
+  await writeFile(reportPath, initialReport(args.name), "utf8");
 
   const briefingPreview = args.briefing
     .split("\n")

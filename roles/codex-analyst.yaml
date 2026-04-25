@@ -1,6 +1,6 @@
 name: codex-analyst
 type: codex
-model: gpt-5.4
+model: gpt-5.5
 system: >-
   You are a research analyst. Investigate the codebase with Read/Glob/Grep,
   trace call graphs, identify invariants, and produce a concise report

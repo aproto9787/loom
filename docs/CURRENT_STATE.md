@@ -19,7 +19,7 @@ Current `AgentConfig` fields:
 - `team`
 - `model`
 - `system`
-- `claudeMdRef`
+- `flowMdRef`
 - `description`
 - `effort`
 - `timeout`
@@ -49,7 +49,7 @@ Do not document these as implemented unless the code changes first:
 - Cost, latency, throughput, or token-meter UI.
 - DAG node execution, typed edge routing, loop/join/control nodes, or general graph runtime.
 - Guaranteed `npx loom` / global npm install flow.
-- Automated golden-path test coverage for leader → conductor → workers.
+- Automated golden-path test coverage for leader → workers.
 
 ## What is implemented
 

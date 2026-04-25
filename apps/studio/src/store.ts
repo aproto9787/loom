@@ -160,7 +160,7 @@ interface StudioState {
   isSaving: boolean;
   saveError?: string;
   loadError?: string;
-  activeTab: 'workflow' | 'claudeMd' | 'delegation' | 'runs' | 'roles' | 'custom';
+  activeTab: 'workflow' | 'flowMd' | 'delegation' | 'runs' | 'roles' | 'custom';
   duplicateName: string;
   runHistory: RunHistoryItem[];
   runHistoryKeyword: string;
@@ -208,7 +208,7 @@ interface StudioState {
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
 
-  setActiveTab: (tab: 'workflow' | 'claudeMd' | 'delegation' | 'runs' | 'roles' | 'custom') => void;
+  setActiveTab: (tab: 'workflow' | 'flowMd' | 'delegation' | 'runs' | 'roles' | 'custom') => void;
   setDuplicateName: (value: string) => void;
   setRunHistoryKeyword: (value: string) => void;
   setRunHistoryStatus: (value: "all" | RunStatus) => void;
@@ -237,7 +237,7 @@ interface StudioState {
   deleteSkill: (origin: string, name: string) => Promise<void>;
 }
 
-const DEFAULT_FLOW_PATH = "examples/leader-conductor.yaml";
+const DEFAULT_FLOW_PATH = "examples/leader-workers.yaml";
 
 export const useRunStore = create<StudioState>((set) => ({
   flowPath: DEFAULT_FLOW_PATH,

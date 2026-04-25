@@ -1,22 +1,22 @@
 import { useEffect, useState } from "react";
-import { ClaudeMdLibraryPanel } from "./ClaudeMdLibraryPanel.js";
+import { FlowMdLibraryPanel } from "./FlowMdLibraryPanel.js";
 import { darkCard, darkCardMuted, inputDark } from "./panelStyles.js";
 import { useRunStore } from "./store.js";
 
-export default function ClaudeMdTab() {
+export default function FlowMdTab() {
   const flowDraft = useRunStore((state) => state.flowDraft);
   const updateFlowDraft = useRunStore((state) => state.updateFlowDraft);
-  const [claudeMd, setClaudeMd] = useState(flowDraft?.claudeMd ?? "");
+  const [flowMd, setFlowMd] = useState(flowDraft?.flowMd ?? "");
 
   useEffect(() => {
-    setClaudeMd(flowDraft?.claudeMd ?? "");
-  }, [flowDraft?.claudeMd]);
+    setFlowMd(flowDraft?.flowMd ?? "");
+  }, [flowDraft?.flowMd]);
 
   if (!flowDraft) {
     return (
       <div className="flex flex-col gap-4 p-5">
         <p className="m-0 rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-4 py-6 text-sm text-slate-400">
-          Load a flow to manage flow-level CLAUDE.md instructions.
+          Load a flow to manage flow-level flow.md instructions.
         </p>
       </div>
     );
@@ -26,19 +26,19 @@ export default function ClaudeMdTab() {
     <div className="flex flex-col gap-5 p-5">
       <section className={`flex flex-col gap-3 p-5 ${darkCard}`}>
         <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          <span>Flow-wide CLAUDE.md (applied to every agent)</span>
+          <span>Flow-wide flow.md (applied to every agent)</span>
           <textarea
             className={`${inputDark} min-h-[220px]`}
-            value={claudeMd}
-            placeholder="Flow-wide Claude instructions (applied to every agent)"
+            value={flowMd}
+            placeholder="Flow-wide instructions (applied to every agent)"
             rows={10}
             onChange={(event) => {
-              setClaudeMd(event.target.value);
+              setFlowMd(event.target.value);
             }}
             onBlur={(event) => {
               const next = event.target.value;
-              setClaudeMd(next);
-              updateFlowDraft({ claudeMd: next.trim() || undefined });
+              setFlowMd(next);
+              updateFlowDraft({ flowMd: next.trim() || undefined });
             }}
           />
         </label>
@@ -47,10 +47,10 @@ export default function ClaudeMdTab() {
         <div className="mb-4">
           <p className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Library</p>
           <p className="m-0 mt-1 text-sm text-slate-500">
-            Reusable CLAUDE.md snippets for agent-level selection.
+            Reusable flow.md snippets for agent-level selection.
           </p>
         </div>
-        <ClaudeMdLibraryPanel />
+        <FlowMdLibraryPanel />
       </section>
     </div>
   );

@@ -6,11 +6,11 @@ function sanitizeKey(value: string): string {
   return value.trim().replace(/\s+/g, "-");
 }
 
-export function ClaudeMdLibraryPanel() {
+export function FlowMdLibraryPanel() {
   const flowDraft = useRunStore((s) => s.flowDraft);
   const updateFlowDraft = useRunStore((s) => s.updateFlowDraft);
 
-  const library = flowDraft?.claudeMdLibrary ?? {};
+  const library = flowDraft?.flowMdLibrary ?? {};
   const entries = useMemo(() => Object.entries(library), [library]);
   const [selectedKey, setSelectedKey] = useState<string | null>(entries[0]?.[0] ?? null);
   const [draftKey, setDraftKey] = useState("");
@@ -31,7 +31,7 @@ export function ClaudeMdLibraryPanel() {
   }, [entries, library, selectedKey]);
 
   const commitLibrary = (nextLibrary: Record<string, string>) => {
-    updateFlowDraft({ claudeMdLibrary: Object.keys(nextLibrary).length > 0 ? nextLibrary : undefined });
+    updateFlowDraft({ flowMdLibrary: Object.keys(nextLibrary).length > 0 ? nextLibrary : undefined });
   };
 
   const handleSelect = (key: string) => {
@@ -106,7 +106,7 @@ export function ClaudeMdLibraryPanel() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-            CLAUDE.md Library
+            flow.md Library
           </p>
           <p className="m-0 mt-1 text-xs leading-5 text-slate-500">
             Reusable prompt snippets that agents can reference by key.
@@ -162,7 +162,7 @@ export function ClaudeMdLibraryPanel() {
               className={inputDark}
               value={draftValue}
               rows={12}
-              placeholder="Reusable CLAUDE.md snippet"
+              placeholder="Reusable flow.md snippet"
               onChange={(e) => setDraftValue(e.target.value)}
               onBlur={handleContentBlur}
             />
