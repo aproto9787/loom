@@ -519,6 +519,12 @@ function agentStateDot(state: AgentNode["state"]): string {
   }
 }
 
+function isLeaderViewEvent(event: RunDetailEvent): boolean {
+  if (!event.agentName) return true;
+  if ((event.agentDepth ?? 0) === 0) return true;
+  return event.toolName === "loom-subagent";
+}
+
 export function RunsPanel() {
   const runHistory = useRunStore((s) => s.runHistory);
   const keyword = useRunStore((s) => s.runHistoryKeyword);
@@ -572,9 +578,14 @@ export function RunsPanel() {
     [agentTree, selectedAgent],
   );
 
+  const leaderViewEvents = useMemo(
+    () => runDetailEvents.filter(isLeaderViewEvent),
+    [runDetailEvents],
+  );
+
   const filteredEvents = useMemo(
-    () => (selectedAgent ? runDetailEvents.filter((e) => e.agentName === selectedAgent) : runDetailEvents),
-    [runDetailEvents, selectedAgent],
+    () => (selectedAgent ? runDetailEvents.filter((e) => e.agentName === selectedAgent) : leaderViewEvents),
+    [leaderViewEvents, runDetailEvents, selectedAgent],
   );
 
   // Jump to the bottom unconditionally when the user switches run or
@@ -686,8 +697,8 @@ export function RunsPanel() {
                     !selectedAgent ? "bg-blue-500/20 text-slate-100" : "text-slate-300 hover:bg-slate-800/50"
                   }`}
                 >
-                  <span className="text-[10px] uppercase tracking-wide text-slate-500">all</span>
-                  <span className="ml-auto text-[10px] text-slate-500">{runDetailEvents.length}</span>
+                  <span className="text-[10px] uppercase tracking-wide text-slate-500">leader</span>
+                  <span className="ml-auto text-[10px] text-slate-500">{leaderViewEvents.length}</span>
                 </button>
               </li>
               {agentTree.map((node) => {
@@ -729,12 +740,12 @@ export function RunsPanel() {
                     <span className="truncate text-sm font-semibold text-slate-100">
                       {selectedAgentNode
                         ? (formatAgentLabel(selectedAgentNode.name, selectedAgentNode.kind) ?? selectedAgentNode.name)
-                        : `${selectedRun.flowName} · all agents`}
+                        : `${selectedRun.flowName} · leader view`}
                     </span>
                     <span className="truncate text-[11px] text-slate-400">
                       {selectedAgentNode
                         ? `${selectedAgentNode.eventCount} events · ${selectedAgentNode.state}${selectedAgentNode.parentAgent ? ` · ← ${selectedAgentNode.parentAgent}` : ""}`
-                        : (selectedRun.cwd ?? "(no cwd)")}
+                        : `${filteredEvents.length} leader events · ${selectedRun.cwd ?? "(no cwd)"}`}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
@@ -744,7 +755,7 @@ export function RunsPanel() {
                         onClick={() => selectRunAgent(undefined)}
                         className="text-[11px] text-slate-400 hover:text-slate-100 underline"
                       >
-                        show all
+                        show leader
                       </button>
                     ) : null}
                     <span
@@ -767,7 +778,7 @@ export function RunsPanel() {
                   <div className="text-xs text-slate-500">Loading events…</div>
                 ) : filteredEvents.length === 0 ? (
                   <div className="text-xs text-slate-500">
-                    {selectedAgent ? `No events from ${selectedAgent} yet` : "No events recorded yet."}
+                    {selectedAgent ? `No events from ${selectedAgent} yet` : "No leader activity recorded yet."}
                   </div>
                 ) : (
                   <ul className="flex flex-col gap-2.5">
