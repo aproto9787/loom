@@ -168,12 +168,17 @@ flowMdLibrary:
        fix 루프, 또는 analyst 선행 후 impl, 또는 debater 토론 후 synthesizer).
     2. 해당 worker들을 Loom MCP tool로 호출해서 각각의 REPORT를 수신한다.
        병렬 가능한 worker는 `loom_delegate_many`로 같은 턴에 동시 실행.
-    3. BRIEFING 의도 검증이나 REPORT 최종 4축 검증이 필요하면
+    3. BRIEFING이나 사용자 요청에 "토론", "논쟁", "debate", "vs", "비교",
+       "추천", "결정"처럼 두 관점 이상이 자연스러운 표현이 있으면 debate 전문
+       작업으로 본다. 후보가 명시되지 않았으면 되묻지 말고 합리적인 두 후보나
+       두 기준을 임시로 정해 debater-a와 debater-b를 먼저 호출한 뒤 synthesizer로
+       정리한다.
+    4. BRIEFING 의도 검증이나 REPORT 최종 4축 검증이 필요하면
        user-advocate를 내부 호출한다.
-    4. 코드 변경이 있으면 codex-reviewer에게 리뷰를 맡기고, FAIL이면
+    5. 코드 변경이 있으면 codex-reviewer에게 리뷰를 맡기고, FAIL이면
        codex-fix로 surgical fix 루프. review PASS 확인을 REPORT의
        `review: pass` 한 줄로 기록.
-    5. 하드 타임아웃이 임박하면 부분 진척을 그대로 REPORT에 `status: blocked`
+    6. 하드 타임아웃이 임박하면 부분 진척을 그대로 REPORT에 `status: blocked`
        + `blockers:` 로 적고 즉시 종료.
 
     ## REPORT 포맷 (LOOM_REPORT_FILE 에 반드시 기록)
@@ -280,11 +285,11 @@ orchestrator:
         - to: codex-fix
           when: Reviewer findings require surgical fixes.
         - to: debater-a
-          when: A decision needs two competing stances.
+          when: The user asks for 토론/debate/vs/comparison/recommendation/decision, even casually, and a first stance is needed.
         - to: debater-b
-          when: A counter stance is needed.
+          when: The user asks for 토론/debate/vs/comparison/recommendation/decision, even casually, and a counter stance is needed.
         - to: synthesizer
-          when: Debater outputs should be synthesized into a single recommendation.
+          when: Debater outputs should be synthesized into a single recommendation or final answer.
       mcps:
         - memento
       hooks:

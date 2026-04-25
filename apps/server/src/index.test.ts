@@ -187,6 +187,28 @@ loomTest("GET /flows/get loads the leader-workers flow", async (t) => {
   assert.equal(body.flow.orchestrator.type, "codex");
 });
 
+loomTest("leader-workers routes casual debate prompts through debater agents", async (t) => {
+  const app = createTestApp(t);
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/flows/get",
+    query: { path: DEFAULT_FLOW_PATH },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  const flow = body.flow as FlowDefinition;
+  const rootLeaderRules = flow.flowMdLibrary?.["root-leader-rules"] ?? "";
+  const delegationRules = flow.orchestrator.delegation?.map(({ to, when }) => `${to}: ${when}`) ?? [];
+
+  assert.match(rootLeaderRules, /"토론", "논쟁", "debate", "vs", "비교", "추천", "결정"/);
+  assert.match(rootLeaderRules, /토론 후보가 명시되지 않았으면 되묻지 말고/);
+  assert.ok(delegationRules.some((rule) => rule.includes("debater-a") && rule.includes("토론/debate/vs")));
+  assert.ok(delegationRules.some((rule) => rule.includes("debater-b") && rule.includes("토론/debate/vs")));
+  assert.ok(delegationRules.some((rule) => rule.includes("synthesizer") && rule.includes("final answer")));
+});
+
 loomTest("POST /runs accepts the current flow and persists the mocked local CLI run", async (t) => {
   const app = createTestApp(t);
   const userPrompt = "Inspect the local-only runtime path";

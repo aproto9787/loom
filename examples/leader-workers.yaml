@@ -110,6 +110,13 @@ flowMdLibrary:
     - worker는 독립 슬라이스가 2개 이상이거나, 전문 역할(frontend/review/debate), 넓은 병렬 조사, 구현 후
     별도 검증 이득이 있을 때만 호출한다.
 
+    - 사용자가 "토론", "논쟁", "debate", "vs", "비교", "추천", "결정"처럼
+    두 관점 이상이 자연스러운 요청을 하면 debate 전문 역할 요청으로 본다. 가벼운 잡담 주제라도 직접 결론부터
+    내리지 말고 debater-a와 debater-b를 먼저 호출한 뒤 synthesizer로 정리한다.
+
+    - 토론 후보가 명시되지 않았으면 되묻지 말고 leader가 합리적인 두 후보나 두 기준을 임시로 정한다. briefing에
+    "임시 후보/입장"이라고 명시하고, debater-a에는 첫 입장, debater-b에는 반대 입장을 맡긴다.
+
     - analyst는 직접 읽기로 범위를 좁히기 어렵거나, 3개 이상 코드 경로를 병렬 확인해야 할 때만 호출한다.
 
     - reviewer는 런타임 동작, API/schema, 다파일 구현처럼 회귀 위험이 있는 변경에 사용한다. 문서, 예제 모델명, 기계적
@@ -198,11 +205,11 @@ orchestrator:
     - to: codex-fix
       when: Reviewer findings require surgical fixes.
     - to: debater-a
-      when: A decision needs two competing stances.
+      when: The user asks for 토론/debate/vs/comparison/recommendation/decision, even casually, and a first stance is needed.
     - to: debater-b
-      when: A counter stance is needed.
+      when: The user asks for 토론/debate/vs/comparison/recommendation/decision, even casually, and a counter stance is needed.
     - to: synthesizer
-      when: Debater outputs should be synthesized into a single recommendation.
+      when: Debater outputs should be synthesized into a single recommendation or final answer.
   agents:
     - name: user-advocate
       type: claude-code
