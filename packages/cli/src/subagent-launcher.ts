@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-// loom-subagent: generalized headless executor. A parent agent (leader,
-// conductor, or another subagent) spawns this via Bash to delegate a
-// BRIEFING to a child agent. The child runs claude or codex, streams every
-// tool_use / tool_result / assistant frame back to the server tagged with
-// this subagent's name and parent, and writes a REPORT to stdout / file.
+// loom-subagent: generalized headless executor. Loom MCP invokes this internal
+// runtime to execute a BRIEFING in an isolated child agent. The child runs
+// claude or codex, streams every tool_use / tool_result / assistant frame back
+// to the server tagged with this subagent's name and parent, and writes a
+// REPORT to stdout / file.
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -408,6 +408,7 @@ async function createSubagentHome(
   configuredAgent: AgentConfig,
   scopedHooks: HookDefinition[],
   scopedSkills: SkillDefinition[],
+  codexConfigAppend?: string,
 ): Promise<string> {
   const root = path.join(os.homedir(), ".loom", "subagent-homes");
   await mkdir(root, { recursive: true });
@@ -452,9 +453,13 @@ async function createSubagentHome(
       await writeFile(path.join(codexDir, "auth.json"), realAuth, { encoding: "utf8", mode: 0o600 });
     }
     const realConfig = await readOptional(path.join(realHome, ".codex", "config.toml"));
+    const configParts = [realConfig ?? "# Loom-seeded (empty)\n"];
+    if (codexConfigAppend?.trim()) {
+      configParts.push(codexConfigAppend.trim());
+    }
     await writeFile(
       path.join(codexDir, "config.toml"),
-      realConfig ?? "# Loom-seeded (empty)\n",
+      `${configParts.map((part) => part.trimEnd()).join("\n\n")}\n`,
       "utf8",
     );
     if (merged.trim()) {
@@ -462,6 +467,95 @@ async function createSubagentHome(
     }
   }
   return home;
+}
+
+interface LoomMcpConfig {
+  claudeConfigPath: string;
+  codexConfigToml: string;
+  cleanup: () => Promise<void>;
+}
+
+function quoteTomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function buildCodexMcpConfigToml(env: Record<string, string>, command: string, args: string[]): string {
+  const envEntries = Object.entries(env)
+    .map(([key, value]) => `${key} = ${quoteTomlString(value)}`)
+    .join(", ");
+  const argsArray = args.map(quoteTomlString).join(", ");
+  return [
+    "[mcp_servers.loom]",
+    `command = ${quoteTomlString(command)}`,
+    `args = [${argsArray}]`,
+    `env = { ${envEntries} }`,
+  ].join("\n");
+}
+
+function compactEnv(values: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(Object.entries(values).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+}
+
+async function createLoomMcpConfig(args: CliArgs, flow: FlowDefinition, configuredAgent: AgentConfig): Promise<LoomMcpConfig> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-subagent-mcp-"));
+  const cliBin = fileURLToPath(new URL("./index.js", import.meta.url));
+  const subagentBin = fileURLToPath(new URL("./subagent-launcher.js", import.meta.url));
+  const env = compactEnv({
+    LOOM_FLOW_PATH: process.env.LOOM_FLOW_PATH,
+    LOOM_FLOW_NAME: flow.name,
+    LOOM_FLOW_CWD: process.env.LOOM_FLOW_CWD ?? process.cwd(),
+    LOOM_AGENT: args.name,
+    LOOM_AGENT_TYPE: configuredAgent.type,
+    LOOM_RUN_ID: RUN_ID,
+    LOOM_SERVER_ORIGIN: SERVER_ORIGIN,
+    LOOM_PARENT_AGENT: args.name,
+    LOOM_PARENT_DEPTH: String(args.parentDepth + 1),
+    LOOM_SUBAGENT_BIN: subagentBin,
+  });
+  const claudeConfigPath = path.join(tempDir, "mcp.json");
+  await writeFile(
+    claudeConfigPath,
+    JSON.stringify({
+      mcpServers: {
+        loom: {
+          command: process.execPath,
+          args: [cliBin, "mcp"],
+          env,
+        },
+      },
+    }, null, 2),
+    "utf8",
+  );
+  return {
+    claudeConfigPath,
+    codexConfigToml: buildCodexMcpConfigToml(env, process.execPath, [cliBin, "mcp"]),
+    cleanup: async () => {
+      await rm(tempDir, { recursive: true, force: true });
+    },
+  };
+}
+
+async function mergeMcpConfigFiles(baseConfigPath: string | undefined, loomConfigPath: string): Promise<{ configPath: string; cleanup: () => Promise<void> }> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-subagent-merged-mcp-"));
+  const configPath = path.join(tempDir, "mcp.json");
+  const mergedServers: Record<string, unknown> = {};
+  if (baseConfigPath) {
+    try {
+      const parsed = JSON.parse(await readFile(baseConfigPath, "utf8")) as { mcpServers?: Record<string, unknown> };
+      Object.assign(mergedServers, parsed.mcpServers ?? {});
+    } catch {
+      // If the scoped config is unreadable, keep the Loom MCP server available.
+    }
+  }
+  const loomParsed = JSON.parse(await readFile(loomConfigPath, "utf8")) as { mcpServers?: Record<string, unknown> };
+  Object.assign(mergedServers, loomParsed.mcpServers ?? {});
+  await writeFile(configPath, JSON.stringify({ mcpServers: mergedServers }, null, 2), "utf8");
+  return {
+    configPath,
+    cleanup: async () => {
+      await rm(tempDir, { recursive: true, force: true });
+    },
+  };
 }
 
 function buildClaudePrompt(args: CliArgs, reportPath: string, delegation: string): string {
@@ -518,6 +612,7 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
   let delegation = "";
   let isolatedHome: string | undefined;
   let scopedMcpConfigPath: string | undefined;
+  let effectiveMcpConfigPath: string | undefined;
   const cleanup: Array<() => Promise<void>> = [];
 
   if (ctx) {
@@ -534,7 +629,14 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
       hooks: new Map(scopedHooks.map((h) => [h.name, h])),
       skills: new Map(scopedSkills.map((s) => [s.name, s])),
     });
-    isolatedHome = await createSubagentHome(args, ctx.flow, configuredAgent, scopedHooks, scopedSkills);
+    delegation = buildDelegationPrompt(ctx.selfAgent, args.name);
+    const loomMcpConfig = delegation.trim()
+      ? await createLoomMcpConfig(args, ctx.flow, configuredAgent)
+      : undefined;
+    if (loomMcpConfig) {
+      cleanup.push(loomMcpConfig.cleanup);
+    }
+    isolatedHome = await createSubagentHome(args, ctx.flow, configuredAgent, scopedHooks, scopedSkills, loomMcpConfig?.codexConfigToml);
     cleanup.push(async () => { await rm(isolatedHome!, { recursive: true, force: true }).catch(() => undefined); });
     // Read MCP server definitions from the REAL user home — the fresh
     // isolated HOME has empty mcpServers, so passing it as homeDir would
@@ -545,7 +647,13 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
         await rm(path.dirname(scopedMcpConfigPath!), { recursive: true, force: true }).catch(() => undefined);
       });
     }
-    delegation = buildDelegationPrompt(ctx.selfAgent, args.name);
+    if (loomMcpConfig) {
+      const merged = await mergeMcpConfigFiles(scopedMcpConfigPath, loomMcpConfig.claudeConfigPath);
+      effectiveMcpConfigPath = merged.configPath;
+      cleanup.push(merged.cleanup);
+    } else {
+      effectiveMcpConfigPath = scopedMcpConfigPath;
+    }
   }
 
   const childEnv: Record<string, string> = {
@@ -562,8 +670,8 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
     childEnv.CODEX_HOME = path.join(isolatedHome, ".codex");
     childEnv.CODEX_CONFIG_DIR = path.join(isolatedHome, ".codex");
   }
-  if (scopedMcpConfigPath) {
-    childEnv.LOOM_MCP_CONFIG_PATH = scopedMcpConfigPath;
+  if (effectiveMcpConfigPath) {
+    childEnv.LOOM_MCP_CONFIG_PATH = effectiveMcpConfigPath;
   }
 
   let command: string;
@@ -607,8 +715,8 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
       "--no-session-persistence",
       "--dangerously-skip-permissions",
     ];
-    if (scopedMcpConfigPath) {
-      childArgs.push("--strict-mcp-config", "--mcp-config", scopedMcpConfigPath);
+    if (effectiveMcpConfigPath) {
+      childArgs.push("--strict-mcp-config", "--mcp-config", effectiveMcpConfigPath);
     } else {
       childArgs.push("--strict-mcp-config");
     }

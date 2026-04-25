@@ -162,7 +162,6 @@ Target defaults:
 orchestrator.runtime.mode = host
 child.runtime.mode = isolated
 orchestrator.runtime.delegationTransport = mcp
-fallback delegationTransport = bash
 ```
 
 Target schema direction:
@@ -172,7 +171,7 @@ interface AgentRuntimeConfig {
   mode?: "host" | "isolated";
   profile?: string;
   applyResources?: "prompt-only" | "scoped-home";
-  delegationTransport?: "mcp" | "bash";
+  delegationTransport?: "mcp";
 }
 
 interface AgentConfig {
@@ -229,9 +228,9 @@ orchestrator:
 
 The target default delegation transport is MCP.
 
-Current Bash delegation is useful as a fallback, but it is too command-shaped
-for the main product model. The leader should call Loom delegation tools, not
-copy a shell command from the prompt.
+The leader should call Loom delegation tools, not copy a shell command from the
+prompt. `loom-subagent` remains the internal worker runtime behind the MCP
+server, but host leaders should not invoke it directly.
 
 Target:
 
@@ -418,8 +417,8 @@ Recommended order:
 7. Implement `loom_delegate_many`.
 8. Generate agent-specific `loom_delegate_<agent>` tools for enabled direct
    children.
-9. Change leader delegation overlay to prefer MCP tools while keeping Bash
-   fallback instructions.
+9. Change leader delegation overlay to require MCP tools and block instead of
+   using direct child-agent Bash commands.
 10. Surface provider state, delegation transport, and enabled worker tools in
    Studio.
 

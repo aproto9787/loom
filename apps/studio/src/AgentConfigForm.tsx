@@ -350,7 +350,6 @@ export function AgentConfigForm({
   const isRoot = path.length <= 1;
   const runtimeMode = agent.runtime?.mode ?? (isRoot ? "host" : "isolated");
   const applyResources = agent.runtime?.applyResources ?? (isRoot ? "prompt-only" : "scoped-home");
-  const delegationTransport = agent.runtime?.delegationTransport ?? (isRoot ? "mcp" : "bash");
   const providerOptions = providers.filter((provider) => provider.kind === effectiveType);
 
   const toggleResource = useCallback(
@@ -512,17 +511,6 @@ export function AgentConfigForm({
                         {provider.displayName} ({provider.authState})
                       </option>
                     ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <span>Delegation Transport</span>
-                  <select
-                    className={selectDark}
-                    value={delegationTransport}
-                    onChange={(e) => updateRuntime({ delegationTransport: e.target.value as NonNullable<AgentConfig["runtime"]>["delegationTransport"] })}
-                  >
-                    <option value="mcp">mcp</option>
-                    <option value="bash">bash</option>
                   </select>
                 </label>
               </div>

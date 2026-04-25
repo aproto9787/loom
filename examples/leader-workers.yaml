@@ -122,9 +122,9 @@ flowMdLibrary:
 
     ## Worker 위임
 
-    system prompt 끝에 주입되는 "Subagent Delegation Protocol" 섹션의 Bash 템플릿만 사용한다.
+    system prompt 끝에 주입되는 "Subagent Delegation Protocol" 섹션의 Loom MCP tool만 사용한다.
 
-    Codex / Claude Code의 Agent tool 사용 금지. Loom 런타임은 Bash로 spawn된 worker만 추적한다.
+    Codex / Claude Code의 Agent tool 사용 금지. child-agent Bash spawn 금지. Loom 런타임은 MCP로 위임된 worker를 추적한다.
 
 
     ## 출력

@@ -38,7 +38,7 @@ Implemented today:
 - React/Vite studio that talks to the local server.
 - CLI binaries: `loom`, `loom mcp`, and `loom-subagent`.
 - SQLite-backed run and event persistence under `.loom/traces.db`.
-- Agent `runtime` metadata for host/isolated semantics and MCP/Bash delegation transport.
+- Agent `runtime` metadata for host/isolated semantics and MCP-only delegation transport.
 - Provider profile discovery for local Claude Code and Codex installs.
 - MCP delegation bridge with `loom_delegate`, generated `loom_delegate_<agent>` tools, `loom_delegate_many`, status, report, and cancel surface.
 - Flow-level and agent-level resource names for MCPs, hooks, and skills.
@@ -170,7 +170,7 @@ interface AgentConfig {
     mode?: "host" | "isolated";
     profile?: string;
     applyResources?: "prompt-only" | "scoped-home";
-    delegationTransport?: "mcp" | "bash";
+    delegationTransport?: "mcp";
   };
   role?: string;
   team?: Array<{ id: string; role?: string }>;
@@ -299,7 +299,7 @@ The CLI/`loom-subagent` path is now the primary local execution path.
 
 ### CLI path
 
-`packages/cli/src/index.ts` launches the selected flow's root orchestrator. The root agent receives a generated delegation prompt that prefers Loom MCP tools when available and keeps Bash `loom-subagent` commands as fallback. Child agents post their events back to the server with `runId`, `agentName`, `agentDepth`, `parentAgent`, and `agentKind` metadata.
+`packages/cli/src/index.ts` launches the selected flow's root orchestrator. The root agent receives a generated delegation prompt that requires Loom MCP tools for child delegation. `loom-subagent` remains the internal worker runtime behind the MCP server. Child agents post their events back to the server with `runId`, `agentName`, `agentDepth`, `parentAgent`, and `agentKind` metadata.
 
 This is the path new recursive child-agent work should target.
 

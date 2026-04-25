@@ -33,6 +33,6 @@ export function resolveAgentRuntime(agent: AgentConfig, isRoot: boolean): Requir
     mode: agent.runtime?.mode ?? (isRoot ? "host" : "isolated"),
     profile: agent.runtime?.profile ?? `${agent.type === "codex" ? "codex" : "claude"}-default`,
     applyResources: agent.runtime?.applyResources ?? (isRoot ? "prompt-only" : "scoped-home"),
-    delegationTransport: agent.runtime?.delegationTransport ?? (isRoot ? "mcp" : "bash"),
+    delegationTransport: "mcp",
   };
 }

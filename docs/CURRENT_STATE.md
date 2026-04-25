@@ -68,7 +68,7 @@ Do not document these as implemented unless the code changes first:
 - `loom mcp` as the CLI subcommand that exposes Loom delegation tools to host leaders.
 - Agent-specific dynamic MCP tools such as `loom_delegate_reviewer`, alongside stable generic tools such as `loom_delegate`.
 - Best-effort async cancellation for MCP-delegated subagent processes started with `wait: false`.
-- Root leader MCP config injection for Claude Code and Codex host sessions, with Bash delegation retained as fallback.
+- Root leader MCP config injection for Claude Code and Codex host sessions. Host leaders are instructed to use Loom MCP delegation only; `loom-subagent` is the internal worker runtime behind the MCP server.
 - `loom-subagent` as the generalized child-agent launcher.
 - Claude Code and Codex CLI adapters.
 - Role/hook/skill YAML CRUD.

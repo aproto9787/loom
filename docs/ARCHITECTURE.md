@@ -192,7 +192,7 @@ This is the newer path.
 2. It builds the configured root agent.
 3. It injects a delegation protocol into the root agent prompt.
 4. The root agent is spawned as Claude Code or Codex.
-5. When `runtime.delegationTransport` is `mcp`, the root agent receives a temporary Loom MCP server config and can call `loom_delegate`; Bash `loom-subagent` commands remain in the prompt as fallback.
+5. The root agent receives a temporary Loom MCP server config and must call Loom MCP delegation tools for child work. `loom-subagent` remains the internal worker runtime behind the MCP server.
 6. `loom-subagent` maps Claude/Codex stream frames to Loom events.
 7. The server stores those events through `/runs/:id/events`.
 8. Studio can follow `/runs/:id/stream` for persisted event updates.
@@ -295,7 +295,7 @@ Studio or API request
   -> apps/server creates a run row
   -> apps/server spawns node packages/cli/dist/index.js --headless
   -> loom launches the root Claude/Codex process
-  -> root agents delegate through loom-subagent
+  -> root agents delegate through Loom MCP tools
   -> loom / loom-subagent POST timeline events back to apps/server
   -> apps/server persists events in .loom/traces.db
   -> Studio watches /runs/:id/stream and reads /runs/:id/events

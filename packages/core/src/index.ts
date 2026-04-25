@@ -82,7 +82,7 @@ export const agentTeamTagSchema: z.ZodType<AgentTeamTag> = z.object({
 
 export type AgentRuntimeMode = "host" | "isolated";
 export type AgentResourceApplication = "prompt-only" | "scoped-home";
-export type DelegationTransport = "mcp" | "bash";
+export type DelegationTransport = "mcp";
 
 export interface AgentRuntimeConfig {
   mode?: AgentRuntimeMode;
@@ -95,7 +95,7 @@ export const agentRuntimeConfigSchema: z.ZodType<AgentRuntimeConfig> = z.object(
   mode: z.enum(["host", "isolated"]).optional(),
   profile: z.string().min(1).optional(),
   applyResources: z.enum(["prompt-only", "scoped-home"]).optional(),
-  delegationTransport: z.enum(["mcp", "bash"]).optional(),
+  delegationTransport: z.literal("mcp").optional(),
 });
 
 export interface AgentConfig {

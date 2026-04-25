@@ -123,15 +123,17 @@ flowMdLibrary:
 
     **도구 규약**: system prompt 끝에 주입되는 "Subagent Delegation Protocol"
 
-    섹션의 Bash 템플릿을 그대로 사용한다. Claude Code의 Agent tool은 절대
+    섹션의 Loom MCP tool만 사용한다. Claude Code의 Agent tool과 직접
 
-    사용하지 말 것 — Loom 런타임은 Bash로 spawn된 서브에이전트만 추적한다.
+    `loom-subagent` Bash spawn은 절대 사용하지 말 것 — Loom 런타임은 MCP로
+
+    위임된 서브에이전트를 추적한다.
 
 
     1. **BRIEFING 작성** — goal / constraints / acceptance / budget 4섹션.
 
-    2. **conductor 위임** — Protocol의 conductor 템플릿을 Bash로 실행
-       (`run_in_background=true`, timeout=900000ms). stdout으로 REPORT 수신.
+    2. **conductor 위임** — Protocol의 Loom MCP tool로 conductor를 호출한다.
+       REPORT는 MCP tool 결과로 수신한다.
     3. **사용자 보고** — REPORT 핵심 요약 + conductor 내부 검증/리뷰 결과.
 
 
@@ -143,7 +145,7 @@ flowMdLibrary:
   conductor-rules: |
     # Conductor Rules — 자율 실행자 (loom-subagent 래퍼로 스폰됨)
 
-    너는 loom-subagent 래퍼가 `codex exec`로 띄운 세션이다. BRIEFING 1회
+    너는 Loom MCP runtime이 `codex exec`로 띄운 세션이다. BRIEFING 1회
     수신 → REPORT 1개로 종결. 중간 follow-up 금지.
 
     ## 실행 환경
@@ -155,18 +157,17 @@ flowMdLibrary:
 
     ## Worker 위임 (필수)
     system prompt 끝에 주입되는 "Subagent Delegation Protocol" 섹션에 너의
-    worker 호출 템플릿이 나열돼 있다. 작업 성격에 맞는 worker를 Bash로
-    spawn해 병렬 실행한다. 혼자 다 처리하려 들지 말 것 — 그게 트리 구조의
-    목적이다. Claude Code Agent tool 사용 금지, 반드시 Protocol의 Bash
-    템플릿만 사용.
+    worker 호출 가능한 Loom MCP tool이 나열돼 있다. 작업 성격에 맞는 worker를
+    MCP로 병렬 실행한다. 혼자 다 처리하려 들지 말 것 — 그게 트리 구조의
+    목적이다. Claude Code Agent tool 사용 금지, 직접 `loom-subagent` Bash
+    spawn 금지, 반드시 Protocol의 Loom MCP tool만 사용.
 
     ## 작업 절차
     1. BRIEFING의 acceptance 기준을 달성할 최단 경로를 계획하고, 어떤
        worker 조합이 필요한지 결정한다 (예: user-advocate + impl + reviewer +
        fix 루프, 또는 analyst 선행 후 impl, 또는 debater 토론 후 synthesizer).
-    2. 해당 worker들을 Bash `node "$LOOM_SUBAGENT_BIN" --name <worker> ...`
-       로 spawn해서 각각의 REPORT를 수신한다. 병렬 가능한 worker는 같은
-       턴에 동시 실행.
+    2. 해당 worker들을 Loom MCP tool로 호출해서 각각의 REPORT를 수신한다.
+       병렬 가능한 worker는 `loom_delegate_many`로 같은 턴에 동시 실행.
     3. BRIEFING 의도 검증이나 REPORT 최종 4축 검증이 필요하면
        user-advocate를 내부 호출한다.
     4. 코드 변경이 있으면 codex-reviewer에게 리뷰를 맡기고, FAIL이면

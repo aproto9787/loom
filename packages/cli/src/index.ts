@@ -11,7 +11,7 @@ import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import type { AgentConfig, AgentType, TimelineEvent } from "@loom/core";
 import { runLoomMcpServer } from "@loom/mcp";
-import { loadFlow, resolveAgentRuntime } from "@loom/runtime";
+import { loadFlow } from "@loom/runtime";
 import { buildConfiguredAgent } from "@loom/runtime";
 import { createCodexInstructionHome, type CodexInstructionHome } from "./codex-home.js";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
@@ -930,7 +930,7 @@ function summarizeTeamMembers(agent: AgentConfig): string {
 
   const lines = [
     "# Team members available",
-    "<!-- Delegate only through the CLI-injected loom-subagent Bash commands. Do not use TeamCreate or Agent(name=...). -->",
+    "<!-- Delegate only through Loom MCP delegation tools. Do not use TeamCreate, Agent(name=...), or direct loom-subagent Bash commands. -->",
     ...children.map((child) => `- ${child.name} (${child.type}): ${child.system ?? ""}`.trimEnd()),
   ];
 
@@ -1074,10 +1074,7 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
     throw new Error("loom: --headless requires --prompt, --prompt-file, or piped stdin");
   }
   const registration = await reportCliRunStart(flow, configuredAgent.type, options, userPrompt ?? "");
-  const configuredRuntime = resolveAgentRuntime(configuredAgent, true);
-  const leaderMcpConfig = configuredRuntime.delegationTransport === "mcp"
-    ? await createLeaderMcpConfig(flow, configuredAgent, flowCwd, registration, getServerOrigin(options.serverOrigin))
-    : undefined;
+  const leaderMcpConfig = await createLeaderMcpConfig(flow, configuredAgent, flowCwd, registration, getServerOrigin(options.serverOrigin));
   const delegationPrompt = buildDelegationPrompt(configuredAgent, configuredAgent.name);
   const finalInstructions = delegationPrompt
     ? (mergedInstructions.trim()
@@ -1087,7 +1084,7 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
   if (options.headless) {
     let headlessCodexHome: CodexInstructionHome | undefined;
     const extraEnv: Record<string, string> = {};
-    if (configuredAgent.type === "codex" && leaderMcpConfig) {
+    if (configuredAgent.type === "codex") {
       headlessCodexHome = await createCodexInstructionHome({
         instructions: "",
         configAppend: leaderMcpConfig.codexConfigToml,
@@ -1106,11 +1103,11 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
         registration,
         getServerOrigin(options.serverOrigin),
         extraEnv,
-        configuredAgent.type === "claude-code" ? leaderMcpConfig?.claudeConfigPath : undefined,
+        configuredAgent.type === "claude-code" ? leaderMcpConfig.claudeConfigPath : undefined,
       );
     } finally {
       await headlessCodexHome?.cleanup().catch(() => undefined);
-      await leaderMcpConfig?.cleanup().catch(() => undefined);
+      await leaderMcpConfig.cleanup().catch(() => undefined);
     }
   }
 
@@ -1119,13 +1116,13 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
   if (configuredAgent.type === "claude-code" && finalInstructions.trim().length > 0) {
     args.push("--append-system-prompt", finalInstructions);
   }
-  if (configuredAgent.type === "claude-code" && leaderMcpConfig) {
+  if (configuredAgent.type === "claude-code") {
     args.push("--mcp-config", leaderMcpConfig.claudeConfigPath);
   }
-  if (configuredAgent.type === "codex" && (finalInstructions.trim().length > 0 || leaderMcpConfig)) {
+  if (configuredAgent.type === "codex") {
     codexInstructionHome = await createCodexInstructionHome({
       instructions: finalInstructions,
-      configAppend: leaderMcpConfig?.codexConfigToml,
+      configAppend: leaderMcpConfig.codexConfigToml,
     });
   }
 
@@ -1139,7 +1136,7 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
       await transcriptTail.flushBundle();
     }
     await codexInstructionHome?.cleanup().catch(() => undefined);
-    await leaderMcpConfig?.cleanup().catch(() => undefined);
+    await leaderMcpConfig.cleanup().catch(() => undefined);
     await registration.cleanup(exitCode);
   };
 

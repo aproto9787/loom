@@ -61,7 +61,7 @@ test("buildConfiguredAgent adds parallel child guidance when parallel is enabled
 
   const configured = buildConfiguredAgent(agent, flow, "/repo", resources);
   assert.ok(configured.system);
-  assert.match(configured.system, /Parallel hint: if this task should be split, use the CLI-injected loom-subagent commands for:/);
+  assert.match(configured.system, /Parallel hint: if this task should be split, use Loom MCP delegation tools for:/);
   assert.match(configured.system, /child-a, child-b/);
 });
 

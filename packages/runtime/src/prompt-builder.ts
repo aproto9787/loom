@@ -7,7 +7,7 @@ function buildParallelChildPrompt(parentPrompt: string, siblingNames: string[]):
   return [
     parentPrompt,
     "",
-    `Parallel hint: if this task should be split, use the CLI-injected loom-subagent commands for: ${siblingNames.join(", ")}.`,
+    `Parallel hint: if this task should be split, use Loom MCP delegation tools for: ${siblingNames.join(", ")}.`,
     "Do not emit DELEGATE lines or JSON delegation directives.",
   ].join("\n");
 }
