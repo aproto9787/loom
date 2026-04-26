@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Loom architecture: host leaders, MCP delegation, isolated workers, and local traces.">
+    <meta property="og:title" content="Loom Architecture">
+    <meta property="og:description" content="Host leaders stay local. Workers are isolated. MCP connects the team.">
+    <meta property="og:type" content="website">
+    <title>Loom Architecture</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="page-hero">
+      <nav class="nav" aria-label="Primary">
+        <a class="brand" href="./" aria-label="Loom home">Loom</a>
+        <div class="nav-links">
+          <a href="./">Home</a>
+          <a href="architecture.html" aria-current="page">Architecture</a>
+          <a href="status.html">Status</a>
+          <a href="https://github.com/aproto9787/loom">GitHub</a>
+        </div>
+      </nav>
+      <div class="page-heading">
+        <p class="eyebrow">Architecture</p>
+        <h1>Local leaders, isolated workers, typed delegation.</h1>
+        <p class="lead">
+          Loom keeps the familiar Claude Code or Codex host session at the top,
+          then routes specialist work through MCP tools into traceable local
+          worker sessions.
+        </p>
+      </div>
+    </header>
+
+    <main>
+      <section class="band">
+        <div class="architecture-flow" aria-label="Loom runtime flow">
+          <div>
+            <span>Studio</span>
+            <strong>Browser control panel</strong>
+            <p>Edit flows, resources, and run state without moving code execution to the cloud.</p>
+          </div>
+          <div>
+            <span>Host leader</span>
+            <strong>Claude Code or Codex</strong>
+            <p>Your normal local provider profile receives a Loom overlay and MCP tools.</p>
+          </div>
+          <div>
+            <span>MCP bridge</span>
+            <strong>Delegation boundary</strong>
+            <p>Child agents are exposed as typed tools such as delegate, report, status, and cancel.</p>
+          </div>
+          <div>
+            <span>Workers</span>
+            <strong>Isolated local sessions</strong>
+            <p>Loom-managed child agents run with scoped homes, scoped resources, and mandatory reports.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="band contrast">
+        <div class="section-heading">
+          <p class="eyebrow">Runtime contract</p>
+          <h2>The split is the product.</h2>
+        </div>
+        <div class="feature-list">
+          <div>
+            <h3>Leaders come from providers</h3>
+            <p>The root session is a host-backed Claude Code or Codex process with prompt-only Loom overlay.</p>
+          </div>
+          <div>
+            <h3>Workers are managed</h3>
+            <p>Child sessions are created by Loom for bounded work and report back through the local trace layer.</p>
+          </div>
+          <div>
+            <h3>MCP is the transport</h3>
+            <p>Delegation is tool-shaped and validated instead of being copied as shell commands by the leader.</p>
+          </div>
+          <div>
+            <h3>YAML stays source of truth</h3>
+            <p>Flows, roles, hooks, and skills remain reviewable files that can be shared through Git.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="section-heading">
+          <p class="eyebrow">Deep docs</p>
+          <h2>Implementation notes stay in Markdown.</h2>
+        </div>
+        <p class="note">
+          The website pages are the public surface. The detailed engineering notes are still available in the repository:
+          <a class="inline-link" href="https://github.com/aproto9787/loom/tree/master/docs">open the docs directory</a>.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
