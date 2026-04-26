@@ -9,6 +9,8 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@aproto9787/loom"><img alt="npm version" src="https://img.shields.io/npm/v/@aproto9787/loom.svg?logo=npm&logoColor=white"></a>
+  <a href="https://www.npmjs.com/package/@aproto9787/loom"><img alt="npm downloads" src="https://img.shields.io/npm/dm/@aproto9787/loom.svg"></a>
   <a href="https://aproto9787.github.io/loom/"><img alt="Website" src="https://img.shields.io/badge/website-loom-38BDF8.svg"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0-only" src="https://img.shields.io/badge/License-GPL--3.0--only-blue.svg"></a>
   <img alt="Node 22+" src="https://img.shields.io/badge/Node-22%2B-339933.svg?logo=node.js&logoColor=white">
@@ -106,22 +108,25 @@ MCP connects them with a traceable delegation boundary.
 - Phase-gated workflow policy: phase work can require `user-advocate` PASS before moving forward.
 - Debate routing policy: casual `debate`, `vs`, comparison, recommendation, or decision prompts can route through debater agents.
 
-## Quickstart From Source
+## Install
 
-The npm package target is `@aproto9787/loom`. After the first publish, the global install path is:
+Install the CLI globally, then start Loom from any repository:
 
 ```bash
 npm i -g @aproto9787/loom
 loom
 ```
 
-Until the first npm publish is cut, run Loom from a built checkout.
-
 Requirements:
 
 - Node.js `>=22.13.0`
-- pnpm `10.x`
 - Local Claude Code and/or Codex if you want real provider-backed runs
+
+Loom scans the current directory and packaged example flows, lets you choose a YAML flow, then launches the selected host leader with run-scoped MCP delegation tools.
+
+## Develop From Source
+
+Use the source checkout for Studio and server development:
 
 ```bash
 pnpm install
@@ -148,7 +153,13 @@ pnpm dev
 
 ## Run a Flow
 
-Build the CLI, then start Loom in any repository:
+From the published CLI:
+
+```bash
+loom
+```
+
+From a built checkout:
 
 ```bash
 pnpm --filter @aproto9787/loom build
@@ -278,7 +289,6 @@ These are not implemented as shipped runtime guarantees today:
 
 - visual DAG execution with typed edges
 - routers, loop/join nodes, or graph-cost meters
-- published package install path
 - automated golden-path coverage for full leader-to-worker recursion
 - cloud-hosted code execution
 
