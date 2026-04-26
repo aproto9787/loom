@@ -1,94 +1,126 @@
 # Loom
 
-> Local agent control plane for Claude Code, Codex, MCP tools, and repository workflows.
+<p align="center">
+  <img src="docs/assets/loom-banner.svg" alt="Loom local agent control plane" width="100%">
+</p>
 
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg)](LICENSE)
-![Node 22+](https://img.shields.io/badge/Node-22%2B-339933.svg?logo=node.js&logoColor=white)
-![pnpm workspace](https://img.shields.io/badge/pnpm-workspace-F69220.svg?logo=pnpm&logoColor=white)
-![Status experimental](https://img.shields.io/badge/status-experimental-orange.svg)
+<p align="center">
+  <strong>Your local AI dev team, controlled from the browser.</strong>
+</p>
 
-Loom is an experimental local agent runner and browser control plane. A flow is a plain YAML file with one root `orchestrator` agent and optional nested child agents. The server validates and stores flows, runs and run events. The studio edits/observes those flows in the browser. The CLI can launch a flow's root agent and uses `loom-subagent` for recursive child-agent execution.
+<p align="center">
+  <a href="LICENSE"><img alt="License: GPL-3.0-only" src="https://img.shields.io/badge/License-GPL--3.0--only-blue.svg"></a>
+  <img alt="Node 22+" src="https://img.shields.io/badge/Node-22%2B-339933.svg?logo=node.js&logoColor=white">
+  <img alt="pnpm workspace" src="https://img.shields.io/badge/pnpm-workspace-F69220.svg?logo=pnpm&logoColor=white">
+  <img alt="MCP delegation" src="https://img.shields.io/badge/MCP-delegation-7C3AED.svg">
+  <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-orange.svg">
+</p>
 
-This README describes the code on the current `master` branch. It intentionally avoids claims that are not represented in the current TypeScript schema or runtime.
+Loom is a local control plane for Claude Code, Codex, MCP tools, and repository workflows.
 
-The target product/runtime direction is tracked in [`docs/LOCAL_AGENT_CONTROL_PLANE.md`](docs/LOCAL_AGENT_CONTROL_PLANE.md). That document is the implementation north star for host leader sessions, Loom-managed workers, and MCP-based delegation.
-
-## Table of Contents
-
-- [Current status](#current-status)
-- [Repository layout](#repository-layout)
-- [Quickstart](#quickstart)
-- [Develop from source](#develop-from-source)
-- [CLI usage from a built checkout](#cli-usage-from-a-built-checkout)
-- [Flow schema](#flow-schema)
-- [Minimal flow example](#minimal-flow-example)
-- [Server API surface](#server-api-surface)
-- [Runtime paths](#runtime-paths)
-- [Resource model](#resource-model)
-- [Security notes](#security-notes)
-- [Design direction](#design-direction)
-- [License](#license)
-
-## Current status
-
-Implemented today:
-
-- Recursive agent-tree flow schema with `claude-code` and `codex` agent types.
-- Fastify server for flow CRUD, run history, run event ingestion, role/hook/skill CRUD, MCP/resource discovery, local CLI run spawning, and SSE streams.
-- React/Vite studio that talks to the local server.
-- CLI binaries: `loom`, `loom mcp`, and `loom-subagent`.
-- SQLite-backed run and event persistence under `.loom/traces.db`.
-- Agent `runtime` metadata for host/isolated semantics and MCP-only delegation transport.
-- Provider profile discovery for local Claude Code and Codex installs.
-- MCP delegation bridge with `loom_delegate`, generated `loom_delegate_<agent>` tools, `loom_delegate_many`, status, report, and cancel surface.
-- Flow-level and agent-level resource names for MCPs, hooks, and skills.
-- Role YAML defaults for `type`, `model`, `system`, `effort`, `description`, and `mcps`.
-
-Not represented in the current schema/runtime:
-
-- DAG node editing, typed edge execution, node routers, loop/join nodes, or cost/latency meters.
-- `capabilities` and `isolated` fields on `AgentConfig` or `RoleDefinition`.
-- Published-package quickstart guarantees for `npx loom` or `npm install -g loom`.
-- Automated golden-path verification for full leader → worker recursion.
-
-## Repository layout
+It starts from a simple idea: keep your existing coding agents local, then give them a browser workspace, a team structure, scoped worker sessions, and a traceable delegation layer.
 
 ```text
-loom/
-├── apps/
-│   ├── server/       Fastify API, flow validation, local CLI runner and traces
-│   └── studio/       React 19 + Vite studio
-├── packages/
-│   ├── core/         Zod schemas and shared run/flow types
-│   ├── cli/          loom and loom-subagent binaries
-│   ├── mcp/          stdio MCP delegation bridge
-│   └── runtime/      Shared flow loading, resources, prompts, and hooks
-├── examples/         Flow YAML files shown by the server/studio
-├── roles/            Reusable role YAML definitions
-├── hooks/            Hook YAML definitions
-├── skills/           Skill YAML definitions
-└── docs/             Architecture and code-backed state notes
+Start Loom locally
+  -> choose a YAML flow
+  -> Loom injects run-scoped MCP delegation tools
+  -> your host Claude Code or Codex session leads the work
+  -> isolated Loom workers handle delegated tasks
+  -> Studio shows reports, events, and run history
 ```
 
-## Quickstart
+Loom is not a cloud runtime and it is not a blank node-graph builder. The current implementation is a local recursive agent harness with a Studio UI and MCP-first delegation.
+
+> [!IMPORTANT]
+> This repository moves quickly. This README describes the current `master` branch and avoids claims that are not represented in the TypeScript schema or runtime. The product direction lives in [`docs/LOCAL_AGENT_CONTROL_PLANE.md`](docs/LOCAL_AGENT_CONTROL_PLANE.md), and the code-backed status checklist lives in [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md).
+
+## What Loom Gives You
+
+| Surface | What it does |
+| --- | --- |
+| `loom` | Starts a host leader session from a selected flow and injects Loom MCP delegation tools. |
+| `loom mcp` | Runs the stdio MCP bridge that exposes child-agent delegation tools. |
+| `loom-subagent` | Internal child-agent launcher behind MCP delegation. |
+| Studio | Browser UI for editing flows, roles, hooks, skills, and watching runs. |
+| Server | Local Fastify API for flow CRUD, run history, events, discovery, and SSE. |
+| YAML flows | Source-controlled agent teams with host leaders and isolated workers. |
+
+## Why It Exists
+
+Most coding-agent setups hit the same wall:
+
+- Claude Code and Codex are useful, but they live as separate local sessions.
+- MCP servers, hooks, roles, and repo conventions are scattered across config files.
+- Delegation is usually prompt text, shell copy-paste, or invisible sub-sessions.
+- Browser UX is convenient, but developers still want code execution to stay local.
+
+Loom stitches those pieces into one local workspace:
+
+- Host leader session: your normal local Claude Code or Codex profile.
+- Loom overlay: flow instructions, child-agent list, delegation rules, and reporting protocol.
+- MCP delegation: typed tools such as `loom_delegate_reviewer` and `loom_delegate_many`.
+- Isolated workers: scoped HOME/config, scoped resources, mandatory REPORT output.
+- Trace layer: events and reports persisted under `.loom/traces.db`.
+
+## Runtime Model
+
+```mermaid
+flowchart LR
+  Studio["Loom Studio<br/>browser control panel"]
+  Server["Local Loom Server<br/>flows, runs, events"]
+  Leader["Host Leader Session<br/>Claude Code or Codex"]
+  MCP["Loom MCP Bridge<br/>delegate / status / report / cancel"]
+  Workers["Loom-managed Workers<br/>isolated Claude/Codex sessions"]
+  Repo["Local repository<br/>your files stay local"]
+  Trace[".loom/traces.db<br/>events and reports"]
+
+  Studio <--> Server
+  Server --> Leader
+  Leader --> MCP
+  MCP --> Workers
+  Workers --> Repo
+  Workers --> Trace
+  Server <--> Trace
+```
+
+The split is intentional:
+
+```text
+Leader comes from your local provider.
+Workers are managed by Loom.
+MCP connects them with a traceable delegation boundary.
+```
+
+## Current Highlights
+
+- Recursive agent-tree flow schema with `claude-code` and `codex` agent types.
+- Host/isolated runtime metadata with MCP-only delegation transport.
+- Provider profile discovery for local Claude Code and Codex installs.
+- Run-scoped MCP config injection for host leader sessions.
+- Dynamic MCP tools for enabled direct children, including `loom_delegate_<agent>`.
+- `loom_delegate_many` for parallel worker dispatch from a single tool call.
+- SQLite-backed run and event persistence under `.loom/traces.db`.
+- Studio UI for flows, roles, hooks, skills, resources, and run detail views.
+- Default `leader-workers` flow with implementers, analysts, reviewer, fixer, debaters, synthesizer, and user-advocate.
+- Phase-gated workflow policy: phase work can require `user-advocate` PASS before moving forward.
+- Debate routing policy: casual `debate`, `vs`, comparison, recommendation, or decision prompts can route through debater agents.
+
+## Quickstart From Source
+
+Loom currently runs from a built checkout. Published `npx loom` / global install guarantees are not claimed yet.
+
+Requirements:
+
+- Node.js `>=22.13.0`
+- pnpm `10.x`
+- Local Claude Code and/or Codex if you want real provider-backed runs
 
 ```bash
 pnpm install
 pnpm -r build
-pnpm --filter @loom/server dev
-pnpm --filter @loom/studio dev
 ```
 
-## Develop from source
-
-Loom is a pnpm workspace. Use Node.js 22.13+; the local trace store uses `node:sqlite`.
-
-```bash
-pnpm install
-pnpm -r build
-```
-
-Run the local server and studio in separate terminals:
+Run the local server and Studio:
 
 ```bash
 pnpm --filter @loom/server dev
@@ -100,22 +132,24 @@ Defaults:
 - Server: `http://localhost:8787`
 - Studio: `http://localhost:5173`
 
-The root script also exists:
+Or start all dev processes through the workspace script:
 
 ```bash
 pnpm dev
 ```
 
-## CLI usage from a built checkout
+## Run a Flow
 
-Build the CLI from the workspace. The CLI now imports shared helpers from `@loom/runtime` instead of built server modules:
+Build the CLI, then start Loom in any repository:
 
 ```bash
 pnpm --filter loom build
 node packages/cli/dist/index.js
 ```
 
-The `loom` binary scans the current directory and `examples/` for `.yaml` flows, lets you pick one interactively, then launches the selected flow's root orchestrator. For local-server initiated runs, the same binary also supports a headless mode:
+The CLI scans the current directory and `examples/` for `.yaml` flows, lets you pick one, then launches the selected flow's root leader.
+
+Headless run:
 
 ```bash
 node packages/cli/dist/index.js \
@@ -124,128 +158,32 @@ node packages/cli/dist/index.js \
   --headless
 ```
 
-The `loom-subagent` binary is the generalized child-agent launcher:
+Start only the MCP bridge:
 
 ```bash
-node packages/cli/dist/subagent-launcher.js \
-  --name reviewer \
-  --backend codex \
-  --parent leader \
-  "Review the changed files and write a short report."
+node packages/cli/dist/index.js mcp
 ```
 
-`loom mcp` starts the stdio MCP delegation bridge. It is normally launched by a
-host leader session through a temporary MCP config generated by `loom`.
+The MCP bridge is normally launched by a host leader through a temporary run-scoped config generated by `loom`.
 
-## Flow schema
-
-The source of truth is `packages/core/src/index.ts`. A flow has this shape:
-
-```ts
-interface FlowDefinition {
-  version?: string;
-  name: string;
-  description?: string;
-  repo: string;
-  flowMd?: string;
-  flowMdLibrary?: Record<string, string>;
-  teams?: TeamDefinition[];
-  orchestrator: AgentConfig;
-  resources?: {
-    mcps?: string[];
-    hooks?: string[];
-    skills?: string[];
-  };
-}
-```
-
-An agent has this shape:
-
-```ts
-interface AgentConfig {
-  name: string;
-  type: "claude-code" | "codex";
-  enabled?: boolean;
-  runtime?: {
-    mode?: "host" | "isolated";
-    profile?: string;
-    applyResources?: "prompt-only" | "scoped-home";
-    delegationTransport?: "mcp";
-  };
-  role?: string;
-  team?: Array<{ id: string; role?: string }>;
-  model?: string;
-  system?: string;
-  flowMdRef?: string;
-  description?: string;
-  effort?: "low" | "medium" | "high" | "xhigh";
-  timeout?: number;
-  parallel?: boolean;
-  delegation?: Array<{ to: string; when: string }>;
-  mcps?: string[];
-  hooks?: string[];
-  skills?: string[];
-  agents?: AgentConfig[];
-}
-```
-
-A role has this shape:
-
-```ts
-interface RoleDefinition {
-  name: string;
-  type: "claude-code" | "codex";
-  model?: string;
-  system: string;
-  effort?: "low" | "medium" | "high" | "xhigh";
-  description?: string;
-  mcps?: string[];
-}
-```
-
-Hook definitions:
-
-```ts
-type HookEvent = "on_start" | "on_complete" | "on_error" | "on_delegate";
-
-interface HookDefinition {
-  name: string;
-  event: HookEvent;
-  command: string;
-  description?: string;
-}
-```
-
-Skill definitions:
-
-```ts
-interface SkillDefinition {
-  name: string;
-  prompt: string;
-  description?: string;
-}
-```
-
-## Minimal flow example
+## Example Flow
 
 ```yaml
 version: "1"
 name: Review Flow
-description: A leader delegates a focused review task.
 repo: .
-resources:
-  skills:
-    - concise
-teams:
-  - id: review
-    description: Review and validation work.
+
 orchestrator:
   name: leader
-  type: claude-code
-  model: claude-opus-4-7
+  type: codex
+  runtime:
+    mode: host
+    profile: codex-default
+    applyResources: prompt-only
+    delegationTransport: mcp
   system: |
-    You coordinate the work and delegate review tasks when needed.
-  effort: high
+    Plan the work, delegate concrete tasks, read child reports, and make the
+    final decision.
   delegation:
     - to: reviewer
       when: Code or documentation needs a second pass.
@@ -253,89 +191,112 @@ orchestrator:
     - name: reviewer
       type: codex
       role: code-reviewer
-      team:
-        - id: review
-          role: reviewer
-      model: gpt-5.5
+      runtime:
+        mode: isolated
+        profile: codex-default
+        applyResources: scoped-home
       system: |
         Review the assigned work and report concrete findings.
-      timeout: 600000
-      skills:
-        - concise
 ```
 
-## Server API surface
+The active example set is under [`examples/`](examples/). The default Studio/server path centers on [`examples/leader-workers.yaml`](examples/leader-workers.yaml).
 
-The server is local-first and permissive for development CORS. Important routes:
+## Studio
 
-- `GET /health`
-- `GET /flows`
-- `GET /flows/get?path=examples/<file>.yaml`
-- `PUT /flows/save`
-- `POST /flows/new`
-- `POST /flows/duplicate`
-- `DELETE /flows/:path`
-- `POST /runs` (creates a run record and starts the local CLI headless path)
-- `POST /runs + GET /runs/:id/stream` (compatibility SSE wrapper over the local CLI path)
-- `GET /runs`
-- `GET /runs/:id`
-- `POST /runs/:id/abort`
-- `POST /runs/register`
-- `POST /runs/:id/events`
-- `GET /runs/:id/events`
-- `GET /runs/:id/stream`
-- `PATCH /runs/:id/status`
-- `GET /mcps`
-- `GET /discover`
-- `GET /roles`, `GET /roles/:name`, `PUT /roles/save`, `DELETE /roles/:name`
-- `GET /hooks`, `PUT /hooks/save`, `DELETE /hooks/:name`
-- `GET /skills`, `PUT /skills/save`, `DELETE /skills/:name`
+Studio is a browser control surface for the local server:
+
+- inspect and edit recursive flow trees
+- configure agent roles, models, prompts, MCPs, hooks, and skills
+- run selected flows against the local workspace
+- stream run events and inspect worker reports
+- keep YAML as the source of truth for Git review
+
+Studio is intentionally a control panel over local execution. It does not move repository execution into a remote cloud runtime.
+
+## Resource Model
+
+Loom has three source-controlled workspace resource directories:
+
+```text
+roles/*.yaml
+hooks/*.yaml
+skills/*.yaml
+```
+
+Resource behavior today:
+
+- Roles provide defaults for type, model, system prompt, effort, description, and MCPs.
+- Skills append prompt text.
+- Hooks run local shell commands through the server runner.
+- MCP names are resolved from user/workspace MCP config and written into temporary scoped config for a run.
+- Host leaders use prompt-only flow overlays.
+- Workers can receive scoped resources inside isolated HOME/config directories.
+
+## Repository Map
+
+```text
+loom/
+├── apps/
+│   ├── server/       Fastify API, flow validation, local CLI runs, traces
+│   └── studio/       React + Vite browser control panel
+├── packages/
+│   ├── core/         Zod schemas and shared flow/run types
+│   ├── cli/          loom and loom-subagent binaries
+│   ├── mcp/          stdio MCP delegation bridge
+│   └── runtime/      flow loading, resources, prompts, hooks, reports
+├── examples/         YAML flows shown by server and Studio
+├── roles/            reusable role definitions
+├── hooks/            local hook definitions
+├── skills/           prompt skill definitions
+└── docs/             architecture, current state, implementation notes
+```
+
+## API Surface
+
+The local server exposes routes for:
+
+- health: `GET /health`
+- flows: `GET /flows`, `GET /flows/get`, `PUT /flows/save`, `POST /flows/new`, `POST /flows/duplicate`, `DELETE /flows/:path`
+- runs: `POST /runs`, `GET /runs`, `GET /runs/:id`, `POST /runs/:id/abort`
+- events: `POST /runs/register`, `POST /runs/:id/events`, `GET /runs/:id/events`, `GET /runs/:id/stream`, `PATCH /runs/:id/status`
+- resources: `GET /roles`, `GET /hooks`, `GET /skills`, plus save/delete endpoints
+- discovery: `GET /mcps`, `GET /discover`
 
 Flow paths accepted by server run/save/get routes must stay under `examples/` and end in `.yaml`.
 
-## Runtime paths
+## What Loom Is Not Yet
 
-The CLI/`loom-subagent` path is now the primary local execution path.
+These are not implemented as shipped runtime guarantees today:
 
-### CLI path
+- visual DAG execution with typed edges
+- routers, loop/join nodes, or graph-cost meters
+- global `npx loom` quickstart
+- published package install path
+- automated golden-path coverage for full leader-to-worker recursion
+- cloud-hosted code execution
 
-`packages/cli/src/index.ts` launches the selected flow's root orchestrator. The root agent receives a generated delegation prompt that requires Loom MCP tools for child delegation. `loom-subagent` remains the internal worker runtime behind the MCP server. Child agents post their events back to the server with `runId`, `agentName`, `agentDepth`, `parentAgent`, and `agentKind` metadata.
+If you need the current baseline before changing docs, read [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md).
 
-This is the path new recursive child-agent work should target.
-
-### Local server run path
-
-`apps/server/src/local-cli-runner.ts` still powers `POST /runs` and including the Studio save→run path. That file is marked deprecated in code and should not receive new runtime behavior except while the Studio remains wired to it.
-
-## Resource model
-
-Loom has three workspace resource directories:
-
-- `roles/*.yaml`
-- `hooks/*.yaml`
-- `skills/*.yaml`
-
-Flow-level resources are merged with agent-level resources by name. Skills are appended to prompts. Hooks are executed by the server runner using `child_process.exec` with a 30-second timeout. MCP names are resolved from the user's Claude config and workspace `.mcp.json`; selected MCP servers are written into a temporary `.mcp.json` for a run.
+## Safety Notes
 
 > [!WARNING]
-> Review the security notes below before running Loom. The current code can launch local CLI tools and shell hooks with dangerous permission and sandbox bypass flags.
+> Loom can run local CLI tools and shell hooks. Treat flows, roles, hooks, skills, and MCP configs as trusted code/configuration.
 
-## Security notes
-
-Loom executes local CLI tools and hook commands from your machine. Treat flow, role, hook, and skill files as trusted code/configuration.
-
-Current code paths include powerful flags:
+Current code paths include powerful execution modes:
 
 - Claude Code adapter uses `--permission-mode bypassPermissions`.
 - Codex adapter uses `--dangerously-bypass-approvals-and-sandbox`.
-- CLI launch also uses dangerous permission/sandbox bypass flags for root agents.
+- CLI launch uses dangerous permission/sandbox bypass flags for root agents.
 - Hooks run shell commands through `child_process.exec`.
 
 Use Loom only inside repositories and workspaces you trust.
 
-## Design direction
+## Docs
 
-The current code is closer to a local recursive agent harness than a general visual DAG builder. The active direction is a local agent control plane: host Claude Code/Codex leaders, Loom-managed isolated workers, and MCP delegation tools as the primary transport. See [`docs/LOCAL_AGENT_CONTROL_PLANE.md`](docs/LOCAL_AGENT_CONTROL_PLANE.md).
+- [`docs/LOCAL_AGENT_CONTROL_PLANE.md`](docs/LOCAL_AGENT_CONTROL_PLANE.md): target product and runtime contract
+- [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md): code-backed implementation status
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): system architecture
+- [`docs/PROGRESS.md`](docs/PROGRESS.md): project history and progress notes
 
 ## License
 
