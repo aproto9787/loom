@@ -16,6 +16,7 @@
       <nav class="nav" aria-label="Primary">
         <a class="brand" href="./" aria-label="Loom home">Loom</a>
         <div class="nav-links">
+          <a href="https://www.npmjs.com/package/@aproto9787/loom">npm</a>
           <a href="https://github.com/aproto9787/loom">GitHub</a>
           <a href="architecture.html">Architecture</a>
           <a href="status.html">Status</a>
@@ -31,8 +32,8 @@
           workspace.
         </p>
         <div class="actions" aria-label="Primary actions">
-          <a class="button primary" href="https://github.com/aproto9787/loom">View on GitHub</a>
-          <a class="button secondary" href="#quickstart">Run from source</a>
+          <a class="button primary" href="#quickstart">Install Loom</a>
+          <a class="button secondary" href="https://github.com/aproto9787/loom">View on GitHub</a>
         </div>
       </section>
     </header>
@@ -90,14 +91,12 @@
       <section class="band" id="quickstart">
         <div class="section-heading">
           <p class="eyebrow">Quickstart</p>
-          <h2>Run Loom from a built checkout.</h2>
+          <h2>Install Loom from npm.</h2>
         </div>
-        <pre><code>pnpm install
-pnpm -r build
-pnpm --filter @loom/server dev
-pnpm --filter @loom/studio dev</code></pre>
+        <pre><code>npm i -g @aproto9787/loom
+loom</code></pre>
         <p class="note">
-          Loom is experimental and currently runs from source. Local execution can use powerful provider flags and shell hooks, so run it only in trusted workspaces.
+          Loom is experimental. Local execution can use powerful provider flags and shell hooks, so run it only in trusted workspaces.
         </p>
       </section>
     </main>
