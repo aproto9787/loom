@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Current implementation status for Loom.">
+    <meta property="og:title" content="Loom Status">
+    <meta property="og:description" content="What Loom ships today and what is still product direction.">
+    <meta property="og:type" content="website">
+    <title>Loom Status</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="page-hero">
+      <nav class="nav" aria-label="Primary">
+        <a class="brand" href="./" aria-label="Loom home">Loom</a>
+        <div class="nav-links">
+          <a href="./">Home</a>
+          <a href="architecture.html">Architecture</a>
+          <a href="status.html" aria-current="page">Status</a>
+          <a href="https://github.com/aproto9787/loom">GitHub</a>
+        </div>
+      </nav>
+      <div class="page-heading">
+        <p class="eyebrow">Status</p>
+        <h1>Experimental, local-first, and code-backed.</h1>
+        <p class="lead">
+          Loom currently runs recursive YAML-defined agent trees with local
+          Claude Code and Codex processes, MCP delegation, Studio, and persisted
+          traces.
+        </p>
+      </div>
+    </header>
+
+    <main>
+      <section class="band">
+        <div class="status-grid">
+          <article>
+            <span>Live</span>
+            <h3>Implemented</h3>
+            <ul>
+              <li>Recursive agent-tree YAML schema.</li>
+              <li>Host and isolated runtime metadata.</li>
+              <li>Run-scoped Loom MCP delegation tools.</li>
+              <li>Studio flow editing and run observation.</li>
+              <li>SQLite event and report persistence.</li>
+            </ul>
+          </article>
+          <article>
+            <span>Next</span>
+            <h3>Direction</h3>
+            <ul>
+              <li>Cleaner onboarding around local provider discovery.</li>
+              <li>More complete leader-to-worker smoke coverage.</li>
+              <li>Richer Studio views for reports and worker state.</li>
+              <li>Published install path when the runtime stabilizes.</li>
+            </ul>
+          </article>
+          <article>
+            <span>Not yet</span>
+            <h3>Not shipped</h3>
+            <ul>
+              <li>Visual DAG runtime with typed edges.</li>
+              <li>Cloud-hosted code execution.</li>
+              <li>Global npx quickstart guarantee.</li>
+              <li>Cost, latency, or token-meter dashboards.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="band contrast">
+        <div class="section-heading">
+          <p class="eyebrow">Safety</p>
+          <h2>Run it only in trusted workspaces.</h2>
+        </div>
+        <p class="note">
+          Loom can launch local CLI tools, provider sessions, and shell hooks.
+          Current local execution paths can use powerful approval and sandbox
+          bypass flags. Treat flows, hooks, roles, skills, and MCP configuration
+          as trusted code.
+        </p>
+      </section>
+
+      <section class="band">
+        <div class="section-heading">
+          <p class="eyebrow">Source of truth</p>
+          <h2>Detailed state stays in the repository.</h2>
+        </div>
+        <p class="note">
+          Read the code-backed checklist in the repository
+          <a class="inline-link" href="https://github.com/aproto9787/loom/tree/master/docs">docs directory</a>
+          before documenting new guarantees.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
