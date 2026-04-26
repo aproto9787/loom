@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Loom is a local agent control plane for Claude Code, Codex, MCP tools, and repository workflows.">
+    <meta property="og:title" content="Loom">
+    <meta property="og:description" content="Your local AI dev team, controlled from the browser.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="assets/loom-banner.svg">
+    <title>Loom - Local Agent Control Plane</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="hero">
+      <nav class="nav" aria-label="Primary">
+        <a class="brand" href="./" aria-label="Loom home">Loom</a>
+        <div class="nav-links">
+          <a href="https://github.com/aproto9787/loom">GitHub</a>
+          <a href="LOCAL_AGENT_CONTROL_PLANE.md">Architecture</a>
+          <a href="CURRENT_STATE.md">Status</a>
+        </div>
+      </nav>
+
+      <section class="hero-content">
+        <p class="eyebrow">Local agent control plane</p>
+        <h1>Your local AI dev team, controlled from the browser.</h1>
+        <p class="lead">
+          Loom connects your local Claude Code, Codex, MCP servers, repository
+          workflows, and isolated worker agents into one traceable developer
+          workspace.
+        </p>
+        <div class="actions" aria-label="Primary actions">
+          <a class="button primary" href="https://github.com/aproto9787/loom">View on GitHub</a>
+          <a class="button secondary" href="#quickstart">Run from source</a>
+        </div>
+      </section>
+    </header>
+
+    <main>
+      <section class="band">
+        <div class="section-heading">
+          <p class="eyebrow">Runtime split</p>
+          <h2>Host leaders stay familiar. Workers stay isolated.</h2>
+        </div>
+        <div class="runtime-grid">
+          <article>
+            <span>1</span>
+            <h3>Start Loom locally</h3>
+            <p>Choose a YAML flow from the workspace. Loom launches the root leader through your local Claude Code or Codex provider.</p>
+          </article>
+          <article>
+            <span>2</span>
+            <h3>Delegate through MCP</h3>
+            <p>The leader receives typed Loom tools such as delegate, delegate-many, report, status, and cancel.</p>
+          </article>
+          <article>
+            <span>3</span>
+            <h3>Run isolated workers</h3>
+            <p>Workers execute locally with scoped HOME/config directories, scoped resources, mandatory reports, and trace events.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="band contrast">
+        <div class="section-heading">
+          <p class="eyebrow">What ships today</p>
+          <h2>Recursive agent teams for local code work.</h2>
+        </div>
+        <div class="feature-list">
+          <div>
+            <h3>Claude Code and Codex</h3>
+            <p>Provider profiles are discovered locally and used as host leaders or isolated workers.</p>
+          </div>
+          <div>
+            <h3>MCP-first delegation</h3>
+            <p>Enabled child agents become Loom MCP tools instead of shell snippets in prompts.</p>
+          </div>
+          <div>
+            <h3>Studio control panel</h3>
+            <p>Edit flows, roles, hooks, skills, resources, and watch run traces in the browser.</p>
+          </div>
+          <div>
+            <h3>Source-controlled YAML</h3>
+            <p>Flows remain reviewable files that can be changed in Studio or edited directly.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="quickstart">
+        <div class="section-heading">
+          <p class="eyebrow">Quickstart</p>
+          <h2>Run Loom from a built checkout.</h2>
+        </div>
+        <pre><code>pnpm install
+pnpm -r build
+pnpm --filter @loom/server dev
+pnpm --filter @loom/studio dev</code></pre>
+        <p class="note">
+          Loom is experimental and currently runs from source. Local execution can use powerful provider flags and shell hooks, so run it only in trusted workspaces.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

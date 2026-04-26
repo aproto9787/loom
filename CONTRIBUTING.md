@@ -15,7 +15,8 @@ Loom is a pnpm workspace and currently targets Node.js 22.13+.
 ```bash
 pnpm install
 pnpm -r build
-pnpm typecheck
+pnpm -r typecheck
+pnpm -r test
 ```
 
 Run the server and studio in separate terminals when needed:
@@ -42,7 +43,7 @@ Feature requests should explain the problem being solved, the proposed behavior,
 - Add or update tests when behavior changes.
 - Avoid drive-by refactors and unrelated formatting changes.
 - Use clear, imperative commit messages.
-- Confirm `pnpm check` passes before requesting review.
+- Confirm `pnpm -r build`, `pnpm -r typecheck`, and relevant tests pass before requesting review.
 
 ## Community expectations
 

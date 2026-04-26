@@ -59,8 +59,9 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-`TODO: configure`.
+reported to the maintainer through the GitHub profile linked from the
+repository owner. Do not post sensitive personal details in public issues,
+pull requests, or discussions.
 All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the

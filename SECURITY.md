@@ -14,7 +14,9 @@ Use GitHub Private Vulnerability Reporting or a GitHub security advisory draft f
 2. Start a private vulnerability report or private advisory draft.
 3. Include reproduction steps, impact, affected commit or version, and any proof-of-concept details needed to validate the issue.
 
-If private advisory reporting is not available, use `TODO: configure` before sharing details.
+If private advisory reporting is not available, contact the maintainer through
+the GitHub profile linked from the repository owner and avoid sharing
+proof-of-concept details publicly until a private channel is established.
 
 ## What to report
 

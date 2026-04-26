@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://aproto9787.github.io/loom/"><img alt="Website" src="https://img.shields.io/badge/website-loom-38BDF8.svg"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0-only" src="https://img.shields.io/badge/License-GPL--3.0--only-blue.svg"></a>
   <img alt="Node 22+" src="https://img.shields.io/badge/Node-22%2B-339933.svg?logo=node.js&logoColor=white">
   <img alt="pnpm workspace" src="https://img.shields.io/badge/pnpm-workspace-F69220.svg?logo=pnpm&logoColor=white">

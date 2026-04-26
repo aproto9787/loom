@@ -4,7 +4,9 @@ Describe the change and why it is needed.
 
 ## Testing
 
-- [ ] `pnpm typecheck`
+- [ ] `pnpm -r build`
+- [ ] `pnpm -r typecheck`
+- [ ] Relevant tests pass
 - [ ] Relevant manual verification completed
 
 ## Checklist
