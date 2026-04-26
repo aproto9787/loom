@@ -1,6 +1,6 @@
 {
   "name": "@aproto9787/loom",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local agent control plane for Claude Code, Codex, MCP tools, and repository workflows.",
   "license": "GPL-3.0-only",
   "type": "module",

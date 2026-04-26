@@ -17,7 +17,7 @@ import { createCodexInstructionHome, type CodexInstructionHome } from "./codex-h
 import { buildDelegationPrompt } from "./delegation-prompt.js";
 import { buildHeadlessPrompt } from "./session-prompts.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.2";
 const cliDistDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(cliDistDir, "..");
 const workspaceRoot = path.resolve(cliDistDir, "../../..");
