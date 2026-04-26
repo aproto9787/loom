@@ -1,5 +1,5 @@
 {
-  "name": "loom",
+  "name": "@aproto9787/loom-workspace",
   "private": true,
   "license": "GPL-3.0-only",
   "packageManager": "pnpm@10.7.1",
@@ -7,7 +7,12 @@
     "dev": "pnpm -r --parallel --stream run dev",
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r build",
-    "check": "pnpm -r build && pnpm -r typecheck"
+    "check": "pnpm -r build && pnpm -r typecheck",
+    "publish:npm:core": "pnpm --filter @aproto9787/loom-core publish --access public",
+    "publish:npm:runtime": "pnpm --filter @aproto9787/loom-runtime publish --access public",
+    "publish:npm:mcp": "pnpm --filter @aproto9787/loom-mcp publish --access public",
+    "publish:npm:cli": "pnpm --filter @aproto9787/loom publish --access public",
+    "publish:npm": "pnpm publish:npm:core && pnpm publish:npm:runtime && pnpm publish:npm:mcp && pnpm publish:npm:cli"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

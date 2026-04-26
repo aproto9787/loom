@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { RoleDefinition } from "@loom/core";
+import type { RoleDefinition } from "@aproto9787/loom-core";
 import { darkButton, darkCardMuted, inputDark, selectDark } from "./panelStyles.js";
 import { useRunStore } from "./store.js";
 

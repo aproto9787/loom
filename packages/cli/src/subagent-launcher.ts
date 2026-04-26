@@ -14,7 +14,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
-import type { AgentConfig, FlowDefinition, HookDefinition, SkillDefinition } from "@loom/core";
+import type { AgentConfig, FlowDefinition, HookDefinition, SkillDefinition } from "@aproto9787/loom-core";
 import {
   buildConfiguredAgent,
   createScopedMcpConfig,
@@ -22,7 +22,7 @@ import {
   loadSkillDefinitions,
   findAgentByName,
   resolveAgentResources,
-} from "@loom/runtime";
+} from "@aproto9787/loom-runtime";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
 
 type Backend = "claude" | "codex";

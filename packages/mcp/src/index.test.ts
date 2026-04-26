@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { LoomMcpServer } from "./index.js";
-import type { RunSubagentTaskResult } from "@loom/runtime";
+import type { RunSubagentTaskResult } from "@aproto9787/loom-runtime";
 
 async function createTestFlow(): Promise<{ root: string; flowPath: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "loom-mcp-test-"));

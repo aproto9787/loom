@@ -1,10 +1,42 @@
 {
-  "name": "loom",
+  "name": "@aproto9787/loom",
   "version": "0.1.0",
+  "description": "Local agent control plane for Claude Code, Codex, MCP tools, and repository workflows.",
   "license": "GPL-3.0-only",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "examples",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aproto9787/loom.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://aproto9787.github.io/loom/",
+  "bugs": {
+    "url": "https://github.com/aproto9787/loom/issues"
+  },
+  "keywords": [
+    "loom",
+    "ai-agents",
+    "coding-agents",
+    "claude-code",
+    "codex",
+    "mcp",
+    "model-context-protocol",
+    "local-first",
+    "developer-tools"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "bin": {
     "loom": "dist/index.js",
     "loom-subagent": "dist/subagent-launcher.js"
@@ -17,12 +49,14 @@
   },
   "scripts": {
     "build": "tsc -b",
+    "prepack": "node scripts/pack-examples.mjs copy",
+    "postpack": "node scripts/pack-examples.mjs clean",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@loom/core": "workspace:^",
-    "@loom/mcp": "workspace:^",
-    "@loom/runtime": "workspace:^",
+    "@aproto9787/loom-core": "workspace:^",
+    "@aproto9787/loom-mcp": "workspace:^",
+    "@aproto9787/loom-runtime": "workspace:^",
     "yaml": "^2.8.3"
   }
 }

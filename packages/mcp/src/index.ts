@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import readline from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import type { AgentConfig } from "@loom/core";
+import type { AgentConfig } from "@aproto9787/loom-core";
 import {
   directChildren,
   findAgentByName,
@@ -10,7 +10,7 @@ import {
   runSubagentTask,
   type RunSubagentTaskOptions,
   type RunSubagentTaskResult,
-} from "@loom/runtime";
+} from "@aproto9787/loom-runtime";
 
 type JsonRpcId = string | number | null;
 

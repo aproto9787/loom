@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import type { AgentConfig, FlowDefinition } from "@loom/core";
+import type { AgentConfig, FlowDefinition } from "@aproto9787/loom-core";
 import { createScopedMcpConfig, resolveAgentResources } from "./runner-resource-loader.js";
 
 test("resolveAgentResources merges flow and agent resources without duplicates", () => {

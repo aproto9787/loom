@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentConfig } from "@loom/core";
+import type { AgentConfig } from "@aproto9787/loom-core";
 import { runHooks } from "./runner-hook-runner.js";
 import type { RunResources } from "./runner-resource-loader.js";
 

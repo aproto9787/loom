@@ -12,4 +12,4 @@ export {
   type AgentResourceScope,
   type LoadedFlow,
   type RunResources,
-} from "@loom/runtime";
+} from "@aproto9787/loom-runtime";

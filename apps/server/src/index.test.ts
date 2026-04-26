@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
-import type { FlowDefinition } from "@loom/core";
+import type { FlowDefinition } from "@aproto9787/loom-core";
 import { buildServer } from "./index.js";
 import { markStaleRuns, resetTraceStore } from "./trace-store.js";
 

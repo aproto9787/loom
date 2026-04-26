@@ -1,5 +1,5 @@
-import type { AgentConfig } from "@loom/core";
-import { directChildren } from "@loom/runtime";
+import type { AgentConfig } from "@aproto9787/loom-core";
+import { directChildren } from "@aproto9787/loom-runtime";
 
 // Build a system-prompt snippet that instructs an agent to delegate through
 // Loom MCP tools only. `loom-subagent` remains the internal runtime behind the

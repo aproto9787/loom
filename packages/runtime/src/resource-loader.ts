@@ -11,7 +11,7 @@ import {
   type HookDefinition,
   type RoleDefinition,
   type SkillDefinition,
-} from "@loom/core";
+} from "@aproto9787/loom-core";
 import { defaultWorkspaceRoot } from "./paths.js";
 
 export interface AgentResourceScope {

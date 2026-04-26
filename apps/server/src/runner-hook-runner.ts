@@ -1,1 +1,1 @@
-export { runHooks, type HookEvent } from "@loom/runtime";
+export { runHooks, type HookEvent } from "@aproto9787/loom-runtime";

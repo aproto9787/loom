@@ -53,7 +53,7 @@ Do not document these as implemented unless the code changes first:
 - `capabilities` field in flow or role YAML.
 - Cost, latency, throughput, or token-meter UI.
 - DAG node execution, typed edge routing, loop/join/control nodes, or general graph runtime.
-- Guaranteed `npx loom` / global npm install flow.
+- Completed npm registry publication of the `@aproto9787/loom` package.
 - Automated golden-path test coverage for leader → workers.
 
 ## What is implemented
@@ -62,9 +62,9 @@ Do not document these as implemented unless the code changes first:
 - `examples/`-scoped flow CRUD and validation.
 - Server run routes that create local run records and spawn the built `loom` CLI in `--headless` mode.
 - CLI-launched runs with event registration and persisted event streaming.
-- `@loom/runtime` as the shared home for flow loading, resource loading, prompt building, scoped MCP config generation, and hook execution.
+- `@aproto9787/loom-runtime` as the shared home for flow loading, resource loading, prompt building, scoped MCP config generation, and hook execution.
 - Provider profile discovery for local Claude Code and Codex installs.
-- `@loom/mcp` as a stdio MCP delegation bridge.
+- `@aproto9787/loom-mcp` as a stdio MCP delegation bridge.
 - `loom mcp` as the CLI subcommand that exposes Loom delegation tools to host leaders.
 - Agent-specific dynamic MCP tools such as `loom_delegate_reviewer`, alongside stable generic tools such as `loom_delegate`.
 - Best-effort async cancellation for MCP-delegated subagent processes started with `wait: false`.

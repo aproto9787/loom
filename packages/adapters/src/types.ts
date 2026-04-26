@@ -1,4 +1,4 @@
-import type { AgentConfig, AgentType } from "@loom/core";
+import type { AgentConfig, AgentType } from "@aproto9787/loom-core";
 
 export type AgentEvent =
   | { type: "token"; content: string }

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { AgentConfig } from "@loom/core";
+import type { AgentConfig } from "@aproto9787/loom-core";
 import { emitMockEvents, parseDelegationDirective, parseParallelDelegationDirective } from "../protocol.js";
 import type { AgentAdapter, AgentEvent, SpawnController } from "../types.js";
 

@@ -1,1 +1,1 @@
-export { buildAgentPrompt, buildConfiguredAgent } from "@loom/runtime";
+export { buildAgentPrompt, buildConfiguredAgent } from "@aproto9787/loom-runtime";

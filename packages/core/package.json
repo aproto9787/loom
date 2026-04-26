@@ -1,10 +1,34 @@
 {
-  "name": "@loom/core",
+  "name": "@aproto9787/loom-core",
   "version": "0.1.0",
+  "description": "Shared schemas and types for Loom local agent workflows.",
   "license": "GPL-3.0-only",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aproto9787/loom.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://aproto9787.github.io/loom/",
+  "bugs": {
+    "url": "https://github.com/aproto9787/loom/issues"
+  },
+  "keywords": [
+    "loom",
+    "ai-agents",
+    "coding-agents",
+    "workflow",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

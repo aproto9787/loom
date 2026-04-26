@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AgentType, RunRecord, RunSource, RunStatus, RunSummary, TimelineEvent, TimelineEventType } from "@loom/core";
+import type { AgentType, RunRecord, RunSource, RunStatus, RunSummary, TimelineEvent, TimelineEventType } from "@aproto9787/loom-core";
 
 export type PersistedRunEventType = TimelineEventType;
 export type PersistedRunEvent = TimelineEvent;

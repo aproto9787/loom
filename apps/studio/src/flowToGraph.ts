@@ -1,5 +1,5 @@
 import type { Edge, Node } from "reactflow";
-import type { AgentConfig } from "@loom/core";
+import type { AgentConfig } from "@aproto9787/loom-core";
 
 export interface GraphPayload {
   nodes: Node[];

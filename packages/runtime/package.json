@@ -1,11 +1,34 @@
 {
-  "name": "@loom/runtime",
+  "name": "@aproto9787/loom-runtime",
   "version": "0.1.0",
+  "description": "Runtime helpers for Loom flow loading, resources, prompts, hooks, and reports.",
   "license": "GPL-3.0-only",
-  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aproto9787/loom.git",
+    "directory": "packages/runtime"
+  },
+  "homepage": "https://aproto9787.github.io/loom/",
+  "bugs": {
+    "url": "https://github.com/aproto9787/loom/issues"
+  },
+  "keywords": [
+    "loom",
+    "ai-agents",
+    "coding-agents",
+    "mcp",
+    "workflow"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -17,7 +40,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@loom/core": "workspace:^",
+    "@aproto9787/loom-core": "workspace:^",
     "yaml": "^2.8.3"
   }
 }

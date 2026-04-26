@@ -1,4 +1,4 @@
-import type { FlowDefinition } from "@loom/core";
+import type { FlowDefinition } from "@aproto9787/loom-core";
 
 export interface SaveFlowResult {
   flowPath: string;

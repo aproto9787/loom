@@ -1,4 +1,4 @@
-import type { AgentConfig, FlowDefinition, RoleDefinition, SkillDefinition } from "@loom/core";
+import type { AgentConfig, FlowDefinition, RoleDefinition, SkillDefinition } from "@aproto9787/loom-core";
 import { directChildren } from "./agent-tree.js";
 import type { RunResources } from "./resource-loader.js";
 import { resolveAgentResources } from "./resource-loader.js";

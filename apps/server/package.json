@@ -11,8 +11,8 @@
     "test": "LOOM_SERVER_AUTOSTART=0 LOOM_MOCK=1 node --test dist/**/*.test.js"
   },
   "dependencies": {
-    "@loom/core": "workspace:^",
-    "@loom/runtime": "workspace:^",
+    "@aproto9787/loom-core": "workspace:^",
+    "@aproto9787/loom-runtime": "workspace:^",
     "fastify": "^5.8.4",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"

@@ -1,4 +1,4 @@
-import type { AgentConfig } from "@loom/core";
+import type { AgentConfig } from "@aproto9787/loom-core";
 
 export function ResourceToggles({
   agent,

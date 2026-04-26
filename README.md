@@ -108,7 +108,14 @@ MCP connects them with a traceable delegation boundary.
 
 ## Quickstart From Source
 
-Loom currently runs from a built checkout. Published `npx loom` / global install guarantees are not claimed yet.
+The npm package target is `@aproto9787/loom`. After the first publish, the global install path is:
+
+```bash
+npm i -g @aproto9787/loom
+loom
+```
+
+Until the first npm publish is cut, run Loom from a built checkout.
 
 Requirements:
 
@@ -144,7 +151,7 @@ pnpm dev
 Build the CLI, then start Loom in any repository:
 
 ```bash
-pnpm --filter loom build
+pnpm --filter @aproto9787/loom build
 node packages/cli/dist/index.js
 ```
 
@@ -271,7 +278,6 @@ These are not implemented as shipped runtime guarantees today:
 
 - visual DAG execution with typed edges
 - routers, loop/join nodes, or graph-cost meters
-- global `npx loom` quickstart
 - published package install path
 - automated golden-path coverage for full leader-to-worker recursion
 - cloud-hosted code execution

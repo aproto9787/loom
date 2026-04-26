@@ -344,7 +344,7 @@ a297a84 feat(examples): add mcp-tool-use demo flow and server integration test
 
 **Acceptance verified.**
 
-- `pnpm --filter @loom/core build` passes
+- `pnpm --filter @aproto9787/loom-core build` passes
 - `pnpm --filter @loom/server build` passes
 - `POST /runs` continues to succeed for `examples/hello.yaml`,
   `examples/router-file.yaml`, `examples/mcp-demo.yaml`, and

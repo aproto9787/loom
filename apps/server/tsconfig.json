@@ -9,13 +9,13 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@loom/core": [
+      "@aproto9787/loom-core": [
         "../../packages/core/src/index.ts"
       ],
-      "@loom/adapters": [
+      "@aproto9787/loom-adapters": [
         "../../packages/adapters/src/index.ts"
       ],
-      "@loom/runtime": [
+      "@aproto9787/loom-runtime": [
         "../../packages/runtime/src/index.ts"
       ]
     }

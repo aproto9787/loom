@@ -2,24 +2,27 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { watch } from "node:fs";
+import { existsSync, watch } from "node:fs";
 import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig, AgentType, TimelineEvent } from "@loom/core";
-import { runLoomMcpServer } from "@loom/mcp";
-import { loadFlow } from "@loom/runtime";
-import { buildConfiguredAgent } from "@loom/runtime";
+import type { AgentConfig, AgentType, TimelineEvent } from "@aproto9787/loom-core";
+import { runLoomMcpServer } from "@aproto9787/loom-mcp";
+import { loadFlow } from "@aproto9787/loom-runtime";
+import { buildConfiguredAgent } from "@aproto9787/loom-runtime";
 import { createCodexInstructionHome, type CodexInstructionHome } from "./codex-home.js";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
 import { buildHeadlessPrompt } from "./session-prompts.js";
 
 const VERSION = "0.1.0";
-const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const examplesDir = path.join(workspaceRoot, "examples");
+const cliDistDir = path.dirname(fileURLToPath(import.meta.url));
+const packageRoot = path.resolve(cliDistDir, "..");
+const workspaceRoot = path.resolve(cliDistDir, "../../..");
+const sourceExamplesDir = path.join(workspaceRoot, "examples");
+const packageExamplesDir = path.join(packageRoot, "examples");
 
 function handleFlags(): boolean {
   const args = process.argv.slice(2);
@@ -237,7 +240,7 @@ async function collectYamlFiles(rootDir: string, baseDir = rootDir): Promise<str
 }
 
 async function listFlowPaths(cwd: string): Promise<string[]> {
-  const sources = [cwd, examplesDir].filter((value, index, array) => array.indexOf(value) === index);
+  const sources = [cwd, sourceExamplesDir, packageExamplesDir].filter((value, index, array) => array.indexOf(value) === index);
   const discovered = await Promise.all(sources.map(async (source) => {
     if (!(await pathExists(source))) {
       return [];
@@ -263,11 +266,15 @@ async function listFlowPaths(cwd: string): Promise<string[]> {
 }
 
 async function loadCliFlow(flowPath: string, cwd: string): Promise<LoadedCliFlow> {
-  const absolutePath = path.isAbsolute(flowPath)
-    ? flowPath
-    : flowPath.startsWith("examples/")
-      ? path.join(workspaceRoot, flowPath)
-      : path.resolve(cwd, flowPath);
+  let absolutePath = path.isAbsolute(flowPath) ? flowPath : path.resolve(cwd, flowPath);
+  if (!path.isAbsolute(flowPath) && flowPath.startsWith("examples/")) {
+    const candidates = [
+      path.resolve(cwd, flowPath),
+      path.join(sourceExamplesDir, flowPath.slice("examples/".length)),
+      path.join(packageExamplesDir, flowPath.slice("examples/".length)),
+    ];
+    absolutePath = candidates.find((candidate) => existsSync(candidate)) ?? absolutePath;
+  }
   const loaded = await loadFlow(absolutePath);
   return {
     absolutePath: loaded.absolutePath,
@@ -1222,11 +1229,11 @@ orchestrator:
 `;
 }
 
-async function createNewFlowInteractive(rl: readline.Interface): Promise<string> {
+async function createNewFlowInteractive(rl: readline.Interface, cwd: string): Promise<string> {
   const rawName = (await rl.question("New flow name: ")).trim();
   if (!rawName) throw new Error("Flow name is required");
   const slug = slugify(rawName) || `flow-${Date.now()}`;
-  const targetDir = path.join(workspaceRoot, "examples");
+  const targetDir = cwd;
   await mkdir(targetDir, { recursive: true });
   const targetPath = path.join(targetDir, `${slug}.yaml`);
   if (await pathExists(targetPath)) {
@@ -1250,7 +1257,7 @@ async function promptForSelection(flows: LoadedCliFlow[]): Promise<SelectionActi
     console.log("  n. Create new flow");
     const answer = (await rl.question("\nSelect a flow number (or 'n'): ")).trim();
     if (answer.toLowerCase() === "n") {
-      const created = await createNewFlowInteractive(rl);
+      const created = await createNewFlowInteractive(rl, process.cwd());
       return { kind: "created", absolutePath: created };
     }
     const selection = Number.parseInt(answer, 10);

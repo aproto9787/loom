@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentConfig, FlowDefinition, RoleDefinition } from "@loom/core";
+import type { AgentConfig, FlowDefinition, RoleDefinition } from "@aproto9787/loom-core";
 import { buildAgentPrompt, buildConfiguredAgent } from "./runner-prompt-builder.js";
 import type { RunResources } from "./runner-resource-loader.js";
 

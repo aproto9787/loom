@@ -1,11 +1,34 @@
 {
-  "name": "@loom/mcp",
+  "name": "@aproto9787/loom-mcp",
   "version": "0.1.0",
+  "description": "MCP delegation bridge for Loom local coding-agent workers.",
   "license": "GPL-3.0-only",
-  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aproto9787/loom.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://aproto9787.github.io/loom/",
+  "bugs": {
+    "url": "https://github.com/aproto9787/loom/issues"
+  },
+  "keywords": [
+    "loom",
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "coding-agents"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -18,7 +41,7 @@
     "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
-    "@loom/core": "workspace:^",
-    "@loom/runtime": "workspace:^"
+    "@aproto9787/loom-core": "workspace:^",
+    "@aproto9787/loom-runtime": "workspace:^"
   }
 }

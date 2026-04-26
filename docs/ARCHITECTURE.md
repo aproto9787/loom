@@ -22,7 +22,7 @@ Loom-managed workers, and MCP-based delegation.
 ┌──────────────────────────────▼───────────────────────────────┐
 │ apps/server                                                   │
 │ - Fastify API on PORT=8787 by default                         │
-│ - Validates YAML flows with @loom/core                         │
+│ - Validates YAML flows with @aproto9787/loom-core                         │
 │ - Stores run records/events in .loom/traces.db                 │
 │ - Provides CRUD for examples/, roles/, hooks/, skills/         │
 │ - Spawns the built `loom` CLI for local runs           │
@@ -301,4 +301,4 @@ Studio or API request
   -> Studio watches /runs/:id/stream and reads /runs/:id/events
 ```
 
-The older in-process server executor is kept only as a compatibility module. New local recursive-agent behavior should go into the CLI / loom-subagent path or the small shared helpers in `@loom/runtime`.
+The older in-process server executor is kept only as a compatibility module. New local recursive-agent behavior should go into the CLI / loom-subagent path or the small shared helpers in `@aproto9787/loom-runtime`.

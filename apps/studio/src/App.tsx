@@ -48,7 +48,7 @@ export default function App() {
           const body = await res.text().catch(() => "");
           throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
         }
-        return res.json() as Promise<{ flow: import("@loom/core").FlowDefinition }>;
+        return res.json() as Promise<{ flow: import("@aproto9787/loom-core").FlowDefinition }>;
       })
       .then((data) => {
         if (active) setLoadedFlow(data.flow);

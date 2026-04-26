@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { HookDefinition, HookEvent, SkillDefinition } from "@loom/core";
+import type { HookDefinition, HookEvent, SkillDefinition } from "@aproto9787/loom-core";
 import { useRunStore, type DiscoveredResource } from "./store.js";
 
 const SERVER_ORIGIN =

@@ -5,10 +5,10 @@ import path from "node:path";
 import Fastify from "fastify";
 import { z } from "zod";
 import YAML from "yaml";
-import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@loom/core";
-import { discoverProviderProfiles } from "@loom/runtime";
+import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@aproto9787/loom-core";
+import { discoverProviderProfiles } from "@aproto9787/loom-runtime";
 import type { PersistedRunEvent } from "./trace-store.js";
-import { validateFlow } from "@loom/core";
+import { validateFlow } from "@aproto9787/loom-core";
 import { stringifyFlow } from "./flow-writer.js";
 import { abortLocalCliRun, startLocalCliRun } from "./local-cli-runner.js";
 import {
