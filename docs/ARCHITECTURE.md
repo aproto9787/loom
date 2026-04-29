@@ -267,7 +267,7 @@ The Oracle plugin follows that rule:
 - If Oracle is unavailable, the connector returns an install hint and the rest of Loom continues to work.
 - Advisor requests and results are posted as run events when `LOOM_RUN_ID` and `LOOM_SERVER_ORIGIN` are available, so they land in `.loom/traces.db` with the workflow timeline.
 - `packages/cli/src/delegation-prompt.ts` instructs leaders to call Oracle automatically for non-trivial architecture, design, review, release-risk, debate, and planning decisions when the plugin is available.
-- Studio calls the server's Oracle plugin endpoints for status checks and manual probes; those UI runs create normal run-history rows with Oracle tool events.
+- Studio surfaces Oracle connector health in the Plugins view and calls the server's Oracle plugin endpoints for diagnostic manual probes; those UI runs create normal run-history rows with Oracle tool events.
 
 Users who prefer Oracle's own MCP server should install `oracle-mcp` separately and register it in user/workspace MCP config. Loom only scopes that external MCP into the run; it does not embed the Oracle MCP server.
 

@@ -23,7 +23,7 @@ function StatusBadge({ available }: { available: boolean }) {
     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
       available ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
     }`}>
-      {available ? "available" : "missing"}
+      {available ? "ready" : "missing"}
     </span>
   );
 }
@@ -40,17 +40,32 @@ function CommandStatus({
   detail?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
-          <p className="m-0 mt-1 font-mono text-sm text-slate-900">{command}</p>
-        </div>
+        <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
         <StatusBadge available={available} />
       </div>
-      {detail ? <p className="m-0 mt-3 truncate font-mono text-xs text-slate-500">{detail}</p> : null}
+      <p className="m-0 mt-2 truncate font-mono text-sm text-slate-900">{command}</p>
+      {detail ? (
+        <p className="m-0 mt-1 truncate font-mono text-xs text-slate-500" title={detail}>
+          {detail}
+        </p>
+      ) : null}
     </div>
   );
+}
+
+function connectorState(status: OracleAdvisorStatus | undefined): { label: string; className: string } {
+  if (!status) {
+    return { label: "checking", className: "bg-slate-100 text-slate-600" };
+  }
+  if (status.oracle.available) {
+    return { label: "installed CLI", className: "bg-emerald-50 text-emerald-700" };
+  }
+  if (status.npxFallback.available) {
+    return { label: "npx fallback", className: "bg-blue-50 text-blue-700" };
+  }
+  return { label: "not installed", className: "bg-amber-50 text-amber-700" };
 }
 
 function resultText(result: OracleAdvisorResult | undefined): string {
@@ -78,6 +93,7 @@ export function OraclePanel() {
   const canRun = prompt.trim().length > 0 && !running;
   const parsedFiles = useMemo(() => lines(files), [files]);
   const parsedArgs = useMemo(() => lines(args), [args]);
+  const state = connectorState(status);
 
   const refreshStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -126,86 +142,82 @@ export function OraclePanel() {
   }, [runId, selectRun, setActiveTab]);
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto bg-white">
-      <header className="border-b border-slate-200 px-6 py-5">
-        <div className="flex flex-col gap-1">
+    <section className="mb-7 max-w-4xl border-b border-slate-200 pb-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
           <p className="m-0 text-xs font-semibold uppercase tracking-wider text-blue-600">
-            Plugin
+            Advisor connector
           </p>
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h1 className="m-0 text-2xl font-semibold text-slate-950">Oracle</h1>
-              <p className="m-0 mt-1 text-sm text-slate-600">
-                Leaders call this advisor during non-trivial decisions; this panel is for status checks and manual probes.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-40"
-              onClick={refreshStatus}
-              disabled={loadingStatus}
-            >
-              {loadingStatus ? "Checking..." : "Refresh"}
-            </button>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <h2 className="m-0 text-xl font-semibold text-slate-900">Oracle</h2>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${state.className}`}>
+              {state.label}
+            </span>
           </div>
+          <p className="m-0 mt-1 max-w-2xl text-sm text-slate-600">
+            Leaders call Oracle automatically for non-trivial decisions through Loom MCP. This area only shows connector health and a diagnostic manual probe.
+          </p>
         </div>
-      </header>
+        <button
+          type="button"
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-40"
+          onClick={refreshStatus}
+          disabled={loadingStatus}
+        >
+          {loadingStatus ? "Checking..." : "Refresh"}
+        </button>
+      </div>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[360px_1fr]">
-        <aside className="border-b border-slate-200 bg-slate-50 p-5 lg:border-b-0 lg:border-r">
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <CommandStatus
+          label="CLI"
+          command="oracle"
+          available={status?.oracle.available ?? false}
+          detail={status?.oracle.path}
+        />
+        <CommandStatus
+          label="MCP server"
+          command="oracle-mcp"
+          available={status?.oracleMcp.available ?? false}
+          detail={status?.oracleMcp.path}
+        />
+        <CommandStatus
+          label="Fallback"
+          command="npx -y @steipete/oracle"
+          available={status?.npxFallback.available ?? false}
+          detail={status?.npxFallback.package}
+        />
+      </div>
+
+      {statusError ? (
+        <p className="m-0 mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{statusError}</p>
+      ) : null}
+
+      <p className="m-0 mt-3 text-xs leading-relaxed text-slate-500">
+        Attribution: <span className="font-semibold text-slate-700">{status?.attribution ?? "Oracle by steipete"}</span>. Oracle is external; Loom only detects, invokes, and records it. Install separately with <span className="font-mono">npm install -g @steipete/oracle</span>.
+      </p>
+
+      <details className="mt-4 rounded-lg border border-slate-200 bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">
+          Manual probe
+        </summary>
+        <div className="grid grid-cols-1 gap-4 border-t border-slate-200 p-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="flex flex-col gap-3">
-            <CommandStatus
-              label="CLI"
-              command="oracle"
-              available={status?.oracle.available ?? false}
-              detail={status?.oracle.path}
-            />
-            <CommandStatus
-              label="MCP server"
-              command="oracle-mcp"
-              available={status?.oracleMcp.available ?? false}
-              detail={status?.oracleMcp.path}
-            />
-            <CommandStatus
-              label="Fallback"
-              command="npx -y @steipete/oracle"
-              available={status?.npxFallback.available ?? false}
-              detail={status?.npxFallback.package}
-            />
-            {statusError ? (
-              <p className="m-0 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{statusError}</p>
-            ) : null}
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Attribution
-              </p>
-              <p className="m-0 mt-2 text-sm font-medium text-slate-900">
-                {status?.attribution ?? "Oracle by steipete"}
-              </p>
-              <p className="m-0 mt-2 text-xs leading-relaxed text-slate-500">
-                Plugin package is part of Loom; Oracle itself installs separately with <span className="font-mono">npm install -g @steipete/oracle</span>.
-              </p>
-            </div>
-          </div>
-        </aside>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Prompt</span>
+              <textarea
+                className={`${inputLight} min-h-[104px] resize-y leading-relaxed`}
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="Diagnostic prompt for Oracle. Leader sessions call this connector automatically."
+              />
+            </label>
 
-        <section className="p-6">
-          <div className="grid max-w-5xl grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <div className="flex flex-col gap-4">
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Prompt</span>
-                <textarea
-                  className={`${inputLight} min-h-[170px] resize-y leading-relaxed`}
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Probe the advisor manually. Leaders use the same plugin from Loom MCP."
-                />
-              </label>
-
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Files</span>
                 <textarea
-                  className={`${inputLight} min-h-[96px] resize-y leading-relaxed`}
+                  className={`${inputLight} min-h-[80px] resize-y leading-relaxed`}
                   value={files}
                   onChange={(event) => setFiles(event.target.value)}
                   placeholder={"packages/mcp/src/**/*.ts\napps/studio/src/**/*.tsx"}
@@ -215,89 +227,89 @@ export function OraclePanel() {
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Args</span>
                 <textarea
-                  className={`${inputLight} min-h-[74px] resize-y leading-relaxed`}
+                  className={`${inputLight} min-h-[80px] resize-y leading-relaxed`}
                   value={args}
                   onChange={(event) => setArgs(event.target.value)}
                   placeholder={"--engine browser\n--dry-run summary"}
                 />
               </label>
+            </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[160px_1fr]">
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Timeout</span>
-                  <input
-                    type="number"
-                    min={1}
-                    className={inputLight}
-                    value={timeoutSeconds}
-                    onChange={(event) => setTimeoutSeconds(Number(event.target.value) || 1)}
-                  />
-                </label>
-                <label className="flex items-end gap-2 pb-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={useNpxFallback}
-                    onChange={(event) => setUseNpxFallback(event.target.checked)}
-                  />
-                  Use npx fallback when oracle is missing
-                </label>
-              </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[140px_1fr]">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Timeout</span>
+                <input
+                  type="number"
+                  min={1}
+                  className={inputLight}
+                  value={timeoutSeconds}
+                  onChange={(event) => setTimeoutSeconds(Number(event.target.value) || 1)}
+                />
+              </label>
+              <label className="flex items-end gap-2 pb-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={useNpxFallback}
+                  onChange={(event) => setUseNpxFallback(event.target.checked)}
+                />
+                Use npx fallback when oracle is missing
+              </label>
+            </div>
 
-              {runError ? <p className="m-0 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{runError}</p> : null}
+            {runError ? <p className="m-0 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{runError}</p> : null}
 
-              <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
+                onClick={handleRun}
+                disabled={!canRun}
+              >
+                {running ? "Running..." : "Probe Oracle"}
+              </button>
+              {runId ? (
                 <button
                   type="button"
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
-                  onClick={handleRun}
-                  disabled={!canRun}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                  onClick={openRun}
                 >
-                  {running ? "Running..." : "Probe Oracle"}
+                  Open Run
                 </button>
-                {runId ? (
-                  <button
-                    type="button"
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-                    onClick={openRun}
-                  >
-                    Open Run
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="flex min-h-[360px] flex-col rounded-xl border border-slate-200 bg-slate-950 text-slate-100">
-              <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-400">Result</p>
-                {result ? (
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    result.status === "done" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"
-                  }`}>
-                    {result.status}
-                  </span>
-                ) : null}
-              </div>
-              <div className="min-h-0 flex-1 overflow-auto p-4">
-                {result ? (
-                  <div className="flex flex-col gap-4">
-                    <div>
-                      <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-500">Command</p>
-                      <pre className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-3 text-xs text-slate-300">
-                        {result.command.join(" ")}
-                      </pre>
-                    </div>
-                    <pre className="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-100">
-                      {resultText(result) || "(no output)"}
-                    </pre>
-                  </div>
-                ) : (
-                  <p className="m-0 text-sm text-slate-500">Oracle output will appear here.</p>
-                )}
-              </div>
+              ) : null}
             </div>
           </div>
-        </section>
-      </main>
-    </div>
+
+          <div className="flex min-h-[220px] flex-col rounded-lg border border-slate-200 bg-slate-950 text-slate-100">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+              <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-400">Result</p>
+              {result ? (
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  result.status === "done" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"
+                }`}>
+                  {result.status}
+                </span>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-4">
+              {result ? (
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-500">Command</p>
+                    <pre className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-3 text-xs text-slate-300">
+                      {result.command.join(" ")}
+                    </pre>
+                  </div>
+                  <pre className="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-100">
+                    {resultText(result) || "(no output)"}
+                  </pre>
+                </div>
+              ) : (
+                <p className="m-0 text-sm text-slate-500">Probe output appears here.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
   );
 }

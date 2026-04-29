@@ -160,7 +160,7 @@ interface StudioState {
   isSaving: boolean;
   saveError?: string;
   loadError?: string;
-  activeTab: 'workflow' | 'flowMd' | 'delegation' | 'runs' | 'oracle' | 'roles' | 'custom';
+  activeTab: 'workflow' | 'flowMd' | 'delegation' | 'runs' | 'roles' | 'custom';
   duplicateName: string;
   runHistory: RunHistoryItem[];
   runHistoryKeyword: string;
@@ -209,7 +209,7 @@ interface StudioState {
   ingest: (event: RunStreamEvent) => void;
   endStream: () => void;
 
-  setActiveTab: (tab: 'workflow' | 'flowMd' | 'delegation' | 'runs' | 'oracle' | 'roles' | 'custom') => void;
+  setActiveTab: (tab: 'workflow' | 'flowMd' | 'delegation' | 'runs' | 'roles' | 'custom') => void;
   setDuplicateName: (value: string) => void;
   setRunHistoryKeyword: (value: string) => void;
   setRunHistoryStatus: (value: "all" | RunStatus) => void;

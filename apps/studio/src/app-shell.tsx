@@ -4,17 +4,15 @@ import FlowMdTab from "./FlowMdTab.js";
 import DelegationTab from "./DelegationTab.js";
 import { RolesPanel } from "./RolesPanel.js";
 import { RunsPanel } from "./AppSections.js";
-import { OraclePanel } from "./OraclePanel.js";
 
-export const TABS = ["workflow", "flowMd", "delegation", "runs", "oracle", "roles", "custom"] as const;
+export const TABS = ["workflow", "flowMd", "delegation", "runs", "roles", "custom"] as const;
 const TAB_LABELS: Record<(typeof TABS)[number], string> = {
   workflow: "Workflow",
   flowMd: "flow.md",
   delegation: "Delegation",
   runs: "Runs",
-  oracle: "Oracle",
   roles: "Roles",
-  custom: "Custom",
+  custom: "Plugins",
 };
 
 export function TabBar({
@@ -25,12 +23,12 @@ export function TabBar({
   onSelect: (tab: (typeof TABS)[number]) => void;
 }) {
   return (
-    <nav className="flex bg-white border-b border-slate-200 px-6 shrink-0">
+    <nav className="flex shrink-0 overflow-x-auto border-b border-slate-200 bg-white px-3 sm:px-6">
       {TABS.map((tab) => (
         <button
           key={tab}
           type="button"
-          className={`px-5 py-2.5 text-sm font-medium capitalize border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2.5 text-sm font-medium capitalize border-b-2 transition-colors sm:px-5 ${
             activeTab === tab
               ? "text-slate-900 border-blue-500"
               : "text-slate-500 border-transparent hover:text-slate-700"
@@ -53,9 +51,6 @@ export function StaticTabView({ activeTab }: { activeTab: (typeof TABS)[number] 
   }
   if (activeTab === "runs") {
     return <RunsPanel />;
-  }
-  if (activeTab === "oracle") {
-    return <OraclePanel />;
   }
   if (activeTab === "roles") {
     return <RolesPanel />;
