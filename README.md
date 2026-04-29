@@ -261,7 +261,8 @@ Loom does not vendor or depend on Oracle itself. It ships `@aproto9787/loom-plug
 - If `oracle` is not installed and fallback is enabled, Loom can run `npx -y @steipete/oracle`.
 - If neither path is available, Loom returns an install hint and core Loom workflows continue normally.
 - Oracle CLI results are recorded as Loom run events when the session has a run id, so Studio/session history can inspect the advisor call.
-- Studio includes an Oracle plugin tab for status checks, prompt/files/args entry, execution, and opening the saved run.
+- Leaders are instructed to call Oracle automatically for non-trivial architecture, design, review, release-risk, debate, and planning decisions when the plugin is available.
+- Studio includes an Oracle plugin tab for status checks, manual prompt/files/args probes, and opening the saved run.
 
 Install Oracle separately when you want this connector:
 

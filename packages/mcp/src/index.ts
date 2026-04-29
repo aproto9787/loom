@@ -259,7 +259,7 @@ function buildTools(children: AgentConfig[]): McpTool[] {
     },
     {
       name: oracleAdvisorPlugin.mcpStatusToolName,
-      description: "Check optional Oracle external advisor plugin availability. Oracle by steipete is not bundled with Loom.",
+      description: "Check optional Oracle external advisor plugin availability. Leaders should use this before calling Oracle for non-trivial advisory decisions. Oracle by steipete is not bundled with Loom.",
       inputSchema: {
         type: "object",
         properties: {},
@@ -268,7 +268,7 @@ function buildTools(children: AgentConfig[]): McpTool[] {
     },
     {
       name: oracleAdvisorPlugin.mcpToolName,
-      description: "Call the optional Oracle external advisor plugin. Uses an installed `oracle` command, or `npx -y @steipete/oracle` fallback when enabled. Loom does not vendor Oracle.",
+      description: "Call the optional Oracle external advisor plugin for leader advisory review. Uses an installed `oracle` command, or `npx -y @steipete/oracle` fallback when enabled. Loom does not vendor Oracle.",
       inputSchema: {
         type: "object",
         properties: {

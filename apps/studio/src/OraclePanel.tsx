@@ -136,7 +136,7 @@ export function OraclePanel() {
             <div>
               <h1 className="m-0 text-2xl font-semibold text-slate-950">Oracle</h1>
               <p className="m-0 mt-1 text-sm text-slate-600">
-                Oracle by steipete runs as an external advisor plugin; Loom only detects, invokes, and records it.
+                Leaders call this advisor during non-trivial decisions; this panel is for status checks and manual probes.
               </p>
             </div>
             <button
@@ -198,7 +198,7 @@ export function OraclePanel() {
                   className={`${inputLight} min-h-[170px] resize-y leading-relaxed`}
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Ask Oracle to review a design, bug, refactor, or release risk."
+                  placeholder="Probe the advisor manually. Leaders use the same plugin from Loom MCP."
                 />
               </label>
 
@@ -252,7 +252,7 @@ export function OraclePanel() {
                   onClick={handleRun}
                   disabled={!canRun}
                 >
-                  {running ? "Running..." : "Run Oracle"}
+                  {running ? "Running..." : "Probe Oracle"}
                 </button>
                 {runId ? (
                   <button
