@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import readline from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import type { AgentConfig } from "@aproto9787/loom-core";
+import { normalizeOracleAdvisorConfig, type AgentConfig } from "@aproto9787/loom-core";
 import {
   directChildren,
   findAgentByName,
@@ -375,11 +375,11 @@ function parseStringArray(value: unknown, name: string): string[] {
   return value.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
 }
 
-function parseOracleArguments(value: unknown): Required<OracleArguments> {
+function parseOracleArguments(value: unknown, defaultUseNpxFallback = true): Required<OracleArguments> {
   const object = asObject(value);
   const prompt = typeof object.prompt === "string" ? object.prompt.trim() : "";
   const timeoutSeconds = parseTimeoutSeconds(object, DEFAULT_ORACLE_TIMEOUT_SECONDS);
-  const useNpxFallback = typeof object.useNpxFallback === "boolean" ? object.useNpxFallback : true;
+  const useNpxFallback = typeof object.useNpxFallback === "boolean" ? object.useNpxFallback : defaultUseNpxFallback;
   if (!prompt) throw new Error("prompt is required");
   return {
     prompt,
@@ -550,26 +550,31 @@ export class LoomMcpServer {
   }
 
   private async callOracle(args: unknown): Promise<Record<string, unknown>> {
-    const parsed = parseOracleArguments(args);
-    const { context } = await this.loadAgentContext();
-    await this.postWorkflowEvent(context, "tool_use", "Oracle advisor requested", {
-      pluginId: oracleAdvisorPlugin.id,
-      prompt: parsed.prompt,
-      files: parsed.files,
-      args: parsed.args,
-      useNpxFallback: parsed.useNpxFallback,
-    });
+    const { context, selfAgent } = await this.loadAgentContext();
+    const oracleAdvisor = normalizeOracleAdvisorConfig(selfAgent.oracleAdvisor);
+    const parsed = parseOracleArguments(args, oracleAdvisor.useNpxFallback);
+    if (oracleAdvisor.recordCalls) {
+      await this.postWorkflowEvent(context, "tool_use", "Oracle advisor requested", {
+        pluginId: oracleAdvisorPlugin.id,
+        prompt: parsed.prompt,
+        files: parsed.files,
+        args: parsed.args,
+        useNpxFallback: parsed.useNpxFallback,
+      });
+    }
     const result = await this.oracleRunner({
       ...parsed,
       cwd: context.cwd,
       env: this.env,
     });
-    await this.postWorkflowEvent(
-      context,
-      result.status === "error" ? "error" : "tool_result",
-      result.status === "unavailable" ? "Oracle advisor unavailable" : `Oracle advisor ${result.status}`,
-      result,
-    );
+    if (oracleAdvisor.recordCalls) {
+      await this.postWorkflowEvent(
+        context,
+        result.status === "error" ? "error" : "tool_result",
+        result.status === "unavailable" ? "Oracle advisor unavailable" : `Oracle advisor ${result.status}`,
+        result,
+      );
+    }
     return textResult(result, result.status === "error");
   }
 

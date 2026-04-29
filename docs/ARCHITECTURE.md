@@ -72,7 +72,7 @@ Owns the current recursive agent-tree schema:
 Important current schema facts:
 
 - Agent types are exactly `claude-code` and `codex`.
-- `AgentConfig` has `enabled`, `runtime`, `team`, `delegation`, `flowMdRef`, `timeout`, `parallel`, `mcps`, `hooks`, `skills`, and recursive `agents`.
+- `AgentConfig` has `enabled`, `runtime`, `team`, `delegation`, `flowMdRef`, `timeout`, `parallel`, `mcps`, `hooks`, `skills`, `oracleAdvisor`, and recursive `agents`.
 - `AgentConfig` does not currently define `isolated` or `capabilities`.
 - `RoleDefinition` currently defines `name`, `type`, `model`, `system`, `effort`, `description`, and `mcps`.
 - `RoleDefinition` does not currently define `hooks`, `skills`, `isolated`, or `capabilities`.
@@ -266,7 +266,8 @@ The Oracle plugin follows that rule:
 - `loom_oracle` calls an installed `oracle` command first, then may fall back to `npx -y @steipete/oracle`.
 - If Oracle is unavailable, the connector returns an install hint and the rest of Loom continues to work.
 - Advisor requests and results are posted as run events when `LOOM_RUN_ID` and `LOOM_SERVER_ORIGIN` are available, so they land in `.loom/traces.db` with the workflow timeline.
-- `packages/cli/src/delegation-prompt.ts` instructs leaders to call Oracle automatically for non-trivial architecture, design, review, release-risk, debate, and planning decisions when the plugin is available.
+- `AgentConfig.oracleAdvisor` controls automatic leader use: enablement, decision categories, trivial-task skipping, npx fallback, and event recording.
+- `packages/cli/src/delegation-prompt.ts` instructs leaders from the active `oracleAdvisor` policy when the plugin is available.
 - Studio surfaces Oracle connector health and the active leader advisory policy in the Plugins view; leader-triggered Oracle calls create normal run-history rows with Oracle tool events.
 
 Users who prefer Oracle's own MCP server should install `oracle-mcp` separately and register it in user/workspace MCP config. Loom only scopes that external MCP into the run; it does not embed the Oracle MCP server.

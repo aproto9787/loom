@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  ORACLE_ADVISOR_TRIGGER_LABELS,
+  normalizeOracleAdvisorConfig,
+} from "@aproto9787/loom-core";
+import {
   getOracleStatus,
   type OracleAdvisorStatus,
 } from "./api.js";
 import { SERVER_ORIGIN } from "./sse-run.js";
+import { useRunStore } from "./store.js";
 
 function StatusBadge({ available }: { available: boolean }) {
   return (
@@ -65,10 +70,26 @@ function PolicyItem({ label, value }: { label: string; value: string }) {
 }
 
 export function OraclePanel() {
+  const flowDraft = useRunStore((s) => s.flowDraft);
+  const selectAgent = useRunStore((s) => s.selectAgent);
+  const setAgentConfigTab = useRunStore((s) => s.setAgentConfigTab);
+  const setActiveTab = useRunStore((s) => s.setActiveTab);
   const [status, setStatus] = useState<OracleAdvisorStatus>();
   const [statusError, setStatusError] = useState<string>();
   const [loadingStatus, setLoadingStatus] = useState(false);
   const state = connectorState(status);
+  const oracleAdvisor = normalizeOracleAdvisorConfig(flowDraft?.orchestrator.oracleAdvisor);
+  const triggerText = oracleAdvisor.useFor.length > 0
+    ? oracleAdvisor.useFor.map((trigger) => ORACLE_ADVISOR_TRIGGER_LABELS[trigger]).join(", ")
+    : "No automatic categories selected.";
+
+  const openLeaderAdvisorSettings = useCallback(() => {
+    if (flowDraft?.orchestrator.name) {
+      selectAgent([flowDraft.orchestrator.name]);
+    }
+    setAgentConfigTab("advisors");
+    setActiveTab("workflow");
+  }, [flowDraft?.orchestrator.name, selectAgent, setActiveTab, setAgentConfigTab]);
 
   const refreshStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -147,22 +168,37 @@ export function OraclePanel() {
           <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-500">
             Automatic advisory policy
           </p>
-          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-            enabled for leaders
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+              oracleAdvisor.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+            }`}>
+              {oracleAdvisor.enabled ? "enabled for leaders" : "disabled for leaders"}
+            </span>
+            <button
+              type="button"
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              onClick={openLeaderAdvisorSettings}
+            >
+              Edit policy
+            </button>
+          </div>
         </div>
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
           <PolicyItem
-            label="Ask Oracle for"
-            value="Architecture, design, review, release-risk, debate, and planning decisions."
+            label="Use for"
+            value={oracleAdvisor.enabled ? triggerText : "Automatic Oracle calls are disabled."}
           />
           <PolicyItem
-            label="Skip Oracle for"
-            value="Trivial edits, explicit no-external-advice requests, or unavailable Oracle."
+            label="Skip"
+            value={oracleAdvisor.skipTrivial ? "Trivial tasks and no-external-advice requests." : "No-external-advice requests only."}
+          />
+          <PolicyItem
+            label="Fallback"
+            value={oracleAdvisor.useNpxFallback ? "Installed oracle first; npx fallback allowed." : "Installed oracle only; npx fallback disabled."}
           />
           <PolicyItem
             label="Recording"
-            value="Leader calls are saved as Loom workflow events and appear in run history."
+            value={oracleAdvisor.recordCalls ? "Leader calls appear in run history." : "Leader calls are not recorded."}
           />
         </div>
       </div>

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { LoomMcpServer } from "./index.js";
 import type { RunSubagentTaskResult } from "@aproto9787/loom-runtime";
 
-async function createTestFlow(): Promise<{ root: string; flowPath: string }> {
+async function createTestFlow(oracleAdvisorYaml = ""): Promise<{ root: string; flowPath: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "loom-mcp-test-"));
   const flowPath = path.join(root, "flow.yaml");
   await writeFile(flowPath, `
@@ -16,6 +16,7 @@ repo: .
 orchestrator:
   name: leader
   type: codex
+${oracleAdvisorYaml}
   agents:
     - name: reviewer
       type: codex
@@ -232,6 +233,57 @@ test("loom_oracle calls the external advisor runner and records workflow events"
     assert.equal(sink.bodies.length, 2);
     assert.deepEqual(sink.bodies.map((body) => ((body as { events: Array<{ type: string }> }).events[0]!.type)), ["tool_use", "tool_result"]);
     assert.deepEqual(sink.bodies.map((body) => ((body as { events: Array<{ toolName: string }> }).events[0]!.toolName)), ["loom_oracle", "loom_oracle"]);
+  } finally {
+    await sink.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loom_oracle uses agent Oracle advisor defaults from flow config", async () => {
+  const { root, flowPath } = await createTestFlow(`  oracleAdvisor:
+    useNpxFallback: false
+    recordCalls: false`);
+  const sink = await createEventSink();
+  try {
+    const server = new LoomMcpServer({
+      env: {
+        LOOM_FLOW_PATH: flowPath,
+        LOOM_FLOW_CWD: root,
+        LOOM_AGENT: "leader",
+        LOOM_PARENT_DEPTH: "0",
+        LOOM_RUN_ID: "oracle-run",
+        LOOM_SERVER_ORIGIN: sink.origin,
+        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+      },
+      oracleRunner: async (options) => {
+        assert.equal(options.useNpxFallback, false);
+        return {
+          plugin: { id: "oracle", kind: "external-advisor" },
+          status: "done",
+          provider: "oracle",
+          command: ["oracle", "-p", options.prompt],
+          exitCode: 0,
+          stdout: "oracle result",
+          stderr: "",
+          attribution: "Oracle by steipete",
+        };
+      },
+    });
+
+    const response = await server.handleRequest({
+      id: 55,
+      method: "tools/call",
+      params: {
+        name: "loom_oracle",
+        arguments: {
+          prompt: "review the architecture",
+        },
+      },
+    });
+
+    const result = parseToolText(response);
+    assert.equal(result.status, "done");
+    assert.equal(sink.bodies.length, 0);
   } finally {
     await sink.close();
     await rm(root, { recursive: true, force: true });

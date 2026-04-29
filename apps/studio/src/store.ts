@@ -90,6 +90,8 @@ export interface DiscoveredResource {
   prompt?: string;
 }
 
+export type AgentConfigTab = "basic" | "flow-md" | "delegation" | "advisors" | "resources";
+
 // --- Run event types ---
 
 export type RunStreamEvent =
@@ -157,6 +159,7 @@ interface StudioState {
   flowDraft?: FlowDefinition;
   isDirty: boolean;
   selectedAgentPath: string[];
+  agentConfigTab: AgentConfigTab;
   isSaving: boolean;
   saveError?: string;
   loadError?: string;
@@ -196,6 +199,7 @@ interface StudioState {
   setLoadError: (message: string | undefined) => void;
 
   selectAgent: (path: string[]) => void;
+  setAgentConfigTab: (tab: AgentConfigTab) => void;
   updateAgent: (path: string[], config: Partial<AgentConfig>) => void;
   updateFlowDraft: (partial: Partial<FlowDefinition>) => void;
   addAgent: (parentPath: string[], type: AgentType) => void;
@@ -245,6 +249,7 @@ export const useRunStore = create<StudioState>((set) => ({
   availableFlows: [],
   isDirty: false,
   selectedAgentPath: [],
+  agentConfigTab: "basic",
   isSaving: false,
   isStreaming: false,
   events: [],
@@ -312,6 +317,7 @@ export const useRunStore = create<StudioState>((set) => ({
   setLoadError: (message) => set({ loadError: message }),
 
   selectAgent: (path) => set({ selectedAgentPath: path }),
+  setAgentConfigTab: (tab) => set({ agentConfigTab: tab }),
 
   updateFlowDraft: (partial) =>
     set((state) => {

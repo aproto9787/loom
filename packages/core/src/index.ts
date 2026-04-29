@@ -98,6 +98,66 @@ export const agentRuntimeConfigSchema: z.ZodType<AgentRuntimeConfig> = z.object(
   delegationTransport: z.literal("mcp").optional(),
 });
 
+export const ORACLE_ADVISOR_TRIGGERS = [
+  "architecture",
+  "design",
+  "review",
+  "release-risk",
+  "debate",
+  "planning",
+] as const;
+export type OracleAdvisorTrigger = (typeof ORACLE_ADVISOR_TRIGGERS)[number];
+
+export const ORACLE_ADVISOR_TRIGGER_LABELS: Record<OracleAdvisorTrigger, string> = {
+  architecture: "architecture",
+  design: "design",
+  review: "review",
+  "release-risk": "release-risk",
+  debate: "debate",
+  planning: "planning",
+};
+
+export interface OracleAdvisorConfig {
+  enabled?: boolean;
+  useFor?: OracleAdvisorTrigger[];
+  skipTrivial?: boolean;
+  useNpxFallback?: boolean;
+  recordCalls?: boolean;
+}
+
+export const oracleAdvisorTriggerSchema = z.enum(ORACLE_ADVISOR_TRIGGERS);
+
+export const oracleAdvisorConfigSchema: z.ZodType<OracleAdvisorConfig> = z.object({
+  enabled: z.boolean().optional(),
+  useFor: z.array(oracleAdvisorTriggerSchema).optional(),
+  skipTrivial: z.boolean().optional(),
+  useNpxFallback: z.boolean().optional(),
+  recordCalls: z.boolean().optional(),
+});
+
+export const DEFAULT_ORACLE_ADVISOR_CONFIG: Required<OracleAdvisorConfig> = {
+  enabled: true,
+  useFor: [...ORACLE_ADVISOR_TRIGGERS],
+  skipTrivial: true,
+  useNpxFallback: true,
+  recordCalls: true,
+};
+
+export function normalizeOracleAdvisorConfig(config: OracleAdvisorConfig | undefined): Required<OracleAdvisorConfig> {
+  const configuredTriggers = config?.useFor;
+  const useFor = configuredTriggers === undefined
+    ? [...DEFAULT_ORACLE_ADVISOR_CONFIG.useFor]
+    : ORACLE_ADVISOR_TRIGGERS.filter((trigger) => configuredTriggers.includes(trigger));
+
+  return {
+    enabled: config?.enabled ?? DEFAULT_ORACLE_ADVISOR_CONFIG.enabled,
+    useFor,
+    skipTrivial: config?.skipTrivial ?? DEFAULT_ORACLE_ADVISOR_CONFIG.skipTrivial,
+    useNpxFallback: config?.useNpxFallback ?? DEFAULT_ORACLE_ADVISOR_CONFIG.useNpxFallback,
+    recordCalls: config?.recordCalls ?? DEFAULT_ORACLE_ADVISOR_CONFIG.recordCalls,
+  };
+}
+
 export interface AgentConfig {
   name: string;
   type: AgentType;
@@ -116,6 +176,7 @@ export interface AgentConfig {
   hooks?: string[];
   skills?: string[];
   runtime?: AgentRuntimeConfig;
+  oracleAdvisor?: OracleAdvisorConfig;
   agents?: AgentConfig[];
 }
 
@@ -137,6 +198,7 @@ export const agentConfigSchema: z.ZodType<AgentConfig> = z.lazy(() => z.object({
   hooks: z.array(z.string().min(1)).optional(),
   skills: z.array(z.string().min(1)).optional(),
   runtime: agentRuntimeConfigSchema.optional(),
+  oracleAdvisor: oracleAdvisorConfigSchema.optional(),
   agents: z.array(agentConfigSchema).optional(),
 }));
 

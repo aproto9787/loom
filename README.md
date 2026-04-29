@@ -262,6 +262,7 @@ Loom does not vendor or depend on Oracle itself. It ships `@aproto9787/loom-plug
 - If neither path is available, Loom returns an install hint and core Loom workflows continue normally.
 - Oracle CLI results are recorded as Loom run events when the session has a run id, so Studio/session history can inspect the advisor call.
 - Leaders are instructed to call Oracle automatically for non-trivial architecture, design, review, release-risk, debate, and planning decisions when the plugin is available.
+- Root leaders can configure `oracleAdvisor` policy in Studio's agent Advisors tab: enablement, decision categories, trivial-task skipping, npx fallback, and recording.
 - Studio surfaces Oracle connector health and the active leader advisory policy inside Plugins; saved leader calls can still be opened from run history.
 
 Install Oracle separately when you want this connector:
