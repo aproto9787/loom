@@ -59,6 +59,7 @@ interface DelegateArguments {
 interface DelegateManyArguments {
   tasks?: DelegateArguments[];
   timeoutSeconds?: number;
+  wait?: boolean;
 }
 
 interface ReadReportArguments {
@@ -175,7 +176,10 @@ function dynamicDelegateInputSchema(): Record<string, unknown> {
     properties: {
       briefing: { type: "string", minLength: 1 },
       timeoutSeconds: { type: "number", minimum: 1 },
-      wait: { type: "boolean" },
+      wait: {
+        type: "boolean",
+        description: "Ignored for agent-specific tools; these always return a taskId immediately to avoid MCP client call timeouts.",
+      },
     },
     required: ["briefing"],
     additionalProperties: false,
@@ -186,7 +190,7 @@ function buildTools(children: AgentConfig[]): McpTool[] {
   const agents = childNames(children);
   const dynamicTools = [...dynamicToolMap(children)].map(([name, child]) => ({
     name,
-    description: `Delegate one task to the direct child agent "${child.name}". ${child.description ?? child.system ?? "Returns the child REPORT."}`,
+    description: `Start one task on the direct child agent "${child.name}". Always returns a taskId immediately; poll status/report tools for completion. ${child.description ?? child.system ?? ""}`.trim(),
     inputSchema: dynamicDelegateInputSchema(),
   }));
   return [
@@ -198,11 +202,15 @@ function buildTools(children: AgentConfig[]): McpTool[] {
     ...dynamicTools,
     {
       name: "loom_delegate_many",
-      description: "Delegate multiple independent tasks to direct child agents in parallel.",
+      description: "Start multiple independent child-agent tasks in parallel. By default this returns taskIds immediately; poll status/report tools for completion.",
       inputSchema: {
         type: "object",
         properties: {
           timeoutSeconds: { type: "number", minimum: 1 },
+          wait: {
+            type: "boolean",
+            description: "Wait for all child REPORTs before returning. Defaults to false to avoid MCP client tool-call timeouts.",
+          },
           tasks: {
             type: "array",
             minItems: 1,
@@ -292,6 +300,12 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function parsePositiveNumber(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function buildContext(env: NodeJS.ProcessEnv): LoomMcpContext {
   const flowPath = env.LOOM_FLOW_PATH;
   if (!flowPath) {
@@ -338,11 +352,12 @@ function parseDelegateArguments(value: unknown, fallbackTimeoutSeconds = 900, de
 function parseDelegateManyArguments(value: unknown): Required<DelegateManyArguments> {
   const object = asObject(value);
   const timeoutSeconds = parseTimeoutSeconds(object, 900);
+  const wait = typeof object.wait === "boolean" ? object.wait : false;
   const tasks = Array.isArray(object.tasks)
-    ? object.tasks.map((task) => parseDelegateArguments(task, timeoutSeconds))
+    ? object.tasks.map((task) => parseDelegateArguments(task, timeoutSeconds, wait))
     : [];
   if (tasks.length === 0) throw new Error("tasks must contain at least one task");
-  return { tasks, timeoutSeconds };
+  return { tasks, timeoutSeconds, wait };
 }
 
 function parseReadReportArguments(value: unknown): Required<ReadReportArguments> {
@@ -460,7 +475,7 @@ export class LoomMcpServer {
       if (!target) {
         return textResult(`unknown delegation tool: ${name}`, true);
       }
-      return textResult(await this.delegate({ ...asObject(args), agent: target.name }));
+      return textResult(await this.delegate({ ...asObject(args), agent: target.name, wait: false }, false));
     }
     if (name === "loom_get_status") {
       const { taskId } = parseReadReportArguments(args);
@@ -599,10 +614,35 @@ export class LoomMcpServer {
     if (!parsed.wait) {
       return { taskId, agent: target.name, status: "running" };
     }
-    const result = await promise;
+    const result = await this.waitForTaskResult(task);
+    if (!result) {
+      return {
+        taskId,
+        agent: target.name,
+        status: "running",
+        syncWaitTimedOut: true,
+      };
+    }
     task.result = result;
     task.status = result.status;
     return result;
+  }
+
+  private async waitForTaskResult(task: TaskState): Promise<RunSubagentTaskResult | undefined> {
+    const syncWaitCapMs = parsePositiveNumber(this.env.LOOM_MCP_SYNC_WAIT_CAP_MS, DEFAULT_SYNC_WAIT_CAP_MS);
+    if (syncWaitCapMs <= 0) return undefined;
+
+    let timeout: NodeJS.Timeout | undefined;
+    const capped = new Promise<undefined>((resolve) => {
+      timeout = setTimeout(() => resolve(undefined), syncWaitCapMs);
+      timeout.unref();
+    });
+
+    try {
+      return await Promise.race([task.promise, capped]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   private async delegateMany(args: unknown): Promise<unknown> {
@@ -611,10 +651,18 @@ export class LoomMcpServer {
       this.delegate({
         ...task,
         timeoutSeconds: task.timeoutSeconds ?? parsed.timeoutSeconds,
-        wait: true,
+        wait: task.wait,
       }),
     ));
-    return { status: "done", results };
+    const done = results.every((result) => {
+      const status = asObject(result).status;
+      return status !== "running";
+    });
+    return {
+      status: done ? "done" : "running",
+      wait: parsed.wait,
+      results,
+    };
   }
 }
 

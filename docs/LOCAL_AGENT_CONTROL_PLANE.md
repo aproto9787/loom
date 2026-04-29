@@ -346,8 +346,10 @@ Parallel tool:
 
 MVP behavior:
 
-- `loom_delegate` defaults to sync `wait: true`.
-- `loom_delegate_<agent>` routes directly to that enabled direct child.
+- `loom_delegate` defaults to sync `wait: true`, but returns a running taskId
+  instead of holding the MCP call past the sync wait cap.
+- `loom_delegate_<agent>` routes directly to that enabled direct child and
+  always starts async to avoid MCP client call timeouts.
 - `loom_delegate_many` handles parallel worker starts in one tool call.
 - Async `wait: false`, `loom_get_status`, `loom_read_report`, and
   best-effort `loom_cancel` are available for longer tasks.

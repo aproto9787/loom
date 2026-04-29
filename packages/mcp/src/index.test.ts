@@ -260,12 +260,107 @@ test("dynamic delegate tools route to their child agent without waiting", async 
       method: "tools/call",
       params: {
         name: "loom_delegate_reviewer",
-        arguments: { briefing: "review the patch" },
+        arguments: { briefing: "review the patch", wait: true },
       },
     });
 
     assert.equal(parseToolText(response).agent, "reviewer");
+    assert.equal(parseToolText(response).status, "running");
     assert.equal(delegatedAgent, "reviewer");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("dynamic delegate tools return task ids without waiting by default", async () => {
+  const { root, flowPath } = await createTestFlow();
+  try {
+    let resolveRunner!: (value: RunSubagentTaskResult) => void;
+    const runnerPromise = new Promise<RunSubagentTaskResult>((resolve) => {
+      resolveRunner = resolve;
+    });
+    const server = new LoomMcpServer({
+      env: {
+        LOOM_FLOW_PATH: flowPath,
+        LOOM_FLOW_CWD: root,
+        LOOM_AGENT: "leader",
+        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+      },
+      delegateRunner: async () => runnerPromise,
+    });
+
+    const started = await server.handleRequest({
+      id: 4,
+      method: "tools/call",
+      params: {
+        name: "loom_delegate_reviewer",
+        arguments: { briefing: "slow review" },
+      },
+    });
+
+    const task = parseToolText(started);
+    assert.equal(task.agent, "reviewer");
+    assert.equal(task.status, "running");
+    assert.equal(typeof task.taskId, "string");
+
+    resolveRunner(fakeResult("reviewer"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loom_delegate returns a task id before the MCP sync wait cap is exceeded", async () => {
+  const { root, flowPath } = await createTestFlow();
+  try {
+    let resolveRunner!: (value: RunSubagentTaskResult) => void;
+    const runnerPromise = new Promise<RunSubagentTaskResult>((resolve) => {
+      resolveRunner = resolve;
+    });
+    const server = new LoomMcpServer({
+      env: {
+        LOOM_FLOW_PATH: flowPath,
+        LOOM_FLOW_CWD: root,
+        LOOM_AGENT: "leader",
+        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+        LOOM_MCP_SYNC_WAIT_CAP_MS: "5",
+      },
+      delegateRunner: async () => runnerPromise,
+    });
+
+    const started = await server.handleRequest({
+      id: 5,
+      method: "tools/call",
+      params: {
+        name: "loom_delegate",
+        arguments: {
+          agent: "reviewer",
+          briefing: "slow review",
+          timeoutSeconds: 600,
+          wait: true,
+        },
+      },
+    });
+
+    const task = parseToolText(started);
+    assert.equal(task.agent, "reviewer");
+    assert.equal(task.status, "running");
+    assert.equal(task.syncWaitTimedOut, true);
+    assert.equal(typeof task.taskId, "string");
+
+    resolveRunner(fakeResult("reviewer"));
+    await runnerPromise;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const report = await server.handleRequest({
+      id: 6,
+      method: "tools/call",
+      params: {
+        name: "loom_read_report",
+        arguments: { taskId: task.taskId },
+      },
+    });
+
+    assert.equal(parseToolText(report).status, "done");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -301,6 +396,67 @@ test("loom_delegate_many applies top-level timeout to tasks without their own ti
     });
 
     assert.deepEqual(timeouts, [17]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loom_delegate_many returns task ids without waiting for slow children", async () => {
+  const { root, flowPath } = await createTestFlow();
+  try {
+    let resolveRunner!: (value: RunSubagentTaskResult) => void;
+    const runnerPromise = new Promise<RunSubagentTaskResult>((resolve) => {
+      resolveRunner = resolve;
+    });
+    const server = new LoomMcpServer({
+      env: {
+        LOOM_FLOW_PATH: flowPath,
+        LOOM_FLOW_CWD: root,
+        LOOM_AGENT: "leader",
+        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+      },
+      delegateRunner: async () => runnerPromise,
+    });
+
+    const responsePromise = server.handleRequest({
+      id: 5,
+      method: "tools/call",
+      params: {
+        name: "loom_delegate_many",
+        arguments: {
+          tasks: [{ agent: "reviewer", briefing: "slow review" }],
+        },
+      },
+    });
+    const raced = await Promise.race([
+      responsePromise.then((value) => ({ type: "response" as const, value })),
+      new Promise<{ type: "timeout" }>((resolve) => setTimeout(() => resolve({ type: "timeout" }), 25)),
+    ]);
+
+    assert.equal(raced.type, "response");
+    if (raced.type !== "response") return;
+    const started = parseToolText(raced.value);
+    assert.equal(started.status, "running");
+    assert.equal(started.wait, false);
+    const results = started.results as Array<{ taskId: string; agent: string; status: string }>;
+    assert.equal(results.length, 1);
+    assert.equal(results[0]!.agent, "reviewer");
+    assert.equal(results[0]!.status, "running");
+
+    resolveRunner(fakeResult("reviewer"));
+    await runnerPromise;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const report = await server.handleRequest({
+      id: 6,
+      method: "tools/call",
+      params: {
+        name: "loom_read_report",
+        arguments: { taskId: results[0]!.taskId },
+      },
+    });
+
+    assert.equal(parseToolText(report).status, "done");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
