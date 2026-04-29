@@ -90,7 +90,7 @@ export interface DiscoveredResource {
   prompt?: string;
 }
 
-export type AgentConfigTab = "basic" | "flow-md" | "delegation" | "advisors" | "resources";
+export type AgentConfigTab = "basic" | "flow-md" | "delegation" | "resources";
 
 // --- Run event types ---
 

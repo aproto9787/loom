@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import type { HookDefinition, HookEvent, SkillDefinition } from "@aproto9787/loom-core";
-import { OraclePanel } from "./OraclePanel.js";
 import { useRunStore, type DiscoveredResource } from "./store.js";
 
 const SERVER_ORIGIN =
@@ -277,8 +276,6 @@ export function CustomPanel() {
 
       {/* Editor */}
       <main className="p-6 overflow-y-auto">
-        <OraclePanel />
-
         <div className="flex items-center gap-3 mb-6">
           <h2 className="m-0 text-xl font-semibold text-slate-900">
             {selectedName ? "Edit Template" : "New Template"}

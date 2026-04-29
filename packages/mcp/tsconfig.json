@@ -8,14 +8,12 @@
     "baseUrl": ".",
     "paths": {
       "@aproto9787/loom-core": ["../core/src/index.ts"],
-      "@aproto9787/loom-plugin-oracle": ["../plugin-oracle/src/index.ts"],
       "@aproto9787/loom-runtime": ["../runtime/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../core" },
-    { "path": "../plugin-oracle" },
     { "path": "../runtime" }
   ]
 }

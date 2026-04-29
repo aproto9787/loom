@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ORACLE_ADVISOR_TRIGGER_LABELS,
-  ORACLE_ADVISOR_TRIGGERS,
-  normalizeOracleAdvisorConfig,
-  type AgentConfig,
-  type DelegationRule,
-  type OracleAdvisorConfig,
-  type RoleDefinition,
-} from "@aproto9787/loom-core";
+import type { AgentConfig, DelegationRule, RoleDefinition } from "@aproto9787/loom-core";
 import { SERVER_ORIGIN } from "./sse-run.js";
 import { darkButtonLink, darkCardMuted, inputDark, selectDark } from "./panelStyles.js";
 import { getAgentAtPath, useRunStore, type AgentConfigTab, type DiscoveredResource } from "./store.js";
@@ -22,7 +14,6 @@ const TAB_ORDER: Array<{ id: AgentConfigTab; label: string }> = [
   { id: "basic", label: "Basic" },
   { id: "flow-md", label: "flow.md" },
   { id: "delegation", label: "Delegation" },
-  { id: "advisors", label: "Advisors" },
   { id: "resources", label: "Resources" },
 ];
 
@@ -61,11 +52,6 @@ function collectRelatedAgentNames(root: AgentConfig, path: string[]): string[] {
   const current = getAgentAtPath(root, path);
   const children = (current?.agents ?? []).map((entry) => entry.name);
   return uniqueSorted([...siblings, ...children].filter((name) => name !== currentName));
-}
-
-function displayOracleTrigger(trigger: (typeof ORACLE_ADVISOR_TRIGGERS)[number]): string {
-  const label = ORACLE_ADVISOR_TRIGGER_LABELS[trigger];
-  return label.slice(0, 1).toUpperCase() + label.slice(1);
 }
 
 export function DelegationRowEditor({
@@ -361,17 +347,15 @@ export function AgentConfigForm({
   const hasFlowMdSelection = flowMdRef !== "none";
   const delegationRules = agent.delegation ?? [];
   const isRoot = path.length <= 1;
-  const canConfigureAdvisors = isRoot;
   const runtimeMode = agent.runtime?.mode ?? (isRoot ? "host" : "isolated");
   const applyResources = agent.runtime?.applyResources ?? (isRoot ? "prompt-only" : "scoped-home");
   const providerOptions = providers.filter((provider) => provider.kind === effectiveType);
-  const oracleAdvisor = normalizeOracleAdvisorConfig(agent.oracleAdvisor);
 
   useEffect(() => {
-    if ((!canConfigureAdvisors && activeTab === "advisors") || (isRoot && activeTab === "resources")) {
+    if (isRoot && activeTab === "resources") {
       setAgentConfigTab("basic");
     }
-  }, [activeTab, canConfigureAdvisors, isRoot, setAgentConfigTab]);
+  }, [activeTab, isRoot, setAgentConfigTab]);
 
   const toggleResource = useCallback(
     (field: ResourceField, value: string) => {
@@ -394,34 +378,6 @@ export function AgentConfigForm({
       });
     },
     [agent.runtime, path, updateAgent],
-  );
-
-  const updateOracleAdvisor = useCallback(
-    (patch: OracleAdvisorConfig) => {
-      updateAgent(path, {
-        oracleAdvisor: {
-          ...(agent.oracleAdvisor ?? {}),
-          ...patch,
-        },
-      });
-    },
-    [agent.oracleAdvisor, path, updateAgent],
-  );
-
-  const toggleOracleTrigger = useCallback(
-    (trigger: (typeof ORACLE_ADVISOR_TRIGGERS)[number]) => {
-      const current = oracleAdvisor.useFor;
-      const nextSet = new Set(current);
-      if (nextSet.has(trigger)) {
-        nextSet.delete(trigger);
-      } else {
-        nextSet.add(trigger);
-      }
-      updateOracleAdvisor({
-        useFor: ORACLE_ADVISOR_TRIGGERS.filter((entry) => nextSet.has(entry)),
-      });
-    },
-    [oracleAdvisor.useFor, updateOracleAdvisor],
   );
 
   return (
@@ -448,7 +404,6 @@ export function AgentConfigForm({
               // are not applied to it. Hide the Resources tab so it doesn't
               // mislead the user into thinking their toggles have effect.
               .filter((tab) => !(isRoot && tab.id === "resources"))
-              .filter((tab) => canConfigureAdvisors || tab.id !== "advisors")
               .map((tab) => (
                 <button
                   key={tab.id}
@@ -758,84 +713,6 @@ export function AgentConfigForm({
                   ))}
                 </div>
               )}
-            </div>
-          ) : null}
-
-          {activeTab === "advisors" && canConfigureAdvisors ? (
-            <div className={`flex flex-col gap-4 p-4 ${darkCardMuted}`}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                    Oracle Advisor
-                  </p>
-                  <p className="m-0 mt-1 text-xs leading-5 text-slate-500">
-                    Root leader policy for automatic external advisory calls.
-                  </p>
-                </div>
-                <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-slate-300">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-blue-500"
-                    checked={oracleAdvisor.enabled}
-                    onChange={(event) => updateOracleAdvisor({ enabled: event.target.checked })}
-                  />
-                  Enable Oracle advisor
-                </label>
-              </div>
-
-              <div className={oracleAdvisor.enabled ? "grid grid-cols-1 gap-3 md:grid-cols-2" : "grid grid-cols-1 gap-3 md:grid-cols-2 opacity-50"}>
-                {ORACLE_ADVISOR_TRIGGERS.map((trigger) => (
-                  <label
-                    key={trigger}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-200"
-                  >
-                    <span>{displayOracleTrigger(trigger)}</span>
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-blue-500"
-                      checked={oracleAdvisor.useFor.includes(trigger)}
-                      disabled={!oracleAdvisor.enabled}
-                      onChange={() => toggleOracleTrigger(trigger)}
-                    />
-                  </label>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <span>Skip trivial tasks</span>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-blue-500"
-                    checked={oracleAdvisor.skipTrivial}
-                    onChange={(event) => updateOracleAdvisor({ skipTrivial: event.target.checked })}
-                  />
-                </label>
-                <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <span>Use npx fallback</span>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-blue-500"
-                    checked={oracleAdvisor.useNpxFallback}
-                    onChange={(event) => updateOracleAdvisor({ useNpxFallback: event.target.checked })}
-                  />
-                </label>
-                <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <span>Record calls</span>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-blue-500"
-                    checked={oracleAdvisor.recordCalls}
-                    onChange={(event) => updateOracleAdvisor({ recordCalls: event.target.checked })}
-                  />
-                </label>
-              </div>
-
-              {oracleAdvisor.enabled && oracleAdvisor.useFor.length === 0 ? (
-                <p className="m-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-200">
-                  Oracle advisor is enabled but no decision categories are selected.
-                </p>
-              ) : null}
             </div>
           ) : null}
 

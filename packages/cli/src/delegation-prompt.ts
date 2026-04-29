@@ -1,8 +1,4 @@
-import {
-  ORACLE_ADVISOR_TRIGGER_LABELS,
-  normalizeOracleAdvisorConfig,
-  type AgentConfig,
-} from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/loom-core";
 import { directChildren } from "@aproto9787/loom-runtime";
 
 // Build a system-prompt snippet that instructs an agent to delegate through
@@ -20,22 +16,6 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, _selfName: string)
   lines.push("In Codex host sessions, Loom MCP tools may be lazily discoverable. Before deciding they are unavailable, call `tool_search` with a query like `loom delegate MCP tools` and then use the discovered `mcp__loom__` tools.");
   lines.push("Generic `loom_delegate` returns the child agent's final REPORT by default, but may return `status: running` if the MCP sync wait cap is reached before the child finishes. Agent-specific `loom_delegate_<agent>` tools always start asynchronously, even if `wait: true` is supplied; poll `loom_get_status` / `loom_read_report` until the REPORT is available.");
   lines.push("`loom_delegate_many` starts parallel tasks and may return `status: running` with taskIds; poll `loom_get_status` / `loom_read_report` until each child REPORT is available.");
-  const oracleAdvisor = normalizeOracleAdvisorConfig(selfAgent.oracleAdvisor);
-  if (oracleAdvisor.enabled && oracleAdvisor.useFor.length > 0) {
-    const triggerLabels = oracleAdvisor.useFor.map((trigger) => ORACLE_ADVISOR_TRIGGER_LABELS[trigger]).join(", ");
-    const npxFallbackRule = oracleAdvisor.useNpxFallback
-      ? "Use the default `useNpxFallback: true` behavior unless the user asks otherwise."
-      : "Pass `useNpxFallback: false` when calling `loom_oracle`; this flow is configured to avoid npx fallback.";
-    const trivialRule = oracleAdvisor.skipTrivial
-      ? "Skip Oracle for trivial edits, when the user says not to use external advice, or when Oracle is unavailable; unavailable Oracle must not block core Loom work."
-      : "Skip Oracle when the user says not to use external advice or when Oracle is unavailable; unavailable Oracle must not block core Loom work.";
-    const recordingRule = oracleAdvisor.recordCalls
-      ? "Oracle calls are recorded in Loom workflow history when run metadata is available."
-      : "Oracle workflow-event recording is disabled for this agent by flow configuration.";
-    lines.push(`Oracle is available as an external advisor plugin, not as a worker. For non-trivial ${triggerLabels} decisions, check \`loom_oracle_status\` once and call \`loom_oracle\` with a concise advisory prompt and relevant files before finalizing the recommendation. ${trivialRule} ${npxFallbackRule} ${recordingRule}`);
-  } else {
-    lines.push("Oracle external advisor auto-use is disabled by this agent's flow configuration. Do not call `loom_oracle` automatically; only use it if the user explicitly asks for Oracle.");
-  }
   lines.push("If Loom MCP tools are unavailable or a Loom MCP call fails, stop and report `status: blocked` with the exact tool/discovery error. Do not spawn child agents with Bash.");
   lines.push("If the user explicitly asks to delegate, assign work, use workers/agents/team members, or parallelize, treat delegation as required for the relevant non-trivial work. Do not complete the whole task yourself unless no suitable subagent exists.");
   lines.push("");
@@ -54,7 +34,6 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, _selfName: string)
   lines.push("5. Without an explicit delegation request, direct execution is fine for low-complexity work; delegate through MCP for independent slices, specialist work, broad parallel investigation, or review/fix gates.");
   lines.push("6. You may call multiple subagents in parallel only when their tasks are independent.");
   lines.push("7. Do not treat `status: running` as completion. For any `wait: false` delegation, poll until each REPORT is available; decide next step based on `status:`, `summary:`, `artifacts:`, and `blockers:` lines.");
-  lines.push("8. Treat Oracle output as advisory evidence when Oracle is enabled or explicitly requested. Integrate it with the repository facts and worker reports; do not let Oracle override direct code evidence.");
   lines.push("");
   return lines.join("\n");
 }

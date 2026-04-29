@@ -42,7 +42,6 @@
   },
   "dependencies": {
     "@aproto9787/loom-core": "workspace:^",
-    "@aproto9787/loom-plugin-oracle": "workspace:^",
     "@aproto9787/loom-runtime": "workspace:^"
   }
 }

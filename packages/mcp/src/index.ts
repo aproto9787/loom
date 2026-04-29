@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import readline from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import { normalizeOracleAdvisorConfig, type AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/loom-core";
 import {
   directChildren,
   findAgentByName,
@@ -11,13 +11,6 @@ import {
   type RunSubagentTaskOptions,
   type RunSubagentTaskResult,
 } from "@aproto9787/loom-runtime";
-import {
-  getOracleAdvisorStatus,
-  oracleAdvisorPlugin,
-  runOracleAdvisor,
-  type OracleAdvisorOptions,
-  type OracleAdvisorResult,
-} from "@aproto9787/loom-plugin-oracle";
 
 type JsonRpcId = string | number | null;
 
@@ -66,14 +59,6 @@ interface ReadReportArguments {
   taskId?: string;
 }
 
-interface OracleArguments {
-  prompt?: string;
-  files?: string[];
-  args?: string[];
-  timeoutSeconds?: number;
-  useNpxFallback?: boolean;
-}
-
 interface TaskState {
   taskId: string;
   agent: string;
@@ -89,7 +74,6 @@ export interface LoomMcpServerOptions {
   stdin?: Readable;
   stdout?: Writable;
   delegateRunner?: (options: RunSubagentTaskOptions) => Promise<RunSubagentTaskResult>;
-  oracleRunner?: (options: OracleAdvisorOptions) => Promise<OracleAdvisorResult>;
 }
 
 function textResult(value: unknown, isError = false): Record<string, unknown> {
@@ -134,12 +118,9 @@ const RESERVED_TOOL_NAMES = new Set([
   "loom_get_status",
   "loom_read_report",
   "loom_cancel",
-  oracleAdvisorPlugin.mcpToolName,
-  oracleAdvisorPlugin.mcpStatusToolName,
 ]);
 
 const DEFAULT_SYNC_WAIT_CAP_MS = 90_000;
-const DEFAULT_ORACLE_TIMEOUT_SECONDS = 1800;
 
 function dynamicToolMap(children: AgentConfig[]): Map<string, AgentConfig> {
   const tools = new Map<string, AgentConfig>();
@@ -257,41 +238,6 @@ function buildTools(children: AgentConfig[]): McpTool[] {
         additionalProperties: false,
       },
     },
-    {
-      name: oracleAdvisorPlugin.mcpStatusToolName,
-      description: "Check optional Oracle external advisor plugin availability. Leaders should use this before calling Oracle for non-trivial advisory decisions. Oracle by steipete is not bundled with Loom.",
-      inputSchema: {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
-    },
-    {
-      name: oracleAdvisorPlugin.mcpToolName,
-      description: "Call the optional Oracle external advisor plugin for leader advisory review. Uses an installed `oracle` command, or `npx -y @steipete/oracle` fallback when enabled. Loom does not vendor Oracle.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          prompt: { type: "string", minLength: 1 },
-          files: {
-            type: "array",
-            items: { type: "string", minLength: 1 },
-          },
-          args: {
-            type: "array",
-            items: { type: "string" },
-            description: "Advanced Oracle CLI flags passed as separate arguments without a shell.",
-          },
-          timeoutSeconds: { type: "number", minimum: 1 },
-          useNpxFallback: {
-            type: "boolean",
-            description: "When true, use `npx -y @steipete/oracle` if `oracle` is not installed. Defaults to true.",
-          },
-        },
-        required: ["prompt"],
-        additionalProperties: false,
-      },
-    },
   ];
 }
 
@@ -367,39 +313,14 @@ function parseReadReportArguments(value: unknown): Required<ReadReportArguments>
   return { taskId };
 }
 
-function parseStringArray(value: unknown, name: string): string[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
-    throw new Error(`${name} must be an array of strings`);
-  }
-  return value.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
-}
-
-function parseOracleArguments(value: unknown, defaultUseNpxFallback = true): Required<OracleArguments> {
-  const object = asObject(value);
-  const prompt = typeof object.prompt === "string" ? object.prompt.trim() : "";
-  const timeoutSeconds = parseTimeoutSeconds(object, DEFAULT_ORACLE_TIMEOUT_SECONDS);
-  const useNpxFallback = typeof object.useNpxFallback === "boolean" ? object.useNpxFallback : defaultUseNpxFallback;
-  if (!prompt) throw new Error("prompt is required");
-  return {
-    prompt,
-    files: parseStringArray(object.files, "files"),
-    args: parseStringArray(object.args, "args"),
-    timeoutSeconds,
-    useNpxFallback,
-  };
-}
-
 export class LoomMcpServer {
   private readonly env: NodeJS.ProcessEnv;
   private readonly delegateRunner: (options: RunSubagentTaskOptions) => Promise<RunSubagentTaskResult>;
-  private readonly oracleRunner: (options: OracleAdvisorOptions) => Promise<OracleAdvisorResult>;
   private readonly tasks = new Map<string, TaskState>();
 
   constructor(options: LoomMcpServerOptions = {}) {
     this.env = options.env ?? process.env;
     this.delegateRunner = options.delegateRunner ?? runSubagentTask;
-    this.oracleRunner = options.oracleRunner ?? runOracleAdvisor;
   }
 
   async handleRequest(request: JsonRpcRequest): Promise<Record<string, unknown> | undefined> {
@@ -511,71 +432,7 @@ export class LoomMcpServer {
         cancelled: true,
       });
     }
-    if (name === oracleAdvisorPlugin.mcpStatusToolName) {
-      return textResult(await getOracleAdvisorStatus(this.env));
-    }
-    if (name === oracleAdvisorPlugin.mcpToolName) {
-      return await this.callOracle(args);
-    }
     return textResult(`unknown tool: ${name ?? "<missing>"}`, true);
-  }
-
-  private async postWorkflowEvent(
-    context: LoomMcpContext,
-    type: "tool_use" | "tool_result" | "error",
-    summary: string,
-    raw?: unknown,
-  ): Promise<void> {
-    if (!context.runId || !context.serverOrigin) return;
-    try {
-      await fetch(`${context.serverOrigin}/runs/${encodeURIComponent(context.runId)}/events`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          events: [{
-            ts: Date.now(),
-            type,
-            summary,
-            toolName: oracleAdvisorPlugin.mcpToolName,
-            agentName: context.currentAgentName,
-            agentDepth: context.parentDepth,
-            agentKind: oracleAdvisorPlugin.kind,
-            raw,
-          }],
-        }),
-      });
-    } catch {
-      // Workflow logging is best-effort; Oracle invocation result still returns to the caller.
-    }
-  }
-
-  private async callOracle(args: unknown): Promise<Record<string, unknown>> {
-    const { context, selfAgent } = await this.loadAgentContext();
-    const oracleAdvisor = normalizeOracleAdvisorConfig(selfAgent.oracleAdvisor);
-    const parsed = parseOracleArguments(args, oracleAdvisor.useNpxFallback);
-    if (oracleAdvisor.recordCalls) {
-      await this.postWorkflowEvent(context, "tool_use", "Oracle advisor requested", {
-        pluginId: oracleAdvisorPlugin.id,
-        prompt: parsed.prompt,
-        files: parsed.files,
-        args: parsed.args,
-        useNpxFallback: parsed.useNpxFallback,
-      });
-    }
-    const result = await this.oracleRunner({
-      ...parsed,
-      cwd: context.cwd,
-      env: this.env,
-    });
-    if (oracleAdvisor.recordCalls) {
-      await this.postWorkflowEvent(
-        context,
-        result.status === "error" ? "error" : "tool_result",
-        result.status === "unavailable" ? "Oracle advisor unavailable" : `Oracle advisor ${result.status}`,
-        result,
-      );
-    }
-    return textResult(result, result.status === "error");
   }
 
   private async delegate(args: unknown, defaultWait = true): Promise<unknown> {
