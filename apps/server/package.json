@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@aproto9787/loom-core": "workspace:^",
+    "@aproto9787/loom-plugin-oracle": "workspace:^",
     "@aproto9787/loom-runtime": "workspace:^",
     "fastify": "^5.8.4",
     "yaml": "^2.8.3",

@@ -7,6 +7,7 @@ import { z } from "zod";
 import YAML from "yaml";
 import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@aproto9787/loom-core";
 import { discoverProviderProfiles } from "@aproto9787/loom-runtime";
+import { getOracleAdvisorStatus, oracleAdvisorPlugin, runOracleAdvisor } from "@aproto9787/loom-plugin-oracle";
 import type { PersistedRunEvent } from "./trace-store.js";
 import { validateFlow } from "@aproto9787/loom-core";
 import { stringifyFlow } from "./flow-writer.js";
@@ -117,6 +118,14 @@ const runEventBatchRequestSchema = z.object({
 const saveFlowSchema = z.object({
   flowPath: flowPathSchema,
   flow: flowSchema,
+});
+
+const oracleAdvisorRequestSchema = z.object({
+  prompt: z.string().trim().min(1),
+  files: z.array(z.string().trim().min(1)).default([]),
+  args: z.array(z.string()).default([]),
+  timeoutSeconds: z.number().min(1).default(1800),
+  useNpxFallback: z.boolean().default(true),
 });
 
 const staleThresholdMs = 10 * 60 * 1000;
@@ -593,6 +602,74 @@ export function buildServer() {
     }
 
     return reply.code(200).send({ runId: params.data.id });
+  });
+
+  app.get(`${oracleAdvisorPlugin.routeBasePath}/status`, async () => {
+    return await getOracleAdvisorStatus();
+  });
+
+  app.post(`${oracleAdvisorPlugin.routeBasePath}/run`, async (request, reply) => {
+    const parsed = oracleAdvisorRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: flattenValidationError(parsed.error) });
+    }
+
+    const runId = randomUUID();
+    const startTime = new Date().toISOString();
+    createRunRecord({
+      runId,
+      flowName: `${oracleAdvisorPlugin.displayName} Plugin`,
+      flowPath: oracleAdvisorPlugin.runFlowPath,
+      userPrompt: parsed.data.prompt,
+      output: "",
+      status: "running",
+      source: "server",
+      startedAt: startTime,
+      cwd: workspaceRoot,
+      agentResults: [],
+    });
+    emitRunEvent({
+      runId,
+      ts: Date.now(),
+      type: "tool_use",
+      summary: "Oracle advisor requested",
+      toolName: oracleAdvisorPlugin.mcpToolName,
+      agentName: "studio",
+      agentDepth: 0,
+      agentKind: oracleAdvisorPlugin.kind,
+      raw: {
+        pluginId: oracleAdvisorPlugin.id,
+        prompt: parsed.data.prompt,
+        files: parsed.data.files,
+        args: parsed.data.args,
+        useNpxFallback: parsed.data.useNpxFallback,
+      },
+    });
+
+    const result = await runOracleAdvisor({
+      ...parsed.data,
+      cwd: workspaceRoot,
+    });
+    emitRunEvent({
+      runId,
+      ts: Date.now(),
+      type: result.status === "error" ? "error" : "tool_result",
+      summary: result.status === "unavailable" ? "Oracle advisor unavailable" : `Oracle advisor ${result.status}`,
+      toolName: oracleAdvisorPlugin.mcpToolName,
+      agentName: "studio",
+      agentDepth: 0,
+      agentKind: oracleAdvisorPlugin.kind,
+      raw: result,
+    });
+    updateRunRecord(runId, {
+      status: result.status === "done" ? "done" : "error",
+      output: result.stdout || result.stderr || result.installHint || "",
+      exitCode: result.exitCode ?? (result.status === "done" ? 0 : 1),
+      endedAt: new Date().toISOString(),
+      cwd: workspaceRoot,
+    });
+
+    return reply.code(200).send({ runId, result });
   });
 
 // ── Resource discovery ──────────────────────────────────────────

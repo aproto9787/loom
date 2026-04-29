@@ -102,6 +102,7 @@ MCP connects them with a traceable delegation boundary.
 - Run-scoped MCP config injection for host leader sessions.
 - Dynamic MCP tools for enabled direct children, including `loom_delegate_<agent>`.
 - `loom_delegate_many` for parallel worker dispatch from a single tool call.
+- Optional external advisor plugin for **Oracle by steipete** through a separately installed `oracle` CLI or `npx -y @steipete/oracle` fallback.
 - SQLite-backed run and event persistence under `.loom/traces.db`.
 - Studio UI for flows, roles, hooks, skills, resources, and run detail views.
 - Default `leader-workers` flow with implementers, analysts, reviewer, fixer, debaters, synthesizer, and user-advocate.
@@ -251,6 +252,25 @@ Resource behavior today:
 - Host leaders use prompt-only flow overlays.
 - Workers can receive scoped resources inside isolated HOME/config directories.
 
+## External Advisor Plugins
+
+Loom does not vendor or depend on Oracle itself. It ships `@aproto9787/loom-plugin-oracle`, a small optional external advisor plugin that can call **Oracle by steipete** when the user has installed it separately.
+
+- `loom_oracle_status` checks whether `oracle`, `oracle-mcp`, and `npx` are available.
+- `loom_oracle` invokes an installed `oracle` command with `-p <prompt>` and optional `--file <path>` arguments.
+- If `oracle` is not installed and fallback is enabled, Loom can run `npx -y @steipete/oracle`.
+- If neither path is available, Loom returns an install hint and core Loom workflows continue normally.
+- Oracle CLI results are recorded as Loom run events when the session has a run id, so Studio/session history can inspect the advisor call.
+- Studio includes an Oracle plugin tab for status checks, prompt/files/args entry, execution, and opening the saved run.
+
+Install Oracle separately when you want this connector:
+
+```bash
+npm install -g @steipete/oracle
+```
+
+For Oracle MCP usage, install `oracle-mcp` separately or use `npx -y @steipete/oracle oracle-mcp`, then add that external MCP server to your user/workspace MCP config. Loom only scopes and launches configured MCPs; Oracle remains an external project.
+
 ## Repository Map
 
 ```text
@@ -262,6 +282,7 @@ loom/
 │   ├── core/         Zod schemas and shared flow/run types
 │   ├── cli/          loom and loom-subagent binaries
 │   ├── mcp/          stdio MCP delegation bridge
+│   ├── plugin-oracle/ optional Oracle external advisor plugin
 │   └── runtime/      flow loading, resources, prompts, hooks, reports
 ├── examples/         YAML flows shown by server and Studio
 ├── roles/            reusable role definitions
@@ -278,6 +299,7 @@ The local server exposes routes for:
 - flows: `GET /flows`, `GET /flows/get`, `PUT /flows/save`, `POST /flows/new`, `POST /flows/duplicate`, `DELETE /flows/:path`
 - runs: `POST /runs`, `GET /runs`, `GET /runs/:id`, `POST /runs/:id/abort`
 - events: `POST /runs/register`, `POST /runs/:id/events`, `GET /runs/:id/events`, `GET /runs/:id/stream`, `PATCH /runs/:id/status`
+- plugins: `GET /plugins/oracle/status`, `POST /plugins/oracle/run`
 - resources: `GET /roles`, `GET /hooks`, `GET /skills`, plus save/delete endpoints
 - discovery: `GET /mcps`, `GET /discover`
 

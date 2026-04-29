@@ -4,13 +4,15 @@ import FlowMdTab from "./FlowMdTab.js";
 import DelegationTab from "./DelegationTab.js";
 import { RolesPanel } from "./RolesPanel.js";
 import { RunsPanel } from "./AppSections.js";
+import { OraclePanel } from "./OraclePanel.js";
 
-export const TABS = ["workflow", "flowMd", "delegation", "runs", "roles", "custom"] as const;
+export const TABS = ["workflow", "flowMd", "delegation", "runs", "oracle", "roles", "custom"] as const;
 const TAB_LABELS: Record<(typeof TABS)[number], string> = {
   workflow: "Workflow",
   flowMd: "flow.md",
   delegation: "Delegation",
   runs: "Runs",
+  oracle: "Oracle",
   roles: "Roles",
   custom: "Custom",
 };
@@ -51,6 +53,9 @@ export function StaticTabView({ activeTab }: { activeTab: (typeof TABS)[number] 
   }
   if (activeTab === "runs") {
     return <RunsPanel />;
+  }
+  if (activeTab === "oracle") {
+    return <OraclePanel />;
   }
   if (activeTab === "roles") {
     return <RolesPanel />;

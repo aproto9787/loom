@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer, type IncomingMessage } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -44,6 +45,8 @@ test("tools/list exposes only enabled direct children", async () => {
     const delegateAgent = tools.find((tool) => tool.inputSchema.properties.agent)?.inputSchema.properties.agent;
     assert.deepEqual(delegateAgent?.enum, ["reviewer"]);
     assert.ok(tools.some((tool) => tool.name === "loom_delegate_reviewer"));
+    assert.ok(tools.some((tool) => tool.name === "loom_oracle"));
+    assert.ok(tools.some((tool) => tool.name === "loom_oracle_status"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -131,7 +134,111 @@ function fakeResult(agent: string, status: RunSubagentTaskResult["status"] = "do
   };
 }
 
-test("dynamic delegate tools route to their child agent", async () => {
+async function readBody(request: IncomingMessage): Promise<string> {
+  let body = "";
+  for await (const chunk of request) {
+    body += String(chunk);
+  }
+  return body;
+}
+
+async function createEventSink(): Promise<{ origin: string; bodies: unknown[]; close: () => Promise<void> }> {
+  const bodies: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    bodies.push(JSON.parse(await readBody(request)));
+    response.writeHead(201, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("expected TCP listener");
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    bodies,
+    close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
+  };
+}
+
+test("loom_oracle_status reports Oracle as an optional external advisor", async () => {
+  const server = new LoomMcpServer({ env: { PATH: "" } });
+
+  const response = await server.handleRequest({
+    id: 4,
+    method: "tools/call",
+    params: {
+      name: "loom_oracle_status",
+      arguments: {},
+    },
+  });
+
+  const status = parseToolText(response);
+  assert.deepEqual(status.plugin, { id: "oracle", displayName: "Oracle", kind: "external-advisor" });
+  assert.deepEqual(status.oracle, { command: "oracle", available: false });
+  assert.deepEqual(status.oracleMcp, { command: "oracle-mcp", available: false });
+  assert.equal((status.npxFallback as { package: string }).package, "@steipete/oracle");
+  assert.equal(status.attribution, "Oracle by steipete");
+  assert.match(String(status.note), /does not vendor Oracle/);
+});
+
+test("loom_oracle calls the external advisor runner and records workflow events", async () => {
+  const { root, flowPath } = await createTestFlow();
+  const sink = await createEventSink();
+  try {
+    const server = new LoomMcpServer({
+      env: {
+        LOOM_FLOW_PATH: flowPath,
+        LOOM_FLOW_CWD: root,
+        LOOM_AGENT: "leader",
+        LOOM_PARENT_DEPTH: "0",
+        LOOM_RUN_ID: "oracle-run",
+        LOOM_SERVER_ORIGIN: sink.origin,
+        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+      },
+      oracleRunner: async (options) => {
+        assert.equal(options.prompt, "review the architecture");
+        assert.deepEqual(options.files, ["src/**/*.ts"]);
+        assert.deepEqual(options.args, ["--dry-run", "summary"]);
+        assert.equal(options.cwd, root);
+        assert.equal(options.useNpxFallback, true);
+        return {
+          plugin: { id: "oracle", kind: "external-advisor" },
+          status: "done",
+          provider: "oracle",
+          command: ["oracle", "-p", options.prompt],
+          exitCode: 0,
+          stdout: "oracle result",
+          stderr: "",
+          attribution: "Oracle by steipete",
+        };
+      },
+    });
+
+    const response = await server.handleRequest({
+      id: 5,
+      method: "tools/call",
+      params: {
+        name: "loom_oracle",
+        arguments: {
+          prompt: "review the architecture",
+          files: ["src/**/*.ts"],
+          args: ["--dry-run", "summary"],
+        },
+      },
+    });
+
+    const result = parseToolText(response);
+    assert.equal(result.status, "done");
+    assert.equal(result.stdout, "oracle result");
+    assert.equal(sink.bodies.length, 2);
+    assert.deepEqual(sink.bodies.map((body) => ((body as { events: Array<{ type: string }> }).events[0]!.type)), ["tool_use", "tool_result"]);
+    assert.deepEqual(sink.bodies.map((body) => ((body as { events: Array<{ toolName: string }> }).events[0]!.toolName)), ["loom_oracle", "loom_oracle"]);
+  } finally {
+    await sink.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("dynamic delegate tools route to their child agent without waiting", async () => {
   const { root, flowPath } = await createTestFlow();
   try {
     let delegatedAgent = "";

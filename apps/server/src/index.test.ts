@@ -414,6 +414,60 @@ loomTest("POST /runs/:id/abort returns 404 when the run does not exist", async (
   assert.deepEqual(response.json(), { error: { message: "run not found" } });
 });
 
+loomTest("Oracle advisor endpoints expose optional status and persist unavailable runs", async (t) => {
+  const previousPath = process.env.PATH;
+  process.env.PATH = "";
+  t.after(() => {
+    process.env.PATH = previousPath;
+  });
+  const app = createTestApp(t);
+
+  const statusResponse = await app.inject({
+    method: "GET",
+    url: "/plugins/oracle/status",
+  });
+
+  assert.equal(statusResponse.statusCode, 200);
+  const statusBody = statusResponse.json();
+  assert.equal(statusBody.oracle.available, false);
+  assert.equal(statusBody.oracleMcp.available, false);
+  assert.equal(statusBody.plugin.id, "oracle");
+  assert.equal(statusBody.attribution, "Oracle by steipete");
+
+  const runResponse = await app.inject({
+    method: "POST",
+    url: "/plugins/oracle/run",
+    payload: {
+      prompt: "review advisor connector",
+      files: ["packages/mcp/src/**/*.ts"],
+      args: ["--dry-run", "summary"],
+      useNpxFallback: false,
+    },
+  });
+
+  assert.equal(runResponse.statusCode, 200);
+  const runBody = runResponse.json();
+  assert.equal(runBody.result.status, "unavailable");
+  assert.equal(runBody.result.attribution, "Oracle by steipete");
+  assert.equal(typeof runBody.runId, "string");
+
+  const eventsResponse = await app.inject({
+    method: "GET",
+    url: `/runs/${runBody.runId}/events`,
+  });
+  assert.equal(eventsResponse.statusCode, 200);
+  const eventsBody = eventsResponse.json();
+  assert.deepEqual(eventsBody.events.map((event: { type: string }) => event.type), ["tool_use", "tool_result"]);
+  assert.deepEqual(eventsBody.events.map((event: { toolName: string }) => event.toolName), ["loom_oracle", "loom_oracle"]);
+
+  const detailResponse = await app.inject({
+    method: "GET",
+    url: `/runs/${runBody.runId}`,
+  });
+  assert.equal(detailResponse.statusCode, 200);
+  assert.equal(detailResponse.json().status, "error");
+});
+
 loomTest("PUT /flows/save round-trips the current recursive flow through YAML", async (t) => {
   const app = createTestApp(t);
   const flowPath = "examples/_roundtrip.yaml";

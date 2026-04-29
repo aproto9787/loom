@@ -1,7 +1,7 @@
 {
-  "name": "@aproto9787/loom-mcp",
+  "name": "@aproto9787/loom-plugin-oracle",
   "version": "0.1.0",
-  "description": "MCP delegation bridge for Loom local coding-agent workers.",
+  "description": "Optional Loom external advisor plugin for Oracle by steipete.",
   "license": "GPL-3.0-only",
   "type": "module",
   "main": "dist/index.js",
@@ -13,7 +13,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aproto9787/loom.git",
-    "directory": "packages/mcp"
+    "directory": "packages/plugin-oracle"
   },
   "homepage": "https://aproto9787.github.io/loom/",
   "bugs": {
@@ -21,10 +21,9 @@
   },
   "keywords": [
     "loom",
-    "mcp",
-    "model-context-protocol",
-    "ai-agents",
-    "coding-agents"
+    "plugin",
+    "oracle",
+    "external-advisor"
   ],
   "publishConfig": {
     "access": "public"
@@ -37,12 +36,6 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b --pretty false",
-    "test": "node --test dist/**/*.test.js"
-  },
-  "dependencies": {
-    "@aproto9787/loom-core": "workspace:^",
-    "@aproto9787/loom-plugin-oracle": "workspace:^",
-    "@aproto9787/loom-runtime": "workspace:^"
+    "typecheck": "tsc -b --pretty false"
   }
 }

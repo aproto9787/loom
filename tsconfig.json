@@ -20,6 +20,9 @@
       "path": "./packages/runtime"
     },
     {
+      "path": "./packages/plugin-oracle"
+    },
+    {
       "path": "./packages/mcp"
     }
   ]

@@ -17,6 +17,9 @@
       ],
       "@aproto9787/loom-runtime": [
         "../../packages/runtime/src/index.ts"
+      ],
+      "@aproto9787/loom-plugin-oracle": [
+        "../../packages/plugin-oracle/src/index.ts"
       ]
     }
   },
@@ -32,6 +35,9 @@
     },
     {
       "path": "../../packages/runtime"
+    },
+    {
+      "path": "../../packages/plugin-oracle"
     }
   ]
 }
