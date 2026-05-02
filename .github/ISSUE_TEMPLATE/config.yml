@@ -1,8 +1,8 @@
 blank_issues_enabled: true
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/aproto9787/loom/security/advisories/new
+    url: https://github.com/aproto9787/heddle/security/advisories/new
     about: Please report security issues privately instead of opening a public issue.
   - name: Current implementation status
-    url: https://github.com/aproto9787/loom/blob/master/docs/CURRENT_STATE.md
+    url: https://github.com/aproto9787/heddle/blob/master/docs/CURRENT_STATE.md
     about: Check what is implemented before filing product-direction issues.

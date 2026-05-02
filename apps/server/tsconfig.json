@@ -9,13 +9,13 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@aproto9787/loom-core": [
+      "@aproto9787/heddle-core": [
         "../../packages/core/src/index.ts"
       ],
-      "@aproto9787/loom-adapters": [
+      "@aproto9787/heddle-adapters": [
         "../../packages/adapters/src/index.ts"
       ],
-      "@aproto9787/loom-runtime": [
+      "@aproto9787/heddle-runtime": [
         "../../packages/runtime/src/index.ts"
       ]
     }

@@ -1,5 +1,5 @@
 import type { Edge, Node } from "reactflow";
-import type { AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/heddle-core";
 
 export interface GraphPayload {
   nodes: Node[];
@@ -34,7 +34,7 @@ function layoutAgent(
       type: "default",
       position: { x, y },
       data: { label: `${agent.name}\n[${typeLabel}]`, agentPath: path },
-      className: `loom-agent loom-agent--${agent.type}`,
+      className: `heddle-agent heddle-agent--${agent.type}`,
       style: { whiteSpace: "pre-line", lineHeight: 1.25 },
     });
     return { nodes, edges, width: 1 };
@@ -85,7 +85,7 @@ function layoutAgent(
     type: "default",
     position: { x, y },
     data: { label: `${agent.name}\n[${typeLabel}]`, agentPath: path },
-    className: `loom-agent loom-agent--${agent.type}`,
+    className: `heddle-agent heddle-agent--${agent.type}`,
     style: { whiteSpace: "pre-line", lineHeight: 1.25 },
   });
 

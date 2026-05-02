@@ -1,7 +1,7 @@
 {
-  "name": "@aproto9787/loom-mcp",
+  "name": "@aproto9787/heddle-mcp",
   "version": "0.1.0",
-  "description": "MCP delegation bridge for Loom local coding-agent workers.",
+  "description": "MCP delegation bridge for Heddle local coding-agent workers.",
   "license": "GPL-3.0-only",
   "type": "module",
   "main": "dist/index.js",
@@ -12,15 +12,15 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aproto9787/loom.git",
+    "url": "git+https://github.com/aproto9787/heddle.git",
     "directory": "packages/mcp"
   },
-  "homepage": "https://aproto9787.github.io/loom/",
+  "homepage": "https://aproto9787.github.io/heddle/",
   "bugs": {
-    "url": "https://github.com/aproto9787/loom/issues"
+    "url": "https://github.com/aproto9787/heddle/issues"
   },
   "keywords": [
-    "loom",
+    "heddle",
     "mcp",
     "model-context-protocol",
     "ai-agents",
@@ -41,7 +41,7 @@
     "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
-    "@aproto9787/loom-core": "workspace:^",
-    "@aproto9787/loom-runtime": "workspace:^"
+    "@aproto9787/heddle-core": "workspace:^",
+    "@aproto9787/heddle-runtime": "workspace:^"
   }
 }

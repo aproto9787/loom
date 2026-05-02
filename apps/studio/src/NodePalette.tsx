@@ -1,4 +1,4 @@
-import type { AgentType } from "@aproto9787/loom-core";
+import type { AgentType } from "@aproto9787/heddle-core";
 
 interface AgentPaletteProps {
   onAdd: (type: AgentType) => void;

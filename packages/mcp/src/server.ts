@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import type { AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/heddle-core";
 import {
   directChildren,
   findAgentByName,
@@ -8,14 +8,14 @@ import {
   runSubagentTask,
   type RunSubagentTaskOptions,
   type RunSubagentTaskResult,
-} from "@aproto9787/loom-runtime";
+} from "@aproto9787/heddle-runtime";
 import {
   asObject,
   parseDelegateArguments,
   parseDelegateManyArguments,
   parseReadReportArguments,
 } from "./arguments.js";
-import { buildContext, parsePositiveNumber, type LoomMcpContext } from "./context.js";
+import { buildContext, parsePositiveNumber, type HeddleMcpContext } from "./context.js";
 import { errorResponse, textResult, type JsonRpcRequest } from "./json-rpc.js";
 import { DEFAULT_SYNC_WAIT_CAP_MS, type TaskState } from "./tasks.js";
 import { buildTools, childNames, dynamicToolMap } from "./tools.js";
@@ -25,19 +25,19 @@ interface ToolCallParams {
   arguments?: unknown;
 }
 
-export interface LoomMcpServerOptions {
+export interface HeddleMcpServerOptions {
   env?: NodeJS.ProcessEnv;
   stdin?: Readable;
   stdout?: Writable;
   delegateRunner?: (options: RunSubagentTaskOptions) => Promise<RunSubagentTaskResult>;
 }
 
-export class LoomMcpServer {
+export class HeddleMcpServer {
   private readonly env: NodeJS.ProcessEnv;
   private readonly delegateRunner: (options: RunSubagentTaskOptions) => Promise<RunSubagentTaskResult>;
   private readonly tasks = new Map<string, TaskState>();
 
-  constructor(options: LoomMcpServerOptions = {}) {
+  constructor(options: HeddleMcpServerOptions = {}) {
     this.env = options.env ?? process.env;
     this.delegateRunner = options.delegateRunner ?? runSubagentTask;
   }
@@ -59,7 +59,7 @@ export class LoomMcpServer {
           result: {
             protocolVersion: "2025-06-18",
             capabilities: { tools: {} },
-            serverInfo: { name: "loom", version: "0.1.0" },
+            serverInfo: { name: "heddle", version: "0.1.0" },
           },
         };
       }
@@ -82,7 +82,7 @@ export class LoomMcpServer {
     }
   }
 
-  private async loadAgentContext(): Promise<{ context: LoomMcpContext; selfAgent: AgentConfig; children: AgentConfig[] }> {
+  private async loadAgentContext(): Promise<{ context: HeddleMcpContext; selfAgent: AgentConfig; children: AgentConfig[] }> {
     const context = buildContext(this.env);
     const loaded = await loadFlow(context.flowPath);
     const selfAgent = findAgentByName(loaded.flow.orchestrator, context.currentAgentName)
@@ -103,13 +103,13 @@ export class LoomMcpServer {
   }
 
   private async callTool(name: string | undefined, args: unknown): Promise<Record<string, unknown>> {
-    if (name === "loom_delegate") {
+    if (name === "heddle_delegate") {
       return textResult(await this.delegate(args));
     }
-    if (name === "loom_delegate_many") {
+    if (name === "heddle_delegate_many") {
       return textResult(await this.delegateMany(args));
     }
-    if (name?.startsWith("loom_delegate_")) {
+    if (name?.startsWith("heddle_delegate_")) {
       const { children } = await this.loadAgentContext();
       const target = dynamicToolMap(children).get(name);
       if (!target) {
@@ -117,7 +117,7 @@ export class LoomMcpServer {
       }
       return textResult(await this.delegate({ ...asObject(args), agent: target.name, wait: false }, false));
     }
-    if (name === "loom_get_status") {
+    if (name === "heddle_get_status") {
       const { taskId } = parseReadReportArguments(args);
       const task = this.getTask(taskId);
       return textResult({
@@ -127,7 +127,7 @@ export class LoomMcpServer {
         error: task.error,
       });
     }
-    if (name === "loom_read_report") {
+    if (name === "heddle_read_report") {
       const { taskId } = parseReadReportArguments(args);
       const task = this.getTask(taskId);
       return textResult(task.result ?? {
@@ -137,7 +137,7 @@ export class LoomMcpServer {
         error: task.error,
       });
     }
-    if (name === "loom_cancel") {
+    if (name === "heddle_cancel") {
       const { taskId } = parseReadReportArguments(args);
       const task = this.getTask(taskId);
       if (task.status === "running") {
@@ -210,7 +210,7 @@ export class LoomMcpServer {
   }
 
   private async waitForTaskResult(task: TaskState): Promise<RunSubagentTaskResult | undefined> {
-    const syncWaitCapMs = parsePositiveNumber(this.env.LOOM_MCP_SYNC_WAIT_CAP_MS, DEFAULT_SYNC_WAIT_CAP_MS);
+    const syncWaitCapMs = parsePositiveNumber(this.env.HEDDLE_MCP_SYNC_WAIT_CAP_MS, DEFAULT_SYNC_WAIT_CAP_MS);
     if (syncWaitCapMs <= 0) return undefined;
 
     let timeout: NodeJS.Timeout | undefined;

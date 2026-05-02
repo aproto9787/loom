@@ -1,13 +1,13 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AgentType, RunRecord, RunSource, RunStatus, RunSummary, TimelineEvent, TimelineEventType } from "@aproto9787/loom-core";
+import type { AgentType, RunRecord, RunSource, RunStatus, RunSummary, TimelineEvent, TimelineEventType } from "@aproto9787/heddle-core";
 
 export type PersistedRunEventType = TimelineEventType;
 export type PersistedRunEvent = TimelineEvent;
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
-const traceDir = path.join(workspaceRoot, ".loom");
+const traceDir = path.join(workspaceRoot, ".heddle");
 const traceDbPath = path.join(traceDir, "traces.db");
 
 mkdirSync(traceDir, { recursive: true });

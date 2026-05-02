@@ -1,6 +1,6 @@
 # Current code-backed state
 
-This note is the short, code-backed baseline for Loom's current implementation. It is meant to keep README and architecture claims honest while the project continues to change quickly.
+This note is the short, code-backed baseline for Heddle's current implementation. It is meant to keep README and architecture claims honest while the project continues to change quickly.
 
 Target product/runtime direction lives in `docs/LOCAL_AGENT_CONTROL_PLANE.md`.
 Treat that document as an implementation plan, not as current shipped behavior.
@@ -59,21 +59,21 @@ Do not document these as implemented unless the code changes first:
 
 - A recursive agent-tree YAML schema.
 - `examples/`-scoped flow CRUD and validation.
-- Server run routes that create local run records and spawn the built `loom` CLI in `--headless` mode.
+- Server run routes that create local run records and spawn the built `heddle` CLI in `--headless` mode.
 - CLI-launched runs with event registration and persisted event streaming.
-- `@aproto9787/loom-runtime` as the shared home for flow loading, resource loading, prompt building, scoped MCP config generation, and hook execution.
+- `@aproto9787/heddle-runtime` as the shared home for flow loading, resource loading, prompt building, scoped MCP config generation, and hook execution.
 - Provider profile discovery for local Claude Code and Codex installs.
-- `@aproto9787/loom-mcp` as a stdio MCP delegation bridge.
-- Published npm CLI package at `@aproto9787/loom`.
-- `loom mcp` as the CLI subcommand that exposes Loom delegation tools to host leaders.
-- Agent-specific dynamic MCP tools such as `loom_delegate_reviewer`, alongside stable generic tools such as `loom_delegate`.
+- `@aproto9787/heddle-mcp` as a stdio MCP delegation bridge.
+- Published npm CLI package at `@aproto9787/heddle`.
+- `heddle mcp` as the CLI subcommand that exposes Heddle delegation tools to host leaders.
+- Agent-specific dynamic MCP tools such as `heddle_delegate_reviewer`, alongside stable generic tools such as `heddle_delegate`.
 - Best-effort async cancellation for MCP-delegated subagent processes started with `wait: false`.
-- Root leader MCP config injection for Claude Code and Codex host sessions. Host leaders are instructed to use Loom MCP delegation only; `loom-subagent` is the internal worker runtime behind the MCP server.
-- `loom-subagent` as the generalized child-agent launcher.
+- Root leader MCP config injection for Claude Code and Codex host sessions. Host leaders are instructed to use Heddle MCP delegation only; `heddle-subagent` is the internal worker runtime behind the MCP server.
+- `heddle-subagent` as the generalized child-agent launcher.
 - Claude Code and Codex CLI adapters.
 - Role/hook/skill YAML CRUD.
 - MCP/resource discovery and selected MCP config generation.
-- SQLite run/event persistence under `.loom/traces.db`.
+- SQLite run/event persistence under `.heddle/traces.db`.
 
 ## Active runtime split
 
@@ -85,7 +85,7 @@ Shared flow/resource/prompt/hook helpers now live in `packages/runtime`. Server/
 
 Use wording like:
 
-> Loom currently runs recursive YAML-defined agent trees using Claude Code and Codex CLI processes.
+> Heddle currently runs recursive YAML-defined agent trees using Claude Code and Codex CLI processes.
 
 Avoid wording like:
 

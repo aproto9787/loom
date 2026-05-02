@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { AgentConfig, FlowDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, FlowDefinition } from "@aproto9787/heddle-core";
 import { defaultWorkspaceRoot } from "../paths.js";
 import { resolveAgentResources } from "./resolve.js";
 import type { ScopedMcpOptions } from "./types.js";
@@ -44,7 +44,7 @@ export async function createScopedMcpConfig(
     return undefined;
   }
 
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-mcp-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "heddle-mcp-"));
   const configPath = path.join(tempDir, ".mcp.json");
   await writeFile(configPath, JSON.stringify({ mcpServers: selectedServers }, null, 2), "utf8");
   return configPath;

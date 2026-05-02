@@ -1,7 +1,7 @@
 {
-  "name": "@aproto9787/loom-runtime",
+  "name": "@aproto9787/heddle-runtime",
   "version": "0.1.0",
-  "description": "Runtime helpers for Loom flow loading, resources, prompts, hooks, and reports.",
+  "description": "Runtime helpers for Heddle flow loading, resources, prompts, hooks, and reports.",
   "license": "GPL-3.0-only",
   "type": "module",
   "main": "dist/index.js",
@@ -12,15 +12,15 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aproto9787/loom.git",
+    "url": "git+https://github.com/aproto9787/heddle.git",
     "directory": "packages/runtime"
   },
-  "homepage": "https://aproto9787.github.io/loom/",
+  "homepage": "https://aproto9787.github.io/heddle/",
   "bugs": {
-    "url": "https://github.com/aproto9787/loom/issues"
+    "url": "https://github.com/aproto9787/heddle/issues"
   },
   "keywords": [
-    "loom",
+    "heddle",
     "ai-agents",
     "coding-agents",
     "mcp",
@@ -41,7 +41,7 @@
     "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
-    "@aproto9787/loom-core": "workspace:^",
+    "@aproto9787/heddle-core": "workspace:^",
     "yaml": "^2.8.3"
   }
 }

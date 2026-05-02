@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/heddle-core";
 
 export type SubagentBackend = "claude" | "codex";
 
@@ -86,7 +86,7 @@ export function parseSubagentReport(raw: string): ParsedSubagentReport {
 
 export async function runSubagentTask(options: RunSubagentTaskOptions): Promise<RunSubagentTaskResult> {
   const taskId = randomUUID();
-  const reportDir = await mkdtemp(path.join(os.tmpdir(), "loom-mcp-subagent-"));
+  const reportDir = await mkdtemp(path.join(os.tmpdir(), "heddle-mcp-subagent-"));
   const reportPath = path.join(reportDir, `${options.agent.name}-${taskId}.txt`);
   await mkdir(reportDir, { recursive: true });
 
@@ -120,14 +120,14 @@ export async function runSubagentTask(options: RunSubagentTaskOptions): Promise<
 
   const env = {
     ...process.env,
-    LOOM_FLOW_PATH: options.flowPath,
-    LOOM_FLOW_CWD: options.cwd,
-    LOOM_AGENT: options.parentAgent,
-    LOOM_PARENT_AGENT: options.parentAgent,
-    LOOM_PARENT_DEPTH: String(options.parentDepth ?? 0),
-    LOOM_SUBAGENT_BIN: options.subagentBin,
-    ...(options.runId ? { LOOM_RUN_ID: options.runId } : {}),
-    ...(options.serverOrigin ? { LOOM_SERVER_ORIGIN: options.serverOrigin } : {}),
+    HEDDLE_FLOW_PATH: options.flowPath,
+    HEDDLE_FLOW_CWD: options.cwd,
+    HEDDLE_AGENT: options.parentAgent,
+    HEDDLE_PARENT_AGENT: options.parentAgent,
+    HEDDLE_PARENT_DEPTH: String(options.parentDepth ?? 0),
+    HEDDLE_SUBAGENT_BIN: options.subagentBin,
+    ...(options.runId ? { HEDDLE_RUN_ID: options.runId } : {}),
+    ...(options.serverOrigin ? { HEDDLE_SERVER_ORIGIN: options.serverOrigin } : {}),
   };
 
   const { exitCode, stdout, stderr, cancelled } = await new Promise<{ exitCode: number; stdout: string; stderr: string; cancelled: boolean }>((resolve, reject) => {
@@ -174,7 +174,7 @@ export async function runSubagentTask(options: RunSubagentTaskOptions): Promise<
   try {
     reportRaw = await readFile(reportPath, "utf8");
   } catch {
-    // stdout is the fallback because loom-subagent writes the final report there.
+    // stdout is the fallback because heddle-subagent writes the final report there.
   }
 
   const report = parseSubagentReport(reportRaw);

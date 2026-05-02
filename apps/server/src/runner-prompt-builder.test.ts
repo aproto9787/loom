@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentConfig, FlowDefinition, RoleDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, FlowDefinition, RoleDefinition } from "@aproto9787/heddle-core";
 import { buildAgentPrompt, buildConfiguredAgent } from "./runner-prompt-builder.js";
 import type { RunResources } from "./runner-resource-loader.js";
 
@@ -43,7 +43,7 @@ test("buildAgentPrompt includes resource context and delegation instructions", (
   assert.match(prompt, /Delegation rules for this agent:\n- to: child\n  when: When code review is needed\./);
   assert.match(prompt, /description: Reviews code changes\./);
   assert.match(prompt, /Use this child-agent metadata as planning guidance only\./);
-  assert.match(prompt, /Actual child-agent launch mechanics are injected by the Loom Delegation Protocol\./);
+  assert.match(prompt, /Actual child-agent launch mechanics are injected by the Heddle Delegation Protocol\./);
   assert.match(prompt, /If the user explicitly asks to delegate, assign work, use workers\/agents\/team members, or parallelize/);
   assert.match(prompt, /Do not emit DELEGATE lines or JSON delegation directives\./);
 });
@@ -61,7 +61,7 @@ test("buildConfiguredAgent adds parallel child guidance when parallel is enabled
 
   const configured = buildConfiguredAgent(agent, flow, "/repo", resources);
   assert.ok(configured.system);
-  assert.match(configured.system, /Parallel hint: if this task should be split, use Loom MCP delegation tools for:/);
+  assert.match(configured.system, /Parallel hint: if this task should be split, use Heddle MCP delegation tools for:/);
   assert.match(configured.system, /child-a, child-b/);
 });
 

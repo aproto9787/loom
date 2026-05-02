@@ -1,4 +1,4 @@
-import type { AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/heddle-core";
 
 export interface McpTool {
   name: string;
@@ -19,15 +19,15 @@ function slugifyToolName(value: string): string {
 }
 
 function delegateToolName(agentName: string): string {
-  return `loom_delegate_${slugifyToolName(agentName)}`;
+  return `heddle_delegate_${slugifyToolName(agentName)}`;
 }
 
 const RESERVED_TOOL_NAMES = new Set([
-  "loom_delegate",
-  "loom_delegate_many",
-  "loom_get_status",
-  "loom_read_report",
-  "loom_cancel",
+  "heddle_delegate",
+  "heddle_delegate_many",
+  "heddle_get_status",
+  "heddle_read_report",
+  "heddle_cancel",
 ]);
 
 export function dynamicToolMap(children: AgentConfig[]): Map<string, AgentConfig> {
@@ -84,13 +84,13 @@ export function buildTools(children: AgentConfig[]): McpTool[] {
   }));
   return [
     {
-      name: "loom_delegate",
-      description: "Delegate one task to a direct child agent in the current Loom flow. Returns the child REPORT.",
+      name: "heddle_delegate",
+      description: "Delegate one task to a direct child agent in the current Heddle flow. Returns the child REPORT.",
       inputSchema: toolInputSchema(agents),
     },
     ...dynamicTools,
     {
-      name: "loom_delegate_many",
+      name: "heddle_delegate_many",
       description: "Start multiple independent child-agent tasks in parallel. By default this returns taskIds immediately; poll status/report tools for completion.",
       inputSchema: {
         type: "object",
@@ -111,8 +111,8 @@ export function buildTools(children: AgentConfig[]): McpTool[] {
       },
     },
     {
-      name: "loom_get_status",
-      description: "Read the status of a Loom MCP delegation task.",
+      name: "heddle_get_status",
+      description: "Read the status of a Heddle MCP delegation task.",
       inputSchema: {
         type: "object",
         properties: {
@@ -123,8 +123,8 @@ export function buildTools(children: AgentConfig[]): McpTool[] {
       },
     },
     {
-      name: "loom_read_report",
-      description: "Read the REPORT for a completed Loom MCP delegation task.",
+      name: "heddle_read_report",
+      description: "Read the REPORT for a completed Heddle MCP delegation task.",
       inputSchema: {
         type: "object",
         properties: {
@@ -135,8 +135,8 @@ export function buildTools(children: AgentConfig[]): McpTool[] {
       },
     },
     {
-      name: "loom_cancel",
-      description: "Cancel a running Loom MCP delegation task started with wait=false.",
+      name: "heddle_cancel",
+      description: "Cancel a running Heddle MCP delegation task started with wait=false.",
       inputSchema: {
         type: "object",
         properties: {

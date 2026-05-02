@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// loom-subagent: generalized headless executor. Loom MCP invokes this internal
+// heddle-subagent: generalized headless executor. Heddle MCP invokes this internal
 // runtime to execute a BRIEFING in an isolated child agent. The child runs
 // claude or codex, streams every tool_use / tool_result / assistant frame back
 // to the server tagged with this subagent's name and parent, and writes a
@@ -14,7 +14,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
-import type { AgentConfig, FlowDefinition, HookDefinition, SkillDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, FlowDefinition, HookDefinition, SkillDefinition } from "@aproto9787/heddle-core";
 import {
   buildConfiguredAgent,
   createScopedMcpConfig,
@@ -22,11 +22,11 @@ import {
   loadSkillDefinitions,
   findAgentByName,
   resolveAgentResources,
-} from "@aproto9787/loom-runtime";
+} from "@aproto9787/heddle-runtime";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
 
 type Backend = "claude" | "codex";
-type LoomEventType = "tool_use" | "tool_result" | "user" | "assistant" | "error";
+type HeddleEventType = "tool_use" | "tool_result" | "user" | "assistant" | "error";
 
 interface CliArgs {
   name: string;
@@ -40,37 +40,37 @@ interface CliArgs {
   briefing: string;
 }
 
-const RUN_ID = process.env.LOOM_RUN_ID;
-const SERVER_ORIGIN = process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
-const DEFAULT_REPORT_DIR = path.join(os.tmpdir(), "loom-subagent");
+const RUN_ID = process.env.HEDDLE_RUN_ID;
+const SERVER_ORIGIN = process.env.HEDDLE_SERVER_ORIGIN ?? "http://localhost:8787";
+const DEFAULT_REPORT_DIR = path.join(os.tmpdir(), "heddle-subagent");
 const REPORT_POLL_MS = 500;
 const REPORT_STABLE_MS = 1000;
 const REPORT_SHUTDOWN_GRACE_MS = 3000;
 
 function printUsage(): void {
-  console.error(`loom-subagent — generalized child-agent runner for Loom flows
+  console.error(`heddle-subagent — generalized child-agent runner for Heddle flows
 
 Usage:
-  loom-subagent --name <role> --backend claude|codex [options] --briefing "Review the changed files"
-  loom-subagent --name <role> --backend claude|codex [options] -- "Briefing that may start with --"
-  printf '%s\n' "Review the changed files" | loom-subagent --name <role> --backend <claude|codex> [options]
+  heddle-subagent --name <role> --backend claude|codex [options] --briefing "Review the changed files"
+  heddle-subagent --name <role> --backend claude|codex [options] -- "Briefing that may start with --"
+  printf '%s\n' "Review the changed files" | heddle-subagent --name <role> --backend <claude|codex> [options]
 
 Options:
   --name <role>          child agent display name (required)
   --backend <kind>       claude | codex (required)
   --model <id>           model override (default: backend default)
-  --parent <name>        parent agent name (default: env LOOM_PARENT_AGENT or "leader")
-  --depth <n>            parent depth (default: env LOOM_PARENT_DEPTH or 0)
+  --parent <name>        parent agent name (default: env HEDDLE_PARENT_AGENT or "leader")
+  --depth <n>            parent depth (default: env HEDDLE_PARENT_DEPTH or 0)
   --max-seconds <n>      hard timeout (default: 900)
   --report <path>        explicit REPORT file path
   --briefing <text>      explicit task briefing; safest for one-line delegated tasks
   --briefing-file <path> read task briefing from a file; useful for long/multiline tasks
 
 Environment:
-  LOOM_RUN_ID            run id to POST events to (required to stream)
-  LOOM_SERVER_ORIGIN     server origin (default: http://localhost:8787)
-  LOOM_PARENT_AGENT      fallback parent name
-  LOOM_PARENT_DEPTH      fallback parent depth
+  HEDDLE_RUN_ID            run id to POST events to (required to stream)
+  HEDDLE_SERVER_ORIGIN     server origin (default: http://localhost:8787)
+  HEDDLE_PARENT_AGENT      fallback parent name
+  HEDDLE_PARENT_DEPTH      fallback parent depth
 `);
 }
 
@@ -104,7 +104,7 @@ function parseArgs(argv: string[]): CliArgs | null {
       if (equalIndex > 2) {
         const key = cur.slice(2, equalIndex);
         if (!optionsWithValues.has(key)) {
-          console.error(`loom-subagent: unknown option --${key}`);
+          console.error(`heddle-subagent: unknown option --${key}`);
           printUsage();
           return null;
         }
@@ -114,7 +114,7 @@ function parseArgs(argv: string[]): CliArgs | null {
 
       const key = cur.slice(2);
       if (!optionsWithValues.has(key)) {
-        console.error(`loom-subagent: unknown option --${key}`);
+        console.error(`heddle-subagent: unknown option --${key}`);
         printUsage();
         return null;
       }
@@ -143,8 +143,8 @@ function parseArgs(argv: string[]): CliArgs | null {
     name,
     backend: backendRaw,
     model: args.model,
-    parentAgent: args.parent ?? process.env.LOOM_PARENT_AGENT ?? "leader",
-    parentDepth: Number(args.depth ?? process.env.LOOM_PARENT_DEPTH ?? "0"),
+    parentAgent: args.parent ?? process.env.HEDDLE_PARENT_AGENT ?? "leader",
+    parentDepth: Number(args.depth ?? process.env.HEDDLE_PARENT_DEPTH ?? "0"),
     maxSeconds: Number(args["max-seconds"] ?? "900"),
     reportPath: args.report,
     briefingFile: args["briefing-file"],
@@ -191,7 +191,7 @@ function isCompleteReport(report: string, args: CliArgs): boolean {
 
 async function postEvent(
   args: CliArgs,
-  type: LoomEventType,
+  type: HeddleEventType,
   summary: string,
   extra: { toolName?: string } = {},
 ): Promise<void> {
@@ -220,7 +220,7 @@ async function postEvent(
 }
 
 interface MappedEvent {
-  type: LoomEventType;
+  type: HeddleEventType;
   summary: string;
   toolName?: string;
 }
@@ -344,7 +344,7 @@ interface FlowContext {
 }
 
 async function loadFlowContext(selfName: string): Promise<FlowContext | undefined> {
-  const flowPath = process.env.LOOM_FLOW_PATH;
+  const flowPath = process.env.HEDDLE_FLOW_PATH;
   if (!flowPath) return undefined;
   try {
     const raw = await readFile(flowPath, "utf8");
@@ -410,7 +410,7 @@ async function createSubagentHome(
   scopedSkills: SkillDefinition[],
   codexConfigAppend?: string,
 ): Promise<string> {
-  const root = path.join(os.homedir(), ".loom", "subagent-homes");
+  const root = path.join(os.homedir(), ".heddle", "subagent-homes");
   await mkdir(root, { recursive: true });
   const home = await mkdtemp(path.join(root, `${args.name}-`));
   const realHome = os.homedir();
@@ -441,7 +441,7 @@ async function createSubagentHome(
 
     await writeSkillFiles(claudeDir, scopedSkills);
     if (merged.trim()) {
-      // Loom models this content as flow.md, but Claude Code discovers it
+      // Heddle models this content as flow.md, but Claude Code discovers it
       // through its backend-specific CLAUDE.md filename.
       await writeFile(path.join(claudeDir, "CLAUDE.md"), merged, "utf8");
     }
@@ -453,7 +453,7 @@ async function createSubagentHome(
       await writeFile(path.join(codexDir, "auth.json"), realAuth, { encoding: "utf8", mode: 0o600 });
     }
     const realConfig = await readOptional(path.join(realHome, ".codex", "config.toml"));
-    const configParts = [realConfig ?? "# Loom-seeded (empty)\n"];
+    const configParts = [realConfig ?? "# Heddle-seeded (empty)\n"];
     if (codexConfigAppend?.trim()) {
       configParts.push(codexConfigAppend.trim());
     }
@@ -469,7 +469,7 @@ async function createSubagentHome(
   return home;
 }
 
-interface LoomMcpConfig {
+interface HeddleMcpConfig {
   claudeConfigPath: string;
   codexConfigToml: string;
   cleanup: () => Promise<void>;
@@ -485,7 +485,7 @@ function buildCodexMcpConfigToml(env: Record<string, string>, command: string, a
     .join(", ");
   const argsArray = args.map(quoteTomlString).join(", ");
   return [
-    "[mcp_servers.loom]",
+    "[mcp_servers.heddle]",
     `command = ${quoteTomlString(command)}`,
     `args = [${argsArray}]`,
     `env = { ${envEntries} }`,
@@ -496,28 +496,28 @@ function compactEnv(values: Record<string, string | undefined>): Record<string, 
   return Object.fromEntries(Object.entries(values).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
 }
 
-async function createLoomMcpConfig(args: CliArgs, flow: FlowDefinition, configuredAgent: AgentConfig): Promise<LoomMcpConfig> {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-subagent-mcp-"));
+async function createHeddleMcpConfig(args: CliArgs, flow: FlowDefinition, configuredAgent: AgentConfig): Promise<HeddleMcpConfig> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "heddle-subagent-mcp-"));
   const cliBin = fileURLToPath(new URL("./index.js", import.meta.url));
   const subagentBin = fileURLToPath(new URL("./subagent-launcher.js", import.meta.url));
   const env = compactEnv({
-    LOOM_FLOW_PATH: process.env.LOOM_FLOW_PATH,
-    LOOM_FLOW_NAME: flow.name,
-    LOOM_FLOW_CWD: process.env.LOOM_FLOW_CWD ?? process.cwd(),
-    LOOM_AGENT: args.name,
-    LOOM_AGENT_TYPE: configuredAgent.type,
-    LOOM_RUN_ID: RUN_ID,
-    LOOM_SERVER_ORIGIN: SERVER_ORIGIN,
-    LOOM_PARENT_AGENT: args.name,
-    LOOM_PARENT_DEPTH: String(args.parentDepth + 1),
-    LOOM_SUBAGENT_BIN: subagentBin,
+    HEDDLE_FLOW_PATH: process.env.HEDDLE_FLOW_PATH,
+    HEDDLE_FLOW_NAME: flow.name,
+    HEDDLE_FLOW_CWD: process.env.HEDDLE_FLOW_CWD ?? process.cwd(),
+    HEDDLE_AGENT: args.name,
+    HEDDLE_AGENT_TYPE: configuredAgent.type,
+    HEDDLE_RUN_ID: RUN_ID,
+    HEDDLE_SERVER_ORIGIN: SERVER_ORIGIN,
+    HEDDLE_PARENT_AGENT: args.name,
+    HEDDLE_PARENT_DEPTH: String(args.parentDepth + 1),
+    HEDDLE_SUBAGENT_BIN: subagentBin,
   });
   const claudeConfigPath = path.join(tempDir, "mcp.json");
   await writeFile(
     claudeConfigPath,
     JSON.stringify({
       mcpServers: {
-        loom: {
+        heddle: {
           command: process.execPath,
           args: [cliBin, "mcp"],
           env,
@@ -535,8 +535,8 @@ async function createLoomMcpConfig(args: CliArgs, flow: FlowDefinition, configur
   };
 }
 
-async function mergeMcpConfigFiles(baseConfigPath: string | undefined, loomConfigPath: string): Promise<{ configPath: string; cleanup: () => Promise<void> }> {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-subagent-merged-mcp-"));
+async function mergeMcpConfigFiles(baseConfigPath: string | undefined, heddleConfigPath: string): Promise<{ configPath: string; cleanup: () => Promise<void> }> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "heddle-subagent-merged-mcp-"));
   const configPath = path.join(tempDir, "mcp.json");
   const mergedServers: Record<string, unknown> = {};
   if (baseConfigPath) {
@@ -544,11 +544,11 @@ async function mergeMcpConfigFiles(baseConfigPath: string | undefined, loomConfi
       const parsed = JSON.parse(await readFile(baseConfigPath, "utf8")) as { mcpServers?: Record<string, unknown> };
       Object.assign(mergedServers, parsed.mcpServers ?? {});
     } catch {
-      // If the scoped config is unreadable, keep the Loom MCP server available.
+      // If the scoped config is unreadable, keep the Heddle MCP server available.
     }
   }
-  const loomParsed = JSON.parse(await readFile(loomConfigPath, "utf8")) as { mcpServers?: Record<string, unknown> };
-  Object.assign(mergedServers, loomParsed.mcpServers ?? {});
+  const heddleParsed = JSON.parse(await readFile(heddleConfigPath, "utf8")) as { mcpServers?: Record<string, unknown> };
+  Object.assign(mergedServers, heddleParsed.mcpServers ?? {});
   await writeFile(configPath, JSON.stringify({ mcpServers: mergedServers }, null, 2), "utf8");
   return {
     configPath,
@@ -559,7 +559,7 @@ async function mergeMcpConfigFiles(baseConfigPath: string | undefined, loomConfi
 }
 
 function buildClaudePrompt(args: CliArgs, reportPath: string, delegation: string): string {
-  return `You are the "${args.name}" subagent in a Loom flow. A single BRIEFING follows. Execute it autonomously using as many tool calls as needed. Do not ask follow-up questions back to the caller.
+  return `You are the "${args.name}" subagent in a Heddle flow. A single BRIEFING follows. Execute it autonomously using as many tool calls as needed. Do not ask follow-up questions back to the caller.
 
 When finished, write the REPORT to ${reportPath} in this exact format:
 
@@ -581,7 +581,7 @@ ${args.briefing}
 }
 
 function buildCodexPrompt(args: CliArgs, reportPath: string, delegation: string): string {
-  return `You are the "${args.name}" subagent in a Loom flow. A single BRIEFING follows. Execute it autonomously, using as many tool calls as needed. Do not ask follow-up questions back to the caller.
+  return `You are the "${args.name}" subagent in a Heddle flow. A single BRIEFING follows. Execute it autonomously, using as many tool calls as needed. Do not ask follow-up questions back to the caller.
 
 When finished, write the REPORT to ${reportPath} in this exact format:
 
@@ -630,13 +630,13 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
       skills: new Map(scopedSkills.map((s) => [s.name, s])),
     });
     delegation = buildDelegationPrompt(ctx.selfAgent, args.name);
-    const loomMcpConfig = delegation.trim()
-      ? await createLoomMcpConfig(args, ctx.flow, configuredAgent)
+    const heddleMcpConfig = delegation.trim()
+      ? await createHeddleMcpConfig(args, ctx.flow, configuredAgent)
       : undefined;
-    if (loomMcpConfig) {
-      cleanup.push(loomMcpConfig.cleanup);
+    if (heddleMcpConfig) {
+      cleanup.push(heddleMcpConfig.cleanup);
     }
-    isolatedHome = await createSubagentHome(args, ctx.flow, configuredAgent, scopedHooks, scopedSkills, loomMcpConfig?.codexConfigToml);
+    isolatedHome = await createSubagentHome(args, ctx.flow, configuredAgent, scopedHooks, scopedSkills, heddleMcpConfig?.codexConfigToml);
     cleanup.push(async () => { await rm(isolatedHome!, { recursive: true, force: true }).catch(() => undefined); });
     // Read MCP server definitions from the REAL user home — the fresh
     // isolated HOME has empty mcpServers, so passing it as homeDir would
@@ -647,8 +647,8 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
         await rm(path.dirname(scopedMcpConfigPath!), { recursive: true, force: true }).catch(() => undefined);
       });
     }
-    if (loomMcpConfig) {
-      const merged = await mergeMcpConfigFiles(scopedMcpConfigPath, loomMcpConfig.claudeConfigPath);
+    if (heddleMcpConfig) {
+      const merged = await mergeMcpConfigFiles(scopedMcpConfigPath, heddleMcpConfig.claudeConfigPath);
       effectiveMcpConfigPath = merged.configPath;
       cleanup.push(merged.cleanup);
     } else {
@@ -658,10 +658,10 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
 
   const childEnv: Record<string, string> = {
     ...process.env,
-    LOOM_REPORT_FILE: reportPath,
-    LOOM_PARENT_AGENT: args.name,
-    LOOM_PARENT_DEPTH: String(args.parentDepth + 1),
-    LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
+    HEDDLE_REPORT_FILE: reportPath,
+    HEDDLE_PARENT_AGENT: args.name,
+    HEDDLE_PARENT_DEPTH: String(args.parentDepth + 1),
+    HEDDLE_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
   };
   if (isolatedHome) {
     childEnv.HOME = isolatedHome;
@@ -671,7 +671,7 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
     childEnv.CODEX_CONFIG_DIR = path.join(isolatedHome, ".codex");
   }
   if (effectiveMcpConfigPath) {
-    childEnv.LOOM_MCP_CONFIG_PATH = effectiveMcpConfigPath;
+    childEnv.HEDDLE_MCP_CONFIG_PATH = effectiveMcpConfigPath;
   }
 
   let command: string;
@@ -836,7 +836,7 @@ async function main(): Promise<void> {
   const args: CliArgs = parsedArgs;
   args.briefing = await readBriefing(args.briefing, args.briefingFile);
   if (!args.briefing) {
-    console.error("loom-subagent: empty BRIEFING. Pass a non-empty task with --briefing, --briefing-file, a final positional argument after --, or a stdin pipe.");
+    console.error("heddle-subagent: empty BRIEFING. Pass a non-empty task with --briefing, --briefing-file, a final positional argument after --, or a stdin pipe.");
     process.exit(2);
   }
 
@@ -855,7 +855,7 @@ async function main(): Promise<void> {
     args,
     "tool_use",
     `${args.name} spawned (${args.backend}${args.model ? ` ${args.model}` : ""}) — ${briefingPreview.slice(0, 140)}`,
-    { toolName: "loom-subagent" },
+    { toolName: "heddle-subagent" },
   );
 
   const exitCode = await runBackend(args, reportPath);
@@ -881,7 +881,7 @@ async function main(): Promise<void> {
       // best effort — worst case the full REPORT is in reportPath still
     }
     const head = report.slice(0, MAX_REPORT_CHARS);
-    report = `${head}\n\n--- [loom-subagent] REPORT truncated at ${MAX_REPORT_CHARS} chars. full text: ${artifactPath} ---\n`;
+    report = `${head}\n\n--- [heddle-subagent] REPORT truncated at ${MAX_REPORT_CHARS} chars. full text: ${artifactPath} ---\n`;
   }
 
   const firstLine = report.split("\n").find((line) => line.trim().length > 0) ?? "";
@@ -889,7 +889,7 @@ async function main(): Promise<void> {
     args,
     exitCode === 0 ? "tool_result" : "error",
     `${args.name} ${exitCode === 0 ? "done" : `exit ${exitCode}`} — ${firstLine.slice(0, 140)}`,
-    { toolName: "loom-subagent" },
+    { toolName: "heddle-subagent" },
   );
 
   process.stdout.write(report);
@@ -898,6 +898,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error("loom-subagent: fatal", error);
+  console.error("heddle-subagent: fatal", error);
   process.exit(1);
 });

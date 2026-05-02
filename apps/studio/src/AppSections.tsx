@@ -29,7 +29,7 @@ function applyAgentRuntimeState(
   return nodes.map((node) => {
     const agentName = node.id.split("/").pop() ?? node.id;
     const runtime = agentRuntimes[agentName];
-    const stateClass = runtime ? `loom-agent--state-${runtime.state}` : "";
+    const stateClass = runtime ? `heddle-agent--state-${runtime.state}` : "";
     return {
       ...node,
       className: `${node.className ?? ""} ${stateClass}`.trim(),
@@ -41,7 +41,7 @@ function applyAgentSelection(nodes: Node[], selectedPath: string[]): Node[] {
   const selectedId = selectedPath.join("/");
   return nodes.map((node) => ({
     ...node,
-    className: `${node.className ?? ""} ${node.id === selectedId ? "loom-agent--selected" : ""}`.trim(),
+    className: `${node.className ?? ""} ${node.id === selectedId ? "heddle-agent--selected" : ""}`.trim(),
   }));
 }
 
@@ -266,7 +266,7 @@ export function WorkflowTab() {
         <p className="m-0 mb-2 text-xs font-semibold uppercase tracking-wider text-blue-600">
           Flows
         </p>
-        <h1 className="m-0 text-xl font-semibold text-slate-900">Loom Studio</h1>
+        <h1 className="m-0 text-xl font-semibold text-slate-900">Heddle Studio</h1>
         <p className="mt-2 text-sm text-slate-600 leading-relaxed">
           Pick a flow, configure the agent hierarchy, and run the orchestrator live.
         </p>
@@ -331,7 +331,7 @@ export function WorkflowTab() {
       <main className="flex flex-col min-h-0">
         <div className="px-6 pt-5 flex items-center justify-between gap-4">
           <span className="text-lg font-semibold text-slate-900">
-            {flowDraft ? flowDraft.name : "Loom Studio"}
+            {flowDraft ? flowDraft.name : "Heddle Studio"}
           </span>
           <SaveControls />
         </div>
@@ -522,7 +522,7 @@ function agentStateDot(state: AgentNode["state"]): string {
 function isLeaderViewEvent(event: RunDetailEvent): boolean {
   if (!event.agentName) return true;
   if ((event.agentDepth ?? 0) === 0) return true;
-  return event.toolName === "loom-subagent";
+  return event.toolName === "heddle-subagent";
 }
 
 export function RunsPanel() {

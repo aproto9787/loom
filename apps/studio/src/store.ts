@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, ProviderProfile, RoleDefinition, RunEvent, RunSource, RunStatus, SkillDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, ProviderProfile, RoleDefinition, RunEvent, RunSource, RunStatus, SkillDefinition } from "@aproto9787/heddle-core";
 import { duplicateFlow as duplicateFlowRequest } from "./api.js";
 
 // --- Agent path helpers ---

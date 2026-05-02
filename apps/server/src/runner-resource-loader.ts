@@ -7,4 +7,4 @@ export {
   resolveAgentResources,
   type AgentResourceScope,
   type RunResources,
-} from "@aproto9787/loom-runtime";
+} from "@aproto9787/heddle-runtime";

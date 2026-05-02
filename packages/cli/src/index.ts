@@ -9,10 +9,10 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig, AgentType, TimelineEvent } from "@aproto9787/loom-core";
-import { runLoomMcpServer } from "@aproto9787/loom-mcp";
-import { loadFlow } from "@aproto9787/loom-runtime";
-import { buildConfiguredAgent } from "@aproto9787/loom-runtime";
+import type { AgentConfig, AgentType, TimelineEvent } from "@aproto9787/heddle-core";
+import { runHeddleMcpServer } from "@aproto9787/heddle-mcp";
+import { loadFlow } from "@aproto9787/heddle-runtime";
+import { buildConfiguredAgent } from "@aproto9787/heddle-runtime";
 import { createCodexInstructionHome, type CodexInstructionHome } from "./codex-home.js";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
 import { buildHeadlessPrompt } from "./session-prompts.js";
@@ -27,14 +27,14 @@ const packageExamplesDir = path.join(packageRoot, "examples");
 function handleFlags(): boolean {
   const args = process.argv.slice(2);
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`loom v${VERSION} — interactive flow launcher
+    console.log(`heddle v${VERSION} — interactive flow launcher
 
 Usage:
-  loom
-  loom mcp
-  loom --flow <path-to-flow.yaml>
-  loom <path-to-flow.yaml>
-  loom --flow <path-to-flow.yaml> --prompt "Task" --headless
+  heddle
+  heddle mcp
+  heddle --flow <path-to-flow.yaml>
+  heddle <path-to-flow.yaml>
+  heddle --flow <path-to-flow.yaml> --prompt "Task" --headless
 
 Options:
   -f, --flow <path>       Launch a specific flow without the selection prompt
@@ -46,12 +46,12 @@ Options:
   -h, --help              Show this help
   -v, --version           Show version
 
-Without --headless, Loom scans for flow YAML files in the current
+Without --headless, Heddle scans for flow YAML files in the current
 directory and examples/, presents an interactive selection menu, and
 spawns the chosen flow's orchestrator with the host terminal.
 
-\`loom mcp\` starts the stdio MCP delegation bridge for a Loom host
-leader. It expects LOOM_FLOW_PATH, LOOM_AGENT, and LOOM_SUBAGENT_BIN
+\`heddle mcp\` starts the stdio MCP delegation bridge for a Heddle host
+leader. It expects HEDDLE_FLOW_PATH, HEDDLE_AGENT, and HEDDLE_SUBAGENT_BIN
 in the environment.`);
     return true;
   }
@@ -78,7 +78,7 @@ function parseCliOptions(argv = process.argv.slice(2)): CliOptions {
   const readValue = (index: number, name: string, allowDashValue = false): [string | undefined, number] => {
     const next = argv[index + 1];
     if (next === undefined || (!allowDashValue && next.startsWith("-"))) {
-      throw new Error(`loom: ${name} requires a value`);
+      throw new Error(`heddle: ${name} requires a value`);
     }
     return [next, index + 1];
   };
@@ -144,7 +144,7 @@ function parseCliOptions(argv = process.argv.slice(2)): CliOptions {
       continue;
     }
     if (cur.startsWith("-")) {
-      throw new Error(`loom: unknown option ${cur}`);
+      throw new Error(`heddle: unknown option ${cur}`);
     }
     positional.push(cur);
   }
@@ -188,7 +188,7 @@ interface SelectionResult {
 interface RunRegistration {
   runId: string;
   cleanup: (exitCode: number) => Promise<void>;
-  postEvents: (events: LoomRunEvent[]) => Promise<void>;
+  postEvents: (events: HeddleRunEvent[]) => Promise<void>;
 }
 
 interface LeaderMcpConfig {
@@ -197,7 +197,7 @@ interface LeaderMcpConfig {
   cleanup: () => Promise<void>;
 }
 
-type LoomRunEvent = TimelineEvent;
+type HeddleRunEvent = TimelineEvent;
 
 interface TranscriptTailState {
   readonly transcriptDir: string;
@@ -316,7 +316,7 @@ function buildCodexMcpConfigToml(env: Record<string, string>, command: string, a
     .join(", ");
   const argsArray = args.map(quoteTomlString).join(", ");
   return [
-    "[mcp_servers.loom]",
+    "[mcp_servers.heddle]",
     `command = ${quoteTomlString(command)}`,
     `args = [${argsArray}]`,
     `env = { ${envEntries} }`,
@@ -330,27 +330,27 @@ async function createLeaderMcpConfig(
   registration: RunRegistration,
   serverOrigin: string,
 ): Promise<LeaderMcpConfig> {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-leader-mcp-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "heddle-leader-mcp-"));
   const cliBin = fileURLToPath(new URL("./index.js", import.meta.url));
   const subagentBin = fileURLToPath(new URL("./subagent-launcher.js", import.meta.url));
   const env: Record<string, string> = {
-    LOOM_FLOW_PATH: flow.absolutePath,
-    LOOM_FLOW_NAME: flow.flow.name,
-    LOOM_FLOW_CWD: flowCwd,
-    LOOM_AGENT: configuredAgent.name,
-    LOOM_AGENT_TYPE: configuredAgent.type,
-    LOOM_RUN_ID: registration.runId,
-    LOOM_SERVER_ORIGIN: serverOrigin,
-    LOOM_PARENT_AGENT: configuredAgent.name,
-    LOOM_PARENT_DEPTH: "0",
-    LOOM_SUBAGENT_BIN: subagentBin,
+    HEDDLE_FLOW_PATH: flow.absolutePath,
+    HEDDLE_FLOW_NAME: flow.flow.name,
+    HEDDLE_FLOW_CWD: flowCwd,
+    HEDDLE_AGENT: configuredAgent.name,
+    HEDDLE_AGENT_TYPE: configuredAgent.type,
+    HEDDLE_RUN_ID: registration.runId,
+    HEDDLE_SERVER_ORIGIN: serverOrigin,
+    HEDDLE_PARENT_AGENT: configuredAgent.name,
+    HEDDLE_PARENT_DEPTH: "0",
+    HEDDLE_SUBAGENT_BIN: subagentBin,
   };
   const claudeConfigPath = path.join(tempDir, "mcp.json");
   await writeFile(
     claudeConfigPath,
     JSON.stringify({
       mcpServers: {
-        loom: {
+        heddle: {
           command: process.execPath,
           args: [cliBin, "mcp"],
           env,
@@ -369,7 +369,7 @@ async function createLeaderMcpConfig(
 }
 
 function getServerOrigin(explicitOrigin?: string): string {
-  return explicitOrigin ?? process.env.LOOM_SERVER_ORIGIN ?? "http://localhost:8787";
+  return explicitOrigin ?? process.env.HEDDLE_SERVER_ORIGIN ?? "http://localhost:8787";
 }
 
 function summarizeText(value: string | undefined, maxLength = 120): string | undefined {
@@ -400,7 +400,7 @@ function extractMessageText(message: unknown): string | undefined {
   return undefined;
 }
 
-function mapTranscriptMessageType(role: string | undefined): LoomRunEvent["type"] {
+function mapTranscriptMessageType(role: string | undefined): HeddleRunEvent["type"] {
   if (role === "user") return "user";
   if (role === "assistant") return "assistant";
   return "error";
@@ -410,7 +410,7 @@ function coerceAgentDepth(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function mapTranscriptLine(runId: string, line: string, leaderName = "leader"): LoomRunEvent | null {
+function mapTranscriptLine(runId: string, line: string, leaderName = "leader"): HeddleRunEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
@@ -606,7 +606,7 @@ function mapTranscriptLine(runId: string, line: string, leaderName = "leader"): 
   return null;
 }
 
-function mapCodexHeadlessLine(runId: string, line: string, leaderName = "leader"): LoomRunEvent | null {
+function mapCodexHeadlessLine(runId: string, line: string, leaderName = "leader"): HeddleRunEvent | null {
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(line.trim()) as Record<string, unknown>;
@@ -641,7 +641,7 @@ function mapCodexHeadlessLine(runId: string, line: string, leaderName = "leader"
   return { runId, ts, type: "tool_use", summary: summarizeText(itemType ?? "codex item"), toolName: itemType, agentName: leaderName, agentDepth: 0, agentKind: "codex", raw: parsed };
 }
 
-function mapHeadlessStdoutLine(runId: string, line: string, agentType: AgentType, leaderName = "leader"): LoomRunEvent[] {
+function mapHeadlessStdoutLine(runId: string, line: string, agentType: AgentType, leaderName = "leader"): HeddleRunEvent[] {
   if (agentType === "codex") {
     const mapped = mapCodexHeadlessLine(runId, line, leaderName);
     return mapped ? [mapped] : [];
@@ -650,7 +650,7 @@ function mapHeadlessStdoutLine(runId: string, line: string, agentType: AgentType
   return mapped ? [mapped] : [];
 }
 
-async function postRunEvents(origin: string, runId: string, events: LoomRunEvent[]): Promise<void> {
+async function postRunEvents(origin: string, runId: string, events: HeddleRunEvent[]): Promise<void> {
   if (events.length === 0) return;
   try {
     await fetch(`${origin}/runs/${runId}/events`, {
@@ -663,7 +663,7 @@ async function postRunEvents(origin: string, runId: string, events: LoomRunEvent
   }
 }
 
-async function readTranscriptEvents(runId: string, transcriptPath: string, offset: number): Promise<{ events: LoomRunEvent[]; nextOffset: number }> {
+async function readTranscriptEvents(runId: string, transcriptPath: string, offset: number): Promise<{ events: HeddleRunEvent[]; nextOffset: number }> {
   let content: string;
   try {
     content = await readFile(transcriptPath, "utf8");
@@ -681,7 +681,7 @@ async function readTranscriptEvents(runId: string, transcriptPath: string, offse
   const completeLines = trailingNewline ? lines : lines.slice(0, -1);
   const consumedLength = completeLines.reduce((total, entry) => total + entry.length + 1, 0);
   return {
-    events: completeLines.map((entry) => mapTranscriptLine(runId, entry)).filter((entry): entry is LoomRunEvent => entry !== null),
+    events: completeLines.map((entry) => mapTranscriptLine(runId, entry)).filter((entry): entry is HeddleRunEvent => entry !== null),
     nextOffset: offset + consumedLength,
   };
 }
@@ -750,8 +750,8 @@ async function createTranscriptTail(runId: string, homeDir: string, cwd: string,
   let eventCount = 0;
   let polling = Promise.resolve();
 
-  const dedupeEvents = (file: string, startOffset: number, lines: string[], events: LoomRunEvent[]): LoomRunEvent[] => {
-    const deduped: LoomRunEvent[] = [];
+  const dedupeEvents = (file: string, startOffset: number, lines: string[], events: HeddleRunEvent[]): HeddleRunEvent[] => {
+    const deduped: HeddleRunEvent[] = [];
     let offset = startOffset;
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
@@ -765,7 +765,7 @@ async function createTranscriptTail(runId: string, homeDir: string, cwd: string,
     return deduped;
   };
 
-  const readDelta = async (file: string, startOffset: number): Promise<{ events: LoomRunEvent[]; nextOffset: number }> => {
+  const readDelta = async (file: string, startOffset: number): Promise<{ events: HeddleRunEvent[]; nextOffset: number }> => {
     let content: string;
     try {
       content = await readFile(file, "utf8");
@@ -789,7 +789,7 @@ async function createTranscriptTail(runId: string, homeDir: string, cwd: string,
       : completeLines.reduce((total, entry) => total + entry.length + 1, 0);
     const mappedEvents = completeLines
       .map((entry) => mapTranscriptLine(runId, entry, rootAgentName))
-      .filter((entry): entry is LoomRunEvent => entry !== null);
+      .filter((entry): entry is HeddleRunEvent => entry !== null);
     const eventLines = completeLines.filter((entry) => mapTranscriptLine(runId, entry, rootAgentName) !== null);
     return {
       events: dedupeEvents(file, startOffset, eventLines, mappedEvents),
@@ -908,7 +908,7 @@ async function reportCliRunStart(
 
   return {
     runId,
-    postEvents: async (events: LoomRunEvent[]) => {
+    postEvents: async (events: HeddleRunEvent[]) => {
       await postRunEvents(origin, runId, events);
     },
     cleanup: async (exitCode: number) => {
@@ -937,7 +937,7 @@ function summarizeTeamMembers(agent: AgentConfig): string {
 
   const lines = [
     "# Team members available",
-    "<!-- Delegate only through Loom MCP delegation tools. Do not use TeamCreate, Agent(name=...), or direct loom-subagent Bash commands. -->",
+    "<!-- Delegate only through Heddle MCP delegation tools. Do not use TeamCreate, Agent(name=...), or direct heddle-subagent Bash commands. -->",
     ...children.map((child) => `- ${child.name} (${child.type}): ${child.system ?? ""}`.trimEnd()),
   ];
 
@@ -1008,16 +1008,16 @@ async function runHeadlessAgent(
   const childEnv = {
     ...process.env,
     ...extraEnv,
-    LOOM_FLOW_PATH: flow.absolutePath,
-    LOOM_FLOW_NAME: flow.flow.name,
-    LOOM_FLOW_CWD: flowCwd,
-    LOOM_AGENT: configuredAgent.name,
-    LOOM_AGENT_TYPE: configuredAgent.type,
-    LOOM_RUN_ID: registration.runId,
-    LOOM_SERVER_ORIGIN: serverOrigin,
-    LOOM_PARENT_AGENT: configuredAgent.name,
-    LOOM_PARENT_DEPTH: "0",
-    LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
+    HEDDLE_FLOW_PATH: flow.absolutePath,
+    HEDDLE_FLOW_NAME: flow.flow.name,
+    HEDDLE_FLOW_CWD: flowCwd,
+    HEDDLE_AGENT: configuredAgent.name,
+    HEDDLE_AGENT_TYPE: configuredAgent.type,
+    HEDDLE_RUN_ID: registration.runId,
+    HEDDLE_SERVER_ORIGIN: serverOrigin,
+    HEDDLE_PARENT_AGENT: configuredAgent.name,
+    HEDDLE_PARENT_DEPTH: "0",
+    HEDDLE_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
   };
 
   return await new Promise<number>((resolve, reject) => {
@@ -1078,7 +1078,7 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
   const flowCwd = resolveFlowCwd(flow);
   const userPrompt = await readHeadlessPrompt(options);
   if (options.headless && !userPrompt) {
-    throw new Error("loom: --headless requires --prompt, --prompt-file, or piped stdin");
+    throw new Error("heddle: --headless requires --prompt, --prompt-file, or piped stdin");
   }
   const registration = await reportCliRunStart(flow, configuredAgent.type, options, userPrompt ?? "");
   const leaderMcpConfig = await createLeaderMcpConfig(flow, configuredAgent, flowCwd, registration, getServerOrigin(options.serverOrigin));
@@ -1163,16 +1163,16 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
     stdio: "inherit",
     env: {
       ...process.env,
-      LOOM_FLOW_PATH: flow.absolutePath,
-      LOOM_FLOW_NAME: flow.flow.name,
-      LOOM_FLOW_CWD: flowCwd,
-      LOOM_AGENT: agent.name,
-      LOOM_AGENT_TYPE: agent.type,
-      LOOM_RUN_ID: registration.runId,
-      LOOM_SERVER_ORIGIN: getServerOrigin(options.serverOrigin),
-      LOOM_PARENT_AGENT: configuredAgent.name,
-      LOOM_PARENT_DEPTH: "0",
-      LOOM_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
+      HEDDLE_FLOW_PATH: flow.absolutePath,
+      HEDDLE_FLOW_NAME: flow.flow.name,
+      HEDDLE_FLOW_CWD: flowCwd,
+      HEDDLE_AGENT: agent.name,
+      HEDDLE_AGENT_TYPE: agent.type,
+      HEDDLE_RUN_ID: registration.runId,
+      HEDDLE_SERVER_ORIGIN: getServerOrigin(options.serverOrigin),
+      HEDDLE_PARENT_AGENT: configuredAgent.name,
+      HEDDLE_PARENT_DEPTH: "0",
+      HEDDLE_SUBAGENT_BIN: fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
       ...(codexInstructionHome
         ? {
             CODEX_HOME: codexInstructionHome.codexHome,
@@ -1272,10 +1272,10 @@ async function promptForSelection(flows: LoadedCliFlow[]): Promise<SelectionActi
 
 async function main(): Promise<void> {
   if (process.argv[2] === "mcp") {
-    await runLoomMcpServer({
+    await runHeddleMcpServer({
       env: {
         ...process.env,
-        LOOM_SUBAGENT_BIN: process.env.LOOM_SUBAGENT_BIN ?? fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
+        HEDDLE_SUBAGENT_BIN: process.env.HEDDLE_SUBAGENT_BIN ?? fileURLToPath(new URL("./subagent-launcher.js", import.meta.url)),
       },
     });
     return;
@@ -1290,7 +1290,7 @@ async function main(): Promise<void> {
     return;
   }
   if (options.headless) {
-    throw new Error("loom: --headless requires --flow <path>");
+    throw new Error("heddle: --headless requires --flow <path>");
   }
 
   const flowPaths = await listFlowPaths(cwd);
@@ -1308,13 +1308,13 @@ async function main(): Promise<void> {
     console.log("No flow YAML files found. Launching flow-creation prompt.\n");
   }
   if (!process.stdin.isTTY) {
-    throw new Error("loom: interactive flow selection requires a TTY. Pass --flow <path> or a positional flow path to skip the prompt.");
+    throw new Error("heddle: interactive flow selection requires a TTY. Pass --flow <path> or a positional flow path to skip the prompt.");
   }
 
   const selection = await promptForSelection(flows);
   if (selection.kind === "created") {
     console.log(`\nCreated ${selection.absolutePath}`);
-    console.log("Edit the flow YAML then run 'loom' again to launch it.");
+    console.log("Edit the flow YAML then run 'heddle' again to launch it.");
     return;
   }
   const exitCode = await launchAgent(selection.flow, options);

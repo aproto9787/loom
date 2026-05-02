@@ -3,11 +3,11 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { LoomMcpServer } from "./index.js";
-import type { RunSubagentTaskResult } from "@aproto9787/loom-runtime";
+import { HeddleMcpServer } from "./index.js";
+import type { RunSubagentTaskResult } from "@aproto9787/heddle-runtime";
 
 async function createTestFlow(): Promise<{ root: string; flowPath: string }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "loom-mcp-test-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "heddle-mcp-test-"));
   const flowPath = path.join(root, "flow.yaml");
   await writeFile(flowPath, `
 name: MCP Test
@@ -30,12 +30,12 @@ orchestrator:
 test("tools/list exposes only enabled direct children", async () => {
   const { root, flowPath } = await createTestFlow();
   try {
-    const server = new LoomMcpServer({
+    const server = new HeddleMcpServer({
       env: {
-        LOOM_FLOW_PATH: flowPath,
-        LOOM_FLOW_CWD: root,
-        LOOM_AGENT: "leader",
-        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
       },
     });
 
@@ -43,21 +43,21 @@ test("tools/list exposes only enabled direct children", async () => {
     const tools = (response?.result as { tools: Array<{ name: string; inputSchema: { properties: { agent?: { enum: string[] } } } }> }).tools;
     const delegateAgent = tools.find((tool) => tool.inputSchema.properties.agent)?.inputSchema.properties.agent;
     assert.deepEqual(delegateAgent?.enum, ["reviewer"]);
-    assert.ok(tools.some((tool) => tool.name === "loom_delegate_reviewer"));
+    assert.ok(tools.some((tool) => tool.name === "heddle_delegate_reviewer"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("loom_delegate rejects non-child agents before runner execution", async () => {
+test("heddle_delegate rejects non-child agents before runner execution", async () => {
   const { root, flowPath } = await createTestFlow();
   try {
-    const server = new LoomMcpServer({
+    const server = new HeddleMcpServer({
       env: {
-        LOOM_FLOW_PATH: flowPath,
-        LOOM_FLOW_CWD: root,
-        LOOM_AGENT: "leader",
-        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
       },
       delegateRunner: async () => {
         throw new Error("runner should not execute");
@@ -68,7 +68,7 @@ test("loom_delegate rejects non-child agents before runner execution", async () 
       id: 2,
       method: "tools/call",
       params: {
-        name: "loom_delegate",
+        name: "heddle_delegate",
         arguments: { agent: "disabled", briefing: "review" },
       },
     });
@@ -81,7 +81,7 @@ test("loom_delegate rejects non-child agents before runner execution", async () 
 });
 
 test("dynamic delegate tools avoid reserved MCP tool names", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "loom-mcp-test-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "heddle-mcp-test-"));
   const flowPath = path.join(root, "flow.yaml");
   await writeFile(flowPath, `
 name: Reserved Tool Test
@@ -95,25 +95,25 @@ orchestrator:
       system: Reserved name worker.
 `, "utf8");
   try {
-    const server = new LoomMcpServer({
+    const server = new HeddleMcpServer({
       env: {
-        LOOM_FLOW_PATH: flowPath,
-        LOOM_FLOW_CWD: root,
-        LOOM_AGENT: "leader",
-        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
       },
     });
 
     const response = await server.handleRequest({ id: 3, method: "tools/list" });
     const tools = (response?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name);
-    assert.ok(tools.includes("loom_delegate_many"));
-    assert.ok(tools.includes("loom_delegate_many_2"));
+    assert.ok(tools.includes("heddle_delegate_many"));
+    assert.ok(tools.includes("heddle_delegate_many_2"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-function parseToolText(response: Awaited<ReturnType<LoomMcpServer["handleRequest"]>>): Record<string, unknown> {
+function parseToolText(response: Awaited<ReturnType<HeddleMcpServer["handleRequest"]>>): Record<string, unknown> {
   const content = (response?.result as { content: Array<{ text: string }> }).content;
   return JSON.parse(content[0]!.text) as Record<string, unknown>;
 }
@@ -135,12 +135,12 @@ test("dynamic delegate tools route to their child agent without waiting", async 
   const { root, flowPath } = await createTestFlow();
   try {
     let delegatedAgent = "";
-    const server = new LoomMcpServer({
+    const server = new HeddleMcpServer({
       env: {
-        LOOM_FLOW_PATH: flowPath,
-        LOOM_FLOW_CWD: root,
-        LOOM_AGENT: "leader",
-        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
       },
       delegateRunner: async (options) => {
         delegatedAgent = options.agent.name;
@@ -152,7 +152,7 @@ test("dynamic delegate tools route to their child agent without waiting", async 
       id: 3,
       method: "tools/call",
       params: {
-        name: "loom_delegate_reviewer",
+        name: "heddle_delegate_reviewer",
         arguments: { briefing: "review the patch", wait: true },
       },
     });
@@ -172,12 +172,12 @@ test("dynamic delegate tools return task ids without waiting by default", async 
     const runnerPromise = new Promise<RunSubagentTaskResult>((resolve) => {
       resolveRunner = resolve;
     });
-    const server = new LoomMcpServer({
+    const server = new HeddleMcpServer({
       env: {
-        LOOM_FLOW_PATH: flowPath,
-        LOOM_FLOW_CWD: root,
-        LOOM_AGENT: "leader",
-        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
       },
       delegateRunner: async () => runnerPromise,
     });
@@ -186,7 +186,7 @@ test("dynamic delegate tools return task ids without waiting by default", async 
       id: 4,
       method: "tools/call",
       params: {
-        name: "loom_delegate_reviewer",
+        name: "heddle_delegate_reviewer",
         arguments: { briefing: "slow review" },
       },
     });
@@ -202,20 +202,20 @@ test("dynamic delegate tools return task ids without waiting by default", async 
   }
 });
 
-test("loom_delegate returns a task id before the MCP sync wait cap is exceeded", async () => {
+test("heddle_delegate returns a task id before the MCP sync wait cap is exceeded", async () => {
   const { root, flowPath } = await createTestFlow();
   try {
     let resolveRunner!: (value: RunSubagentTaskResult) => void;
     const runnerPromise = new Promise<RunSubagentTaskResult>((resolve) => {
       resolveRunner = resolve;
     });
-    const server = new LoomMcpServer({
+    const server = new HeddleMcpServer({
       env: {
-        LOOM_FLOW_PATH: flowPath,
-        LOOM_FLOW_CWD: root,
-        LOOM_AGENT: "leader",
-        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
-        LOOM_MCP_SYNC_WAIT_CAP_MS: "5",
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
+        HEDDLE_MCP_SYNC_WAIT_CAP_MS: "5",
       },
       delegateRunner: async () => runnerPromise,
     });
@@ -224,7 +224,7 @@ test("loom_delegate returns a task id before the MCP sync wait cap is exceeded",
       id: 5,
       method: "tools/call",
       params: {
-        name: "loom_delegate",
+        name: "heddle_delegate",
         arguments: {
           agent: "reviewer",
           briefing: "slow review",
@@ -248,7 +248,7 @@ test("loom_delegate returns a task id before the MCP sync wait cap is exceeded",
       id: 6,
       method: "tools/call",
       params: {
-        name: "loom_read_report",
+        name: "heddle_read_report",
         arguments: { taskId: task.taskId },
       },
     });
@@ -259,16 +259,16 @@ test("loom_delegate returns a task id before the MCP sync wait cap is exceeded",
   }
 });
 
-test("loom_delegate_many applies top-level timeout to tasks without their own timeout", async () => {
+test("heddle_delegate_many applies top-level timeout to tasks without their own timeout", async () => {
   const { root, flowPath } = await createTestFlow();
   try {
     const timeouts: number[] = [];
-    const server = new LoomMcpServer({
+    const server = new HeddleMcpServer({
       env: {
-        LOOM_FLOW_PATH: flowPath,
-        LOOM_FLOW_CWD: root,
-        LOOM_AGENT: "leader",
-        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
       },
       delegateRunner: async (options) => {
         timeouts.push(options.timeoutSeconds ?? 0);
@@ -280,7 +280,7 @@ test("loom_delegate_many applies top-level timeout to tasks without their own ti
       id: 4,
       method: "tools/call",
       params: {
-        name: "loom_delegate_many",
+        name: "heddle_delegate_many",
         arguments: {
           timeoutSeconds: 17,
           tasks: [{ agent: "reviewer", briefing: "review" }],
@@ -294,19 +294,19 @@ test("loom_delegate_many applies top-level timeout to tasks without their own ti
   }
 });
 
-test("loom_delegate_many returns task ids without waiting for slow children", async () => {
+test("heddle_delegate_many returns task ids without waiting for slow children", async () => {
   const { root, flowPath } = await createTestFlow();
   try {
     let resolveRunner!: (value: RunSubagentTaskResult) => void;
     const runnerPromise = new Promise<RunSubagentTaskResult>((resolve) => {
       resolveRunner = resolve;
     });
-    const server = new LoomMcpServer({
+    const server = new HeddleMcpServer({
       env: {
-        LOOM_FLOW_PATH: flowPath,
-        LOOM_FLOW_CWD: root,
-        LOOM_AGENT: "leader",
-        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
       },
       delegateRunner: async () => runnerPromise,
     });
@@ -315,7 +315,7 @@ test("loom_delegate_many returns task ids without waiting for slow children", as
       id: 5,
       method: "tools/call",
       params: {
-        name: "loom_delegate_many",
+        name: "heddle_delegate_many",
         arguments: {
           tasks: [{ agent: "reviewer", briefing: "slow review" }],
         },
@@ -344,7 +344,7 @@ test("loom_delegate_many returns task ids without waiting for slow children", as
       id: 6,
       method: "tools/call",
       params: {
-        name: "loom_read_report",
+        name: "heddle_read_report",
         arguments: { taskId: results[0]!.taskId },
       },
     });
@@ -355,15 +355,15 @@ test("loom_delegate_many returns task ids without waiting for slow children", as
   }
 });
 
-test("loom_cancel aborts a running async task", async () => {
+test("heddle_cancel aborts a running async task", async () => {
   const { root, flowPath } = await createTestFlow();
   try {
-    const server = new LoomMcpServer({
+    const server = new HeddleMcpServer({
       env: {
-        LOOM_FLOW_PATH: flowPath,
-        LOOM_FLOW_CWD: root,
-        LOOM_AGENT: "leader",
-        LOOM_SUBAGENT_BIN: "/tmp/loom-subagent.js",
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
       },
       delegateRunner: async (options) => new Promise((resolve) => {
         options.signal?.addEventListener("abort", () => {
@@ -376,7 +376,7 @@ test("loom_cancel aborts a running async task", async () => {
       id: 5,
       method: "tools/call",
       params: {
-        name: "loom_delegate",
+        name: "heddle_delegate",
         arguments: { agent: "reviewer", briefing: "review", wait: false },
       },
     });
@@ -386,7 +386,7 @@ test("loom_cancel aborts a running async task", async () => {
       id: 6,
       method: "tools/call",
       params: {
-        name: "loom_cancel",
+        name: "heddle_cancel",
         arguments: { taskId },
       },
     });

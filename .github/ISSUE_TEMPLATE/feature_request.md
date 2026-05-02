@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an improvement for Loom
+about: Suggest an improvement for Heddle
 title: "[Feature]: "
 labels: enhancement
 assignees: ""

@@ -5,10 +5,10 @@ import path from "node:path";
 import Fastify from "fastify";
 import { z } from "zod";
 import YAML from "yaml";
-import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@aproto9787/loom-core";
-import { discoverProviderProfiles } from "@aproto9787/loom-runtime";
+import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@aproto9787/heddle-core";
+import { discoverProviderProfiles } from "@aproto9787/heddle-runtime";
 import type { PersistedRunEvent } from "./trace-store.js";
-import { validateFlow } from "@aproto9787/loom-core";
+import { validateFlow } from "@aproto9787/heddle-core";
 import { stringifyFlow } from "./flow-writer.js";
 import { abortLocalCliRun, startLocalCliRun } from "./local-cli-runner.js";
 import {
@@ -439,8 +439,8 @@ export function buildServer() {
       userPrompt: parsed.data.userPrompt,
       workspaceRoot,
       serverOrigin,
-      onStdout: (chunk) => request.log.info({ runId, chunk }, "loom cli stdout"),
-      onStderr: (chunk) => request.log.warn({ runId, chunk }, "loom cli stderr"),
+      onStdout: (chunk) => request.log.info({ runId, chunk }, "heddle cli stdout"),
+      onStderr: (chunk) => request.log.warn({ runId, chunk }, "heddle cli stderr"),
       onExit: (exitCode) => {
         updateRunRecord(runId, {
           status: exitCode === 0 ? "done" : "error",
@@ -716,33 +716,33 @@ export function buildServer() {
       }
     } catch { /* skip */ }
 
-    // Loom project skills (workspace/skills/*.yaml) — platform-neutral, surface on both
-    const loomSkillsDir = path.join(workspaceRoot, "skills");
+    // Heddle project skills (workspace/skills/*.yaml) — platform-neutral, surface on both
+    const heddleSkillsDir = path.join(workspaceRoot, "skills");
     try {
-      const entries = await readdir(loomSkillsDir, { withFileTypes: true });
+      const entries = await readdir(heddleSkillsDir, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
         const name = entry.name.replace(/\.yaml$/, "");
-        const raw = await readFile(path.join(loomSkillsDir, entry.name), "utf8").catch(() => "");
-        resources.push({ type: "skill", name, source: loomSkillsDir, platform: "claude", prompt: raw.slice(0, 300) });
-        resources.push({ type: "skill", name, source: loomSkillsDir, platform: "codex", prompt: raw.slice(0, 300) });
+        const raw = await readFile(path.join(heddleSkillsDir, entry.name), "utf8").catch(() => "");
+        resources.push({ type: "skill", name, source: heddleSkillsDir, platform: "claude", prompt: raw.slice(0, 300) });
+        resources.push({ type: "skill", name, source: heddleSkillsDir, platform: "codex", prompt: raw.slice(0, 300) });
       }
     } catch { /* skip */ }
 
-    // Loom project hooks (workspace/hooks/*.yaml) — platform-neutral
-    const loomHooksDir = path.join(workspaceRoot, "hooks");
+    // Heddle project hooks (workspace/hooks/*.yaml) — platform-neutral
+    const heddleHooksDir = path.join(workspaceRoot, "hooks");
     try {
-      const entries = await readdir(loomHooksDir, { withFileTypes: true });
+      const entries = await readdir(heddleHooksDir, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
         const name = entry.name.replace(/\.yaml$/, "");
-        const raw = await readFile(path.join(loomHooksDir, entry.name), "utf8").catch(() => "");
+        const raw = await readFile(path.join(heddleHooksDir, entry.name), "utf8").catch(() => "");
         const eventMatch = raw.match(/^event:\s*(\S+)/m);
         const commandMatch = raw.match(/^command:\s*(.+)$/m);
         const event = eventMatch?.[1];
         const command = commandMatch?.[1]?.trim().replace(/^['"]|['"]$/g, "");
-        resources.push({ type: "hook", name, source: loomHooksDir, platform: "claude", event, command });
-        resources.push({ type: "hook", name, source: loomHooksDir, platform: "codex", event, command });
+        resources.push({ type: "hook", name, source: heddleHooksDir, platform: "claude", event, command });
+        resources.push({ type: "hook", name, source: heddleHooksDir, platform: "codex", event, command });
       }
     } catch { /* skip */ }
 
@@ -883,7 +883,7 @@ export function buildServer() {
 
 const port = Number(process.env.PORT ?? 8787);
 
-if (process.env.LOOM_SERVER_AUTOSTART !== "0") {
+if (process.env.HEDDLE_SERVER_AUTOSTART !== "0") {
   const server = buildServer();
 
   server.listen({ port, host: "0.0.0.0" }).catch((error) => {

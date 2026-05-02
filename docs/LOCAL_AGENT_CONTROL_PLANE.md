@@ -1,6 +1,6 @@
 # Local Agent Control Plane
 
-This document is Loom's target product and runtime contract.
+This document is Heddle's target product and runtime contract.
 
 It describes the direction the implementation should move toward. It is not a
 claim that every item is implemented today. `docs/CURRENT_STATE.md` remains the
@@ -8,7 +8,7 @@ code-backed status checklist.
 
 ## Product Position
 
-Loom is a local control plane for coding agents.
+Heddle is a local control plane for coding agents.
 
 The product should not feel like a blank node workflow builder. It should feel
 like a browser workspace for the user's existing local AI development tools:
@@ -22,12 +22,12 @@ like a browser workspace for the user's existing local AI development tools:
 The primary user experience is:
 
 ```text
-Developer starts Loom locally
-  -> Loom detects local providers, MCPs, repo, and .loom config
+Developer starts Heddle locally
+  -> Heddle detects local providers, MCPs, repo, and .heddle config
   -> Studio shows a connected local workspace
   -> User edits the agent bench and workflows in the browser
   -> Host leader runs through the user's local Claude Code or Codex environment
-  -> Loom-managed workers run locally in isolated sessions
+  -> Heddle-managed workers run locally in isolated sessions
   -> Reports and trace events return to Studio
 ```
 
@@ -40,7 +40,7 @@ Your local AI dev team, controlled from the browser.
 More precise technical language:
 
 ```text
-Loom discovers local Claude Code, Codex, MCP, and repository state, then exposes
+Heddle discovers local Claude Code, Codex, MCP, and repository state, then exposes
 a browser control plane for composing and running local coding-agent teams.
 ```
 
@@ -50,27 +50,27 @@ The key split is:
 
 ```text
 Leader comes from the provider.
-Workers are managed by Loom.
-Loom connects them with a delegation protocol and trace layer.
+Workers are managed by Heddle.
+Heddle connects them with a delegation protocol and trace layer.
 ```
 
 Target runtime:
 
 ```text
-Loom Studio / Server
+Heddle Studio / Server
   -> Host Leader Session
        user-local Claude Code or Codex
-       plus Loom leader overlay
-  -> Loom MCP delegation tools
-  -> Loom Subagent Runtime
+       plus Heddle leader overlay
+  -> Heddle MCP delegation tools
+  -> Heddle Subagent Runtime
        isolated Claude Code or Codex child sessions
   -> events / reports / traces
-  -> .loom/traces.db and Studio
+  -> .heddle/traces.db and Studio
 ```
 
 ### Host Leader Session
 
-The root leader is not a new agent invented by Loom. It is a host-backed session
+The root leader is not a new agent invented by Heddle. It is a host-backed session
 using the user's local Claude Code or Codex provider profile.
 
 The leader keeps the normal host experience:
@@ -80,7 +80,7 @@ The leader keeps the normal host experience:
 - existing local tool behavior
 - existing terminal/provider expectations
 
-Loom adds only a non-destructive overlay:
+Heddle adds only a non-destructive overlay:
 
 - flow instructions
 - root role/system instructions
@@ -89,12 +89,12 @@ Loom adds only a non-destructive overlay:
 - report and trace rules
 - MCP delegation tools when available
 
-Leader resources are prompt-only by default. Loom must not rewrite the user's
+Leader resources are prompt-only by default. Heddle must not rewrite the user's
 real provider config to apply flow-specific hooks, skills, or MCPs.
 
-### Loom-Managed Workers
+### Heddle-Managed Workers
 
-Workers are child sessions created by Loom for specific delegated work.
+Workers are child sessions created by Heddle for specific delegated work.
 
 Workers should use:
 
@@ -228,38 +228,38 @@ orchestrator:
 
 The target default delegation transport is MCP.
 
-The leader should call Loom delegation tools, not copy a shell command from the
-prompt. `loom-subagent` remains the internal worker runtime behind the MCP
+The leader should call Heddle delegation tools, not copy a shell command from the
+prompt. `heddle-subagent` remains the internal worker runtime behind the MCP
 server, but host leaders should not invoke it directly.
 
 Target:
 
 ```text
 Host Leader
-  -> Loom MCP tool call
-  -> Loom runtime validates the request
-  -> Loom starts isolated subagent
-  -> Loom returns REPORT and trace metadata
+  -> Heddle MCP tool call
+  -> Heddle runtime validates the request
+  -> Heddle starts isolated subagent
+  -> Heddle returns REPORT and trace metadata
 ```
 
-The MCP server is a single Loom server, not one server per agent:
+The MCP server is a single Heddle server, not one server per agent:
 
 ```text
-Loom MCP Server
-  - loom_delegate
-  - loom_delegate_<agent>
-  - loom_delegate_many
-  - loom_get_status
-  - loom_read_report
-  - loom_cancel
+Heddle MCP Server
+  - heddle_delegate
+  - heddle_delegate_<agent>
+  - heddle_delegate_many
+  - heddle_get_status
+  - heddle_read_report
+  - heddle_cancel
 ```
 
 Agent-specific dynamic tools are generated from enabled direct children:
 
 ```text
-loom_delegate_implementer
-loom_delegate_reviewer
-loom_delegate_tester
+heddle_delegate_implementer
+heddle_delegate_reviewer
+heddle_delegate_tester
 ```
 
 The generic tool remains available because it is easier to validate, test, and
@@ -320,7 +320,7 @@ Response:
       "No blocking regressions found"
     ],
     "artifacts": [
-      ".loom/runs/run_123/reviewer-report.md"
+      ".heddle/runs/run_123/reviewer-report.md"
     ],
     "blockers": []
   }
@@ -346,13 +346,13 @@ Parallel tool:
 
 MVP behavior:
 
-- `loom_delegate` defaults to sync `wait: true`, but returns a running taskId
+- `heddle_delegate` defaults to sync `wait: true`, but returns a running taskId
   instead of holding the MCP call past the sync wait cap.
-- `loom_delegate_<agent>` routes directly to that enabled direct child and
+- `heddle_delegate_<agent>` routes directly to that enabled direct child and
   always starts async to avoid MCP client call timeouts.
-- `loom_delegate_many` handles parallel worker starts in one tool call.
-- Async `wait: false`, `loom_get_status`, `loom_read_report`, and
-  best-effort `loom_cancel` are available for longer tasks.
+- `heddle_delegate_many` handles parallel worker starts in one tool call.
+- Async `wait: false`, `heddle_get_status`, `heddle_read_report`, and
+  best-effort `heddle_cancel` are available for longer tasks.
 
 ## Studio UX Mapping
 
@@ -362,8 +362,8 @@ plumbing.
 ```text
 Agent Bench
 
-[ON]  Implementer   Codex       -> exposed as a Loom delegation tool
-[ON]  Reviewer      Claude Code -> exposed as a Loom delegation tool
+[ON]  Implementer   Codex       -> exposed as a Heddle delegation tool
+[ON]  Reviewer      Claude Code -> exposed as a Heddle delegation tool
 [OFF] Tester        Codex       -> not exposed to the leader
 ```
 
@@ -387,12 +387,12 @@ Studio should show:
 MCP makes delegation more structured than Bash, but it does not make execution
 safe by itself.
 
-The Loom MCP handler must enforce:
+The Heddle MCP handler must enforce:
 
 - agent names are selected from direct-child enum values
 - disabled agents cannot be called
 - briefing text is never interpolated into shell commands
-- report paths are generated by Loom
+- report paths are generated by Heddle
 - run token/session identity is validated
 - timeout is enforced
 - concurrency limit is enforced
@@ -413,11 +413,11 @@ Recommended order:
 3. Add provider discovery:
    Claude Code, Codex, command path, version, auth/config source.
 4. Extract subagent execution from the CLI wrapper into shared runtime helpers.
-5. Add `packages/mcp` and a `loom mcp` stdio command.
-6. Implement `loom_delegate` with sync execution through the shared subagent
+5. Add `packages/mcp` and a `heddle mcp` stdio command.
+6. Implement `heddle_delegate` with sync execution through the shared subagent
    runtime.
-7. Implement `loom_delegate_many`.
-8. Generate agent-specific `loom_delegate_<agent>` tools for enabled direct
+7. Implement `heddle_delegate_many`.
+8. Generate agent-specific `heddle_delegate_<agent>` tools for enabled direct
    children.
 9. Change leader delegation overlay to require MCP tools and block instead of
    using direct child-agent Bash commands.

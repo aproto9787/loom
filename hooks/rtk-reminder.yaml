@@ -1,4 +1,4 @@
 name: rtk-reminder
 event: on_start
-command: 'command -v rtk >/dev/null && echo "[HINT] dev 명령은 rtk 경유 — 토큰 60~90% 절감 (예: rtk git status)" >> /tmp/loom-hooks.log || echo "[HINT] rtk not installed — install for dev-command token savings" >> /tmp/loom-hooks.log'
+command: 'command -v rtk >/dev/null && echo "[HINT] dev 명령은 rtk 경유 — 토큰 60~90% 절감 (예: rtk git status)" >> /tmp/heddle-hooks.log || echo "[HINT] rtk not installed — install for dev-command token savings" >> /tmp/heddle-hooks.log'
 description: RTK(Rust Token Killer) 경유 리마인더 — 간단한 dev 명령 토큰 절감

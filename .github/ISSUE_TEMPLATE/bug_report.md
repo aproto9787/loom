@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible problem in Loom
+about: Report a reproducible problem in Heddle
 title: "[Bug]: "
 labels: bug
 assignees: ""
@@ -12,7 +12,7 @@ Describe the problem in one or two sentences.
 
 ## Environment
 
-- Loom version or commit:
+- Heddle version or commit:
 - OS:
 - Node.js version:
 - Browser (if studio-related):

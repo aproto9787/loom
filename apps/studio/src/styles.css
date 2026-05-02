@@ -29,7 +29,7 @@ button:disabled {
   border: 1px solid rgb(226 232 240);
 }
 
-.loom-agent {
+.heddle-agent {
   padding: 8px 12px !important;
   border-radius: 8px !important;
   border: 1px solid rgb(226 232 240) !important;
@@ -42,39 +42,39 @@ button:disabled {
   transition: border-color 0.1s, box-shadow 0.1s, background 0.1s !important;
 }
 
-.loom-agent:hover {
+.heddle-agent:hover {
   border-color: rgb(148 163 184) !important;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.08) !important;
 }
 
-.loom-agent:active {
+.heddle-agent:active {
   background: rgb(248 250 252) !important;
 }
 
-.loom-agent--claude-code {
+.heddle-agent--claude-code {
   border-left: 3px solid rgb(59 130 246) !important;
 }
 
-.loom-agent--codex {
+.heddle-agent--codex {
   border-left: 3px solid rgb(168 85 247) !important;
 }
 
-.loom-agent--state-running {
+.heddle-agent--state-running {
   border-color: rgb(59 130 246) !important;
   box-shadow: 0 0 0 3px rgb(59 130 246 / 0.12) !important;
 }
 
-.loom-agent--state-done {
+.heddle-agent--state-done {
   border-color: rgb(34 197 94) !important;
   background: rgb(240 253 244) !important;
 }
 
-.loom-agent--state-error {
+.heddle-agent--state-error {
   border-color: rgb(239 68 68) !important;
   background: rgb(254 242 242) !important;
 }
 
-.loom-agent--selected {
+.heddle-agent--selected {
   border-color: rgb(59 130 246) !important;
   box-shadow: 0 0 0 2px rgb(59 130 246 / 0.2) !important;
   transition: none !important;

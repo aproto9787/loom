@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
-import { flowDefinitionSchema, type FlowDefinition } from "@aproto9787/loom-core";
-import { validateFlow } from "@aproto9787/loom-core";
+import { flowDefinitionSchema, type FlowDefinition } from "@aproto9787/heddle-core";
+import { validateFlow } from "@aproto9787/heddle-core";
 import { defaultWorkspaceRoot } from "./paths.js";
 
 export interface LoadFlowOptions {

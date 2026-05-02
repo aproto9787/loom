@@ -1,4 +1,4 @@
-import type { AgentConfig, FlowDefinition, RoleDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, FlowDefinition, RoleDefinition } from "@aproto9787/heddle-core";
 import type { RunResources } from "../resources/index.js";
 import { buildAgentPrompt } from "./agent-prompt.js";
 import { buildParallelChildPrompt } from "./format.js";

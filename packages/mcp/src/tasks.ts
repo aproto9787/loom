@@ -1,4 +1,4 @@
-import type { RunSubagentTaskResult } from "@aproto9787/loom-runtime";
+import type { RunSubagentTaskResult } from "@aproto9787/heddle-runtime";
 
 export const DEFAULT_SYNC_WAIT_CAP_MS = 90_000;
 

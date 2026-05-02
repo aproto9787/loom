@@ -1,6 +1,6 @@
-# Contributing to Loom
+# Contributing to Heddle
 
-Thanks for contributing to Loom.
+Thanks for contributing to Heddle.
 
 ## Before you start
 
@@ -10,7 +10,7 @@ Thanks for contributing to Loom.
 
 ## Development setup
 
-Loom is a pnpm workspace and currently targets Node.js 22.13+.
+Heddle is a pnpm workspace and currently targets Node.js 22.13+.
 
 ```bash
 pnpm install
@@ -22,8 +22,8 @@ pnpm -r test
 Run the server and studio in separate terminals when needed:
 
 ```bash
-pnpm --filter @loom/server dev
-pnpm --filter @loom/studio dev
+pnpm --filter @heddle/server dev
+pnpm --filter @heddle/studio dev
 ```
 
 Read [README.md](README.md) first for the current runtime surface, then use `docs/` for architecture notes and code-backed status details.

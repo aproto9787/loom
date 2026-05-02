@@ -1,9 +1,9 @@
 import readline from "node:readline";
 import { errorResponse, type JsonRpcRequest } from "./json-rpc.js";
-import { LoomMcpServer, type LoomMcpServerOptions } from "./server.js";
+import { HeddleMcpServer, type HeddleMcpServerOptions } from "./server.js";
 
-export async function runLoomMcpServer(options: LoomMcpServerOptions = {}): Promise<void> {
-  const server = new LoomMcpServer(options);
+export async function runHeddleMcpServer(options: HeddleMcpServerOptions = {}): Promise<void> {
+  const server = new HeddleMcpServer(options);
   const input = options.stdin ?? process.stdin;
   const output = options.stdout ?? process.stdout;
   const rl = readline.createInterface({ input });

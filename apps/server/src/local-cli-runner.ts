@@ -15,7 +15,7 @@ export interface LocalCliRunInput {
 }
 
 export function startLocalCliRun(input: LocalCliRunInput): { runId: string; child: ChildProcess } {
-  if (process.env.LOOM_MOCK === "1") {
+  if (process.env.HEDDLE_MOCK === "1") {
     let settled = false;
     const complete = (exitCode: number) => {
       if (settled) return;
@@ -51,8 +51,8 @@ export function startLocalCliRun(input: LocalCliRunInput): { runId: string; chil
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
-        LOOM_RUN_ID: input.runId,
-        LOOM_SERVER_ORIGIN: input.serverOrigin,
+        HEDDLE_RUN_ID: input.runId,
+        HEDDLE_SERVER_ORIGIN: input.serverOrigin,
       },
     },
   );

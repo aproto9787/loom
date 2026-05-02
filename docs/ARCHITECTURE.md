@@ -1,11 +1,11 @@
 # Architecture
 
-This document describes Loom as implemented in the current codebase. It avoids earlier DAG-era and roadmap claims that are not present in the active schemas or runtime.
+This document describes Heddle as implemented in the current codebase. It avoids earlier DAG-era and roadmap claims that are not present in the active schemas or runtime.
 
 For the target product/runtime direction, read
 [`docs/LOCAL_AGENT_CONTROL_PLANE.md`](LOCAL_AGENT_CONTROL_PLANE.md). That
 document is the implementation north star for host leader sessions,
-Loom-managed workers, and MCP-based delegation.
+Heddle-managed workers, and MCP-based delegation.
 
 ## System overview
 
@@ -22,17 +22,17 @@ Loom-managed workers, and MCP-based delegation.
 ┌──────────────────────────────▼───────────────────────────────┐
 │ apps/server                                                   │
 │ - Fastify API on PORT=8787 by default                         │
-│ - Validates YAML flows with @aproto9787/loom-core                         │
-│ - Stores run records/events in .loom/traces.db                 │
+│ - Validates YAML flows with @aproto9787/heddle-core                         │
+│ - Stores run records/events in .heddle/traces.db                 │
 │ - Provides CRUD for examples/, roles/, hooks/, skills/         │
-│ - Spawns the built `loom` CLI for local runs           │
-│ - Receives CLI run events from loom / loom-subagent            │
+│ - Spawns the built `heddle` CLI for local runs           │
+│ - Receives CLI run events from heddle / heddle-subagent            │
 └─────────────┬───────────────────────────────┬────────────────┘
               │                               │
               │ imports shared packages        │ stores
               │                               │
 ┌─────────────▼──────────────┐      ┌─────────▼────────────────┐
-│ packages/core              │      │ .loom/traces.db           │
+│ packages/core              │      │ .heddle/traces.db           │
 │ - Zod flow schema           │      │ - runs                    │
 │ - agent/role/hook/skill     │      │ - events                  │
 │   definitions               │      │ - node_results            │
@@ -49,10 +49,10 @@ Loom-managed workers, and MCP-based delegation.
               │
 ┌─────────────▼──────────────┐
 │ packages/cli                │
-│ - loom                      │
-│ - loom mcp                  │
-│ - loom-subagent             │
-│ - loom-subagent legacy     │
+│ - heddle                      │
+│ - heddle mcp                  │
+│ - heddle-subagent             │
+│ - heddle-subagent legacy     │
 └────────────────────────────┘
 ```
 
@@ -125,20 +125,20 @@ Parallel delegation can be emitted as:
 
 Provides the main CLI plus subcommands/binaries:
 
-- `loom`: interactive flow launcher.
-- `loom mcp`: stdio MCP delegation bridge for host leader sessions.
-- `loom-subagent`: generalized recursive child-agent launcher for Claude or Codex backends.
-- `loom-subagent`: legacy Codex conductor launcher, retained for compatibility.
+- `heddle`: interactive flow launcher.
+- `heddle mcp`: stdio MCP delegation bridge for host leader sessions.
+- `heddle-subagent`: generalized recursive child-agent launcher for Claude or Codex backends.
+- `heddle-subagent`: legacy Codex conductor launcher, retained for compatibility.
 
-`loom` currently imports built server modules from `apps/server/dist`, so the server package must be built before running the CLI from source.
+`heddle` currently imports built server modules from `apps/server/dist`, so the server package must be built before running the CLI from source.
 
-`loom-subagent` accepts arguments such as:
+`heddle-subagent` accepts arguments such as:
 
 ```bash
-loom-subagent --name reviewer --backend codex --parent leader "briefing text"
+heddle-subagent --name reviewer --backend codex --parent leader "briefing text"
 ```
 
-It posts mapped events to the server when `LOOM_RUN_ID` is present. Events include agent identity and tree metadata:
+It posts mapped events to the server when `HEDDLE_RUN_ID` is present. Events include agent identity and tree metadata:
 
 - `agentName`
 - `agentDepth`
@@ -175,7 +175,7 @@ Flow path validation rejects absolute paths, path escapes outside `examples/`, a
 ### Resource routes
 
 - `GET /mcps` discovers MCP server names from Claude/workspace config.
-- `GET /discover` discovers provider profiles plus MCPs, hooks, and skills from Claude, Codex, and Loom workspace locations.
+- `GET /discover` discovers provider profiles plus MCPs, hooks, and skills from Claude, Codex, and Heddle workspace locations.
 - `GET /roles`, `GET /roles/:name`, `PUT /roles/save`, `DELETE /roles/:name`.
 - `GET /hooks`, `PUT /hooks/save`, `DELETE /hooks/:name`.
 - `GET /skills`, `PUT /skills/save`, `DELETE /skills/:name`.
@@ -188,12 +188,12 @@ There are two overlapping run paths.
 
 This is the newer path.
 
-1. `loom` loads a flow.
+1. `heddle` loads a flow.
 2. It builds the configured root agent.
 3. It injects a delegation protocol into the root agent prompt.
 4. The root agent is spawned as Claude Code or Codex.
-5. The root agent receives a temporary Loom MCP server config and must call Loom MCP delegation tools for child work. `loom-subagent` remains the internal worker runtime behind the MCP server.
-6. `loom-subagent` maps Claude/Codex stream frames to Loom events.
+5. The root agent receives a temporary Heddle MCP server config and must call Heddle MCP delegation tools for child work. `heddle-subagent` remains the internal worker runtime behind the MCP server.
+6. `heddle-subagent` maps Claude/Codex stream frames to Heddle events.
 7. The server stores those events through `/runs/:id/events`.
 8. Studio can follow `/runs/:id/stream` for persisted event updates.
 
@@ -205,7 +205,7 @@ This path remains active for server `POST /runs`, and the current Studio save→
 2. `loadFlow()` parses YAML through `flowDefinitionSchema` and `validateFlow()`.
 3. `streamRunFlow()` creates a run id and execution state.
 4. `executeAgent()` spawns the configured adapter, emits `RunEvent`s, and recursively runs child agents on delegation.
-5. Run summaries and agent results are stored in `.loom/traces.db`.
+5. Run summaries and agent results are stored in `.heddle/traces.db`.
 
 `runner-executor.ts` is marked deprecated in its own header. New runtime behavior should target `packages/cli/src/subagent-launcher.ts` or a future shared runtime package instead.
 
@@ -250,7 +250,7 @@ It writes a temporary `.mcp.json` containing only the selected MCP server names.
 
 ## Persistence
 
-`trace-store.ts` uses Node's `node:sqlite` `DatabaseSync` and stores data in `.loom/traces.db`.
+`trace-store.ts` uses Node's `node:sqlite` `DatabaseSync` and stores data in `.heddle/traces.db`.
 
 Tables:
 
@@ -264,14 +264,14 @@ CLI-launched runs are registered, event-appended, and finalized incrementally. S
 
 ## Security posture
 
-Loom should be treated as a trusted-local-workspace tool.
+Heddle should be treated as a trusted-local-workspace tool.
 
 Current behavior includes:
 
 - Claude Code adapter passes `--permission-mode bypassPermissions`.
 - Codex adapter passes `--dangerously-bypass-approvals-and-sandbox` and `--ephemeral`.
 - CLI root launch uses dangerous bypass flags for Claude/Codex.
-- Hooks execute arbitrary shell commands through `child_process.exec` with the current process environment plus Loom variables.
+- Hooks execute arbitrary shell commands through `child_process.exec` with the current process environment plus Heddle variables.
 - CORS is permissive for local development.
 
 Before broader distribution, the project should make trust boundaries explicit in UI and docs, especially around hook execution and permission-bypass CLI flags.
@@ -294,11 +294,11 @@ For the source-checkout workflow, the CLI path is the primary runtime:
 Studio or API request
   -> apps/server creates a run row
   -> apps/server spawns node packages/cli/dist/index.js --headless
-  -> loom launches the root Claude/Codex process
-  -> root agents delegate through Loom MCP tools
-  -> loom / loom-subagent POST timeline events back to apps/server
-  -> apps/server persists events in .loom/traces.db
+  -> heddle launches the root Claude/Codex process
+  -> root agents delegate through Heddle MCP tools
+  -> heddle / heddle-subagent POST timeline events back to apps/server
+  -> apps/server persists events in .heddle/traces.db
   -> Studio watches /runs/:id/stream and reads /runs/:id/events
 ```
 
-The older in-process server executor is kept only as a compatibility module. New local recursive-agent behavior should go into the CLI / loom-subagent path or the small shared helpers in `@aproto9787/loom-runtime`.
+The older in-process server executor is kept only as a compatibility module. New local recursive-agent behavior should go into the CLI / heddle-subagent path or the small shared helpers in `@aproto9787/heddle-runtime`.

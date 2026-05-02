@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/heddle-core";
 import { emitMockEvents, parseDelegationDirective, parseParallelDelegationDirective } from "../protocol.js";
 import type { AgentAdapter, AgentEvent, SpawnController } from "../types.js";
 
@@ -119,7 +119,7 @@ class CodexAdapter implements AgentAdapter {
     cwd: string,
     controller?: SpawnController,
   ): AsyncGenerator<AgentEvent, void, undefined> {
-    if (process.env.LOOM_MOCK === "1") {
+    if (process.env.HEDDLE_MOCK === "1") {
       yield* emitMockEvents(`Mock Codex response from ${config.name}: ${input}`);
       return;
     }
@@ -128,7 +128,7 @@ class CodexAdapter implements AgentAdapter {
     let timeoutHandle: NodeJS.Timeout | undefined;
 
     try {
-      tempDir = await mkdtemp(path.join(os.tmpdir(), "loom-codex-"));
+      tempDir = await mkdtemp(path.join(os.tmpdir(), "heddle-codex-"));
       const outputPath = path.join(tempDir, "last-message.txt");
       const proc = spawn("codex", buildArgs(config, outputPath, cwd), {
         cwd,

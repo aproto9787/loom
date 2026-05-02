@@ -1,4 +1,4 @@
-import type { AgentConfig, RoleDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, RoleDefinition } from "@aproto9787/heddle-core";
 
 export function mergeRoleIntoAgent(agent: AgentConfig, roles: Map<string, RoleDefinition>): AgentConfig {
   if (!agent.role) {

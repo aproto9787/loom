@@ -1,5 +1,5 @@
 {
-  "name": "@loom/studio",
+  "name": "@heddle/studio",
   "version": "0.1.0",
   "license": "GPL-3.0-only",
   "private": true,
@@ -10,7 +10,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@aproto9787/loom-core": "workspace:^",
+    "@aproto9787/heddle-core": "workspace:^",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "reactflow": "^11.11.4",
