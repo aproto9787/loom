@@ -34,7 +34,7 @@ a {
   overflow: hidden;
   background:
     linear-gradient(90deg, rgba(11, 17, 32, 0.94), rgba(11, 17, 32, 0.72) 45%, rgba(11, 17, 32, 0.9)),
-    url("assets/loom-banner.svg") center / cover no-repeat;
+    url("assets/heddle-banner.svg") center / cover no-repeat;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
 
@@ -44,7 +44,7 @@ a {
   flex-direction: column;
   background:
     linear-gradient(90deg, rgba(11, 17, 32, 0.98), rgba(11, 17, 32, 0.76)),
-    url("assets/loom-banner.svg") center / cover no-repeat;
+    url("assets/heddle-banner.svg") center / cover no-repeat;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
 

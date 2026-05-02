@@ -1,4 +1,4 @@
-import type { FlowDefinition } from "@aproto9787/loom-core";
+import type { FlowDefinition } from "@aproto9787/heddle-core";
 
 export interface SaveFlowResult {
   flowPath: string;

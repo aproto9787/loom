@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/heddle-core";
 import { runHooks } from "./runner-hook-runner.js";
 import type { RunResources } from "./runner-resource-loader.js";
 
 test("runHooks executes matching hooks and ignores missing ones", async () => {
-  const originalEnv = process.env.LOOM_HOOK_RUNNER_TEST;
+  const originalEnv = process.env.HEDDLE_HOOK_RUNNER_TEST;
   const agent: AgentConfig = {
     name: "lead",
     type: "claude-code",
@@ -14,19 +14,19 @@ test("runHooks executes matching hooks and ignores missing ones", async () => {
   const resources: RunResources = {
     roles: new Map(),
     hooks: new Map([
-      ["start", { name: "start", event: "on_start", command: `node -e "if (process.env.LOOM_AGENT === 'lead' && process.env.LOOM_CUSTOM === 'ok') process.exit(0); process.exit(1)"` }],
+      ["start", { name: "start", event: "on_start", command: `node -e "if (process.env.HEDDLE_AGENT === 'lead' && process.env.HEDDLE_CUSTOM === 'ok') process.exit(0); process.exit(1)"` }],
     ]),
     skills: new Map(),
   };
 
   try {
-    await runHooks(agent, "on_start", resources, { LOOM_CUSTOM: "ok" });
-    assert.equal(process.env.LOOM_HOOK_RUNNER_TEST, originalEnv);
+    await runHooks(agent, "on_start", resources, { HEDDLE_CUSTOM: "ok" });
+    assert.equal(process.env.HEDDLE_HOOK_RUNNER_TEST, originalEnv);
   } finally {
     if (originalEnv === undefined) {
-      delete process.env.LOOM_HOOK_RUNNER_TEST;
+      delete process.env.HEDDLE_HOOK_RUNNER_TEST;
     } else {
-      process.env.LOOM_HOOK_RUNNER_TEST = originalEnv;
+      process.env.HEDDLE_HOOK_RUNNER_TEST = originalEnv;
     }
   }
 });

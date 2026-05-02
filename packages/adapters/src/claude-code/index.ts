@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/heddle-core";
 import { emitMockEvents, parseDelegationDirective, parseParallelDelegationDirective } from "../protocol.js";
 import type { AgentAdapter, AgentEvent, SpawnController } from "../types.js";
 
@@ -83,7 +83,7 @@ class ClaudeCodeAdapter implements AgentAdapter {
     cwd: string,
     controller?: SpawnController,
   ): AsyncGenerator<AgentEvent, void, undefined> {
-    if (process.env.LOOM_MOCK === "1") {
+    if (process.env.HEDDLE_MOCK === "1") {
       yield* emitMockEvents(`Mock Claude Code response from ${config.name}: ${input}`);
       return;
     }

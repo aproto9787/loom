@@ -2,7 +2,7 @@ import type {
   HookDefinition,
   RoleDefinition,
   SkillDefinition,
-} from "@aproto9787/loom-core";
+} from "@aproto9787/heddle-core";
 
 export interface AgentResourceScope {
   mcps: string[];

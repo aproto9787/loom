@@ -14,7 +14,7 @@ packages/*/src/**/*.js.map
 *.db
 *.db-shm
 *.db-wal
-.loom/
+.heddle/
 outputs/
 .DS_Store
 vite.config.ts.timestamp-*

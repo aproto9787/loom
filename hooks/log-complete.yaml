@@ -1,4 +1,4 @@
 name: log-complete
 event: on_complete
-command: echo "[HOOK] Agent $LOOM_AGENT completed" >> /tmp/loom-hooks.log
-description: Logs agent completion to /tmp/loom-hooks.log
+command: echo "[HOOK] Agent $HEDDLE_AGENT completed" >> /tmp/heddle-hooks.log
+description: Logs agent completion to /tmp/heddle-hooks.log

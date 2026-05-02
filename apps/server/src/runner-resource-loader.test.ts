@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import type { AgentConfig, FlowDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, FlowDefinition } from "@aproto9787/heddle-core";
 import { createScopedMcpConfig, resolveAgentResources } from "./runner-resource-loader.js";
 
 test("resolveAgentResources merges flow and agent resources without duplicates", () => {
@@ -33,7 +33,7 @@ test("resolveAgentResources merges flow and agent resources without duplicates",
 });
 
 test("createScopedMcpConfig writes a filtered config for requested servers", async () => {
-  const tempHome = await mkdtemp(path.join(os.tmpdir(), "loom-home-"));
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), "heddle-home-"));
   const originalHome = process.env.HOME;
   process.env.HOME = tempHome;
   await writeFile(
@@ -70,7 +70,7 @@ test("createScopedMcpConfig writes a filtered config for requested servers", asy
 });
 
 test("createScopedMcpConfig reads home MCP config for requested servers", async () => {
-  const tempHome = await mkdtemp(path.join(os.tmpdir(), "loom-home-"));
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), "heddle-home-"));
   const originalHome = process.env.HOME;
   process.env.HOME = tempHome;
   await writeFile(
@@ -107,7 +107,7 @@ test("createScopedMcpConfig reads home MCP config for requested servers", async 
 });
 
 test("createScopedMcpConfig warns when a config source cannot be parsed", async () => {
-  const tempHome = await mkdtemp(path.join(os.tmpdir(), "loom-home-"));
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), "heddle-home-"));
   const originalHome = process.env.HOME;
   const errors: string[] = [];
   const originalWarn = console.warn;

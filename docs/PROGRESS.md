@@ -1,9 +1,9 @@
 <!-- code-accurate-docs-notice -->
 > Note: this is a historical progress log, not the current runtime contract. For the current code-backed behavior, read `README.md`, `docs/ARCHITECTURE.md`, and `docs/CURRENT_STATE.md` first.
 
-# Loom — Build Progress Log
+# Heddle — Build Progress Log
 
-This document tracks what has been shipped so far in the Loom v0.1
+This document tracks what has been shipped so far in the Heddle v0.1
 slice, phase by phase, so that a later session can pick up from a
 concrete baseline instead of re-reading the full git history.
 
@@ -17,7 +17,7 @@ splits were made during implementation.
 
 ## Phase 1 — Scaffold + first vertical slice
 
-**Goal.** Turn the empty `/home/argoss/asos/dev/Project/loom`
+**Goal.** Turn the empty `/home/argoss/asos/dev/Project/heddle`
 directory (one README.md, no git) into a running monorepo with a
 working `io.input → agent.claude → io.output` flow reachable via
 `POST /runs`.
@@ -48,12 +48,12 @@ f923473 docs: add architecture note
 
 **Acceptance verified.**
 
-- `pnpm install` + `pnpm --filter @loom/server build` pass
+- `pnpm install` + `pnpm --filter @heddle/server build` pass
 - `GET /health` → `200 {"ok":true}`
 - `POST /runs` with `examples/hello.yaml` returns mock Claude reply
 - `POST /runs` with `flowPath=../../etc/passwd` → `400` (examples/
   whitelist)
-- `pnpm --filter @loom/studio dev` boots Vite in < 200 ms with an
+- `pnpm --filter @heddle/studio dev` boots Vite in < 200 ms with an
   empty React Flow canvas
 - README.md is tracked with no content diff (`diff <(git show
   HEAD:README.md) README.md` is empty)
@@ -78,11 +78,11 @@ bac310e feat(server): add router file traces
 
 - `examples/router-file.yaml` (`mode=short` / `mode=long`) runs end
   to end, producing distinct `outputs/short.txt` or `outputs/long.txt`
-- `.loom/traces.db` accumulates rows in both `runs` and
+- `.heddle/traces.db` accumulates rows in both `runs` and
   `node_results` tables (`node:sqlite` internal module)
 - Existing hello.yaml contract still passes (`runId` added, backward
   compatible `RunResponse` shape preserved)
-- `outputs/` and `.loom/` are in .gitignore
+- `outputs/` and `.heddle/` are in .gitignore
 
 ---
 
@@ -130,7 +130,7 @@ b7ef995 feat(studio): live run panel rendering streamed node events
 
 **Acceptance verified.**
 
-- `pnpm --filter @loom/studio build` passes end-to-end (tsc -b +
+- `pnpm --filter @heddle/studio build` passes end-to-end (tsc -b +
   vite build)
 - Vite dev boot succeeds with no runtime errors in the browser
   console
@@ -159,7 +159,7 @@ cb1dadb feat(studio): render loaded flow on react flow canvas with live state
 
 - `GET /flows` returns the list of `examples/*.yaml`
 - `GET /flows/get?path=examples/hello.yaml` returns a parsed
-  LoomFlow (zod-validated), `?path=../../etc/passwd` → `400`
+  HeddleFlow (zod-validated), `?path=../../etc/passwd` → `400`
 - Studio loads flows from the sidebar; switching flow changes the
   canvas preview and the Run panel's flowPath in lockstep
 - CORS preflight works for the Vite dev server (`Origin:
@@ -214,7 +214,7 @@ compare Claude and LiteLLM streams side by side in a single flow.
   `agent.litellm` branches and returns two independent replies
 - `POST /runs/stream` yields distinct `node_token` events tagged
   with each branch's nodeId (`claude_branch`, `litellm_branch`)
-- Real LiteLLM proxy path is scaffolded behind `LOOM_LITELLM_URL`
+- Real LiteLLM proxy path is scaffolded behind `HEDDLE_LITELLM_URL`
   and surfaces an explicit "not wired" error until wired up in a
   later slice
 
@@ -307,8 +307,8 @@ gives the LiteLLM adapter its cross-node subprocess lifetime.)
 **Acceptance verified.**
 
 - `examples/litellm-demo.yaml` still succeeds in mock mode when no LiteLLM env vars are set (verified via `POST /runs`)
-- Setting `LOOM_LITELLM_URL` switches the adapter to streaming HTTP deltas, forwarding them as `node_token` events
-- Setting `LOOM_LITELLM_SPAWN=1` reuses a single spawned local proxy per run and terminates it from the runner cleanup path; the mode stays behind the opt-in env flag because no `litellm` binary is currently on `PATH` in this environment, so end-to-end subprocess mode is deferred until one is installed — the runner-side lifecycle (session registration + finally-block teardown) is still exercised by the shared cleanup path
+- Setting `HEDDLE_LITELLM_URL` switches the adapter to streaming HTTP deltas, forwarding them as `node_token` events
+- Setting `HEDDLE_LITELLM_SPAWN=1` reuses a single spawned local proxy per run and terminates it from the runner cleanup path; the mode stays behind the opt-in env flag because no `litellm` binary is currently on `PATH` in this environment, so end-to-end subprocess mode is deferred until one is installed — the runner-side lifecycle (session registration + finally-block teardown) is still exercised by the shared cleanup path
 
 ---
 
@@ -344,8 +344,8 @@ a297a84 feat(examples): add mcp-tool-use demo flow and server integration test
 
 **Acceptance verified.**
 
-- `pnpm --filter @aproto9787/loom-core build` passes
-- `pnpm --filter @loom/server build` passes
+- `pnpm --filter @aproto9787/heddle-core build` passes
+- `pnpm --filter @heddle/server build` passes
 - `POST /runs` continues to succeed for `examples/hello.yaml`,
   `examples/router-file.yaml`, `examples/mcp-demo.yaml`, and
   `examples/litellm-demo.yaml`
@@ -400,14 +400,14 @@ Real MCP `tools/call` from an agent node | shipped
   because the foreman backend runs on GPT-5.5.
 - Every commit so far is a normal merge into `master`. No branches,
   no rebases, no force-pushes.
-- The `.loom/traces.db`, `outputs/`, `node_modules` and all dist
+- The `.heddle/traces.db`, `outputs/`, `node_modules` and all dist
   trees are in `.gitignore`. README.md is unchanged since it was
   first tracked (Phase 1), and every phase has kept that invariant.
 - To drive the system manually:
-  1. Terminal A: `pnpm --filter @loom/server dev` (or
+  1. Terminal A: `pnpm --filter @heddle/server dev` (or
      `node apps/server/dist/index.js` after `pnpm --filter
-     @loom/server build`)
-  2. Terminal B: `pnpm --filter @loom/studio dev`
+     @heddle/server build`)
+  2. Terminal B: `pnpm --filter @heddle/studio dev`
   3. Browser: open `http://localhost:5173/`, pick a flow in the
      sidebar, hit Run flow.
 
@@ -415,7 +415,7 @@ Real MCP `tools/call` from an agent node | shipped
 
 ## Phase 3A — flow save backend
 
-**Goal.** Add the backend write path for graph editing so the studio can persist validated LoomFlow edits back into `examples/*.yaml` without widening the v0.1 scope into frontend editing yet.
+**Goal.** Add the backend write path for graph editing so the studio can persist validated HeddleFlow edits back into `examples/*.yaml` without widening the v0.1 scope into frontend editing yet.
 
 **Commits.**
 
@@ -428,7 +428,7 @@ f224752 feat(server): PUT /flows/save backend for phase 3a graph editing
 - `PUT /flows/save` validates `{ flowPath, flow }` against `flowSchema`, rejects non-`examples/*.yaml` paths, writes through a temp file, and echoes the saved `flowPath`
 - `apps/server/src/index.test.ts` covers round-trip save/load, invalid schema rejection, path escape rejection, and non-`.yaml` rejection
 - `pnpm -r test` passes from the repo root with the new server save-path tests included
-- `pnpm --filter @loom/server build` passes after adding the new backend write helper
+- `pnpm --filter @heddle/server build` passes after adding the new backend write helper
 - Phase 3 stays open in the v0.1 coverage table because frontend graph editing (Phase 3B) is still pending
 
 ---
@@ -446,12 +446,12 @@ f224752 feat(server): PUT /flows/save backend for phase 3a graph editing
 **Acceptance verified.**
 
 - `apps/studio/src/store.ts` carries a `flowDraft`/`loadedFlow` split with edit actions (`addNode`, `deleteNode`, `updateNode`, `renameNode`, `connectNodes`, `disconnectEdge`, `setNodePosition`) plus save lifecycle (`beginSave`/`endSave`/`setSaveError`) and an `isDirty` flag driven by a structural diff against `loadedFlow`
-- `apps/studio/src/NodePalette.tsx` exposes the v0.1 editable node types in a sidebar palette with HTML5 drag sources (`application/loom-node-type`)
+- `apps/studio/src/NodePalette.tsx` exposes the v0.1 editable node types in a sidebar palette with HTML5 drag sources (`application/heddle-node-type`)
 - `apps/studio/src/Inspector.tsx` edits the selected node's id, `config` (JSON), `inputs` (JSON), and optional `when` expression; shows parse errors inline and offers a Delete button
 - `apps/studio/src/App.tsx` switches the React Flow canvas to interactive (`nodesDraggable`/`nodesConnectable`/`elementsSelectable`), wires `onNodesChange`, `onEdgesChange`, `onConnect`, `onSelectionChange`, and palette `onDrop` via `useReactFlow().screenToFlowPosition`; node positions live in an ephemeral `nodePositionOverrides` map (not persisted in YAML for v0.1)
 - `apps/studio/src/api.ts` ships a `saveFlow(origin, flowPath, flow)` helper that PUTs to `/flows/save` and surfaces non-2xx responses as `Error`s
 - A `SaveControls` section on the canvas header renders "Save flow" when `isDirty`, "Saving…" while `isSaving`, and "Saved" after a successful round-trip; any server-side 400 shows under the button
-- `pnpm --filter @loom/studio build` passes (tsc strict + vite build), `pnpm -r build` stays clean across core/adapters/nodes/server/studio, and `pnpm -r test` keeps passing (adapters 1/1 + server 5/5) because the backend surface is unchanged
+- `pnpm --filter @heddle/studio build` passes (tsc strict + vite build), `pnpm -r build` stays clean across core/adapters/nodes/server/studio, and `pnpm -r test` keeps passing (adapters 1/1 + server 5/5) because the backend surface is unchanged
 - `apps/studio/src/styles.css` gains palette, inspector, save-control, and selection highlight styles without touching the existing run-panel/node-card appearance
 
 ---
@@ -475,7 +475,7 @@ runner and adds a replay timeline scrubber to the studio.
 **Frontend** (Phase 4 new work):
 
 - `EditorCanvas` (App.tsx) now reads `selectedRunId` from the store;
-  when in replay mode the `loom-node--replay-selected` CSS class
+  when in replay mode the `heddle-node--replay-selected` CSS class
   (blue border + box-shadow) highlights the active replay node on the
   React Flow canvas without disturbing edit-mode selection styles
 - `Inspector.tsx` switches to a `ReplayNodeInspector` view when
@@ -514,7 +514,7 @@ router, flow-control primitives, and a memory node.
   RunEvent variants (`node_warning`, `loop_iteration_start`,
   `loop_iteration_complete`)
 - `packages/adapters` adds `claude-code`, `codex`, and `memento`
-  adapter implementations, each with `LOOM_MOCK` fallback
+  adapter implementations, each with `HEDDLE_MOCK` fallback
 - `packages/nodes` validates and executes all new types; control
   nodes include flow-level validation (parallel downstream ≥ 2,
   join upstream ≥ 2)
@@ -541,7 +541,7 @@ router, flow-control primitives, and a memory node.
 
 ## Phase 6 — Architecture pivot: DAG → recursive agent orchestration
 
-**Goal.** Replace Loom's DAG workflow model with a recursive
+**Goal.** Replace Heddle's DAG workflow model with a recursive
 orchestrator-plus-agent tree, then realign examples, server tests,
 and progress tracking around the new runtime contract.
 
@@ -568,9 +568,9 @@ and progress tracking around the new runtime contract.
 - `GET /flows` returns only the new recursive examples
 - `GET /flows/get?path=examples/nested.yaml` parses a recursive
   orchestrator → agent → sub-agent hierarchy successfully
-- `POST /runs` in `LOOM_MOCK=1` returns a `RunResponse` shaped
+- `POST /runs` in `HEDDLE_MOCK=1` returns a `RunResponse` shaped
   around `runId`, `flowName`, `output`, and `agentResults`
-- `POST /runs/stream` in `LOOM_MOCK=1` emits SSE lifecycle events
+- `POST /runs/stream` in `HEDDLE_MOCK=1` emits SSE lifecycle events
   for the orchestrator run and persists the completed run
 - `GET /runs` and `GET /runs/:id` return persisted run summaries and
   details in agent-centric terminology (`agentCount`, `agentResults`,
@@ -634,11 +634,11 @@ runtime shape.
 
 ---
 
-## Phase 7 — loom-subagent trees (conductor pattern generalized)
+## Phase 7 — heddle-subagent trees (conductor pattern generalized)
 
 **Goal.** Unify every subagent — not just `conductor` — onto the same
 "spawn-a-process, POST events with your own name/parent" pattern that
-the old `loom-conductor` (codex) used, so a single Studio run timeline
+the old `heddle-conductor` (codex) used, so a single Studio run timeline
 can display the full recursive agent tree (leader → subagents →
 grandchildren) instead of only the leader's Claude Code session.
 
@@ -653,26 +653,26 @@ grandchildren) instead of only the leader's Claude Code session.
   depth indentation, shortens UUID agent names to 8-char prefixes,
   color-codes by kind (`claude` sky, `codex` amber), and shows
   `child ← parent` relationships inline
-- `packages/cli/src/subagent-launcher.ts` (new, `loom-subagent` bin):
+- `packages/cli/src/subagent-launcher.ts` (new, `heddle-subagent` bin):
   generalized headless runner for both claude (`--print
   --output-format stream-json --session-id`) and codex (`exec --json`)
   backends. Each process POSTs events tagged with its own `agentName`
   and the parent passed in via `--parent` / env. Sets
-  `LOOM_PARENT_AGENT` / `LOOM_PARENT_DEPTH` for its own child shells,
+  `HEDDLE_PARENT_AGENT` / `HEDDLE_PARENT_DEPTH` for its own child shells,
   so recursion composes naturally
 - `packages/cli/src/delegation-prompt.ts`: walks the flow tree to
   produce a `## Subagent Delegation Protocol` snippet that lists
-  each child with a copy-paste-ready `node "$LOOM_SUBAGENT_BIN"
+  each child with a copy-paste-ready `node "$HEDDLE_SUBAGENT_BIN"
   --name ... --backend ... --parent <self> "<BRIEFING>"` template.
   Agent tool use is explicitly forbidden for these delegated roles
 - `packages/cli/src/index.ts` `launchAgent()`: appends the leader's
   delegation prompt to `--append-system-prompt`, sets
-  `LOOM_SUBAGENT_BIN` to the absolute path of the installed launcher
-  (PATH-linking optional), and seeds `LOOM_PARENT_AGENT=leader`
+  `HEDDLE_SUBAGENT_BIN` to the absolute path of the installed launcher
+  (PATH-linking optional), and seeds `HEDDLE_PARENT_AGENT=leader`
 - `packages/cli/src/conductor-launcher.ts`: now tags events with
   `parentAgent` / `agentKind: codex` and honors
-  `LOOM_PARENT_AGENT` / `LOOM_PARENT_DEPTH`. Marked as superseded by
-  `loom-subagent` but retained for backward compatibility
+  `HEDDLE_PARENT_AGENT` / `HEDDLE_PARENT_DEPTH`. Marked as superseded by
+  `heddle-subagent` but retained for backward compatibility
 - `apps/server/src/runner-executor.ts`: marked deprecated in header
   comment; Studio `POST /runs/stream` path still uses it but new
   behavior should land in `subagent-launcher` instead
@@ -685,6 +685,6 @@ grandchildren) instead of only the leader's Claude Code session.
   valid Bash templates
 - Golden-path verification (leader → conductor → 9 codex workers
   visible in the Studio timeline at decreasing indentation) still
-  requires a manual `loom` run with the Studio open; no automated
+  requires a manual `heddle` run with the Studio open; no automated
   harness covers it yet
 

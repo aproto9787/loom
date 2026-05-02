@@ -1,4 +1,4 @@
 name: memory-check
 event: on_start
-command: 'free -h | head -2 >> /tmp/loom-hooks.log'
+command: 'free -h | head -2 >> /tmp/heddle-hooks.log'
 description: 메모리 상태 로깅 — 가용 메모리 확인용

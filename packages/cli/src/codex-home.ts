@@ -43,7 +43,7 @@ export async function createCodexInstructionHome(
   options: CreateCodexInstructionHomeOptions,
 ): Promise<CodexInstructionHome> {
   const realCodexHome = path.resolve(options.realCodexHome ?? path.join(os.homedir(), ".codex"));
-  const parentDir = path.resolve(options.parentDir ?? path.join(os.homedir(), ".loom", "codex-root-homes"));
+  const parentDir = path.resolve(options.parentDir ?? path.join(os.homedir(), ".heddle", "codex-root-homes"));
   await mkdir(parentDir, { recursive: true });
   const codexHome = await mkdtemp(path.join(parentDir, "root-"));
 

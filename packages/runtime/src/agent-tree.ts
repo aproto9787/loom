@@ -1,4 +1,4 @@
-import type { AgentConfig, AgentRuntimeConfig } from "@aproto9787/loom-core";
+import type { AgentConfig, AgentRuntimeConfig } from "@aproto9787/heddle-core";
 
 export function isAgentEnabled(agent: AgentConfig): boolean {
   return agent.enabled !== false;

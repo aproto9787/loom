@@ -41,6 +41,6 @@ export function createRuntimePaths(options: RuntimePathOptions = {}): RuntimePat
     flowPath,
     flowDir: flowPath ? path.dirname(flowPath) : undefined,
     resourceRoot: workspaceRoot,
-    stateDir: path.join(workspaceRoot, ".loom"),
+    stateDir: path.join(workspaceRoot, ".heddle"),
   };
 }

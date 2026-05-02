@@ -1,3 +1,3 @@
-export { LoomMcpServer } from "./server.js";
-export type { LoomMcpServerOptions } from "./server.js";
-export { runLoomMcpServer } from "./stdio.js";
+export { HeddleMcpServer } from "./server.js";
+export type { HeddleMcpServerOptions } from "./server.js";
+export { runHeddleMcpServer } from "./stdio.js";

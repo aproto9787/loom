@@ -1,4 +1,4 @@
-import type { AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/heddle-core";
 
 export function ResourceToggles({
   agent,

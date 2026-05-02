@@ -1,14 +1,14 @@
 import { rm } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
-import type { FlowDefinition } from "@aproto9787/loom-core";
+import type { FlowDefinition } from "@aproto9787/heddle-core";
 import { buildServer } from "./index.js";
 import { markStaleRuns, resetTraceStore } from "./trace-store.js";
 
 const DEFAULT_FLOW_PATH = "examples/leader-workers.yaml";
 const DEFAULT_FLOW_NAME = "Leader-Workers";
 
-function loomTest(
+function heddleTest(
   name: string,
   fn: (t: TestContext) => Promise<void> | void,
 ): void {
@@ -17,14 +17,14 @@ function loomTest(
 
 function createTestApp(t: TestContext) {
   resetTraceStore();
-  process.env.LOOM_MOCK = "1";
-  process.env.LOOM_SERVER_AUTOSTART = "0";
+  process.env.HEDDLE_MOCK = "1";
+  process.env.HEDDLE_SERVER_AUTOSTART = "0";
 
   const app = buildServer();
 
   t.after(async () => {
-    delete process.env.LOOM_MOCK;
-    delete process.env.LOOM_SERVER_AUTOSTART;
+    delete process.env.HEDDLE_MOCK;
+    delete process.env.HEDDLE_SERVER_AUTOSTART;
     await app.close();
   });
 
@@ -156,7 +156,7 @@ async function readRunStreamEvents(
   throw new Error(`timed out waiting for ${expectedCount} SSE events from ${runId}`);
 }
 
-loomTest("GET /flows lists the leader-workers flow", async (t) => {
+heddleTest("GET /flows lists the leader-workers flow", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
@@ -169,7 +169,7 @@ loomTest("GET /flows lists the leader-workers flow", async (t) => {
   assert.ok(body.flows.includes(DEFAULT_FLOW_PATH));
 });
 
-loomTest("GET /flows/get loads the leader-workers flow", async (t) => {
+heddleTest("GET /flows/get loads the leader-workers flow", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
@@ -187,7 +187,7 @@ loomTest("GET /flows/get loads the leader-workers flow", async (t) => {
   assert.equal(body.flow.orchestrator.type, "codex");
 });
 
-loomTest("leader-workers routes casual debate prompts through debater agents", async (t) => {
+heddleTest("leader-workers routes casual debate prompts through debater agents", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
@@ -209,7 +209,7 @@ loomTest("leader-workers routes casual debate prompts through debater agents", a
   assert.ok(delegationRules.some((rule) => rule.includes("synthesizer") && rule.includes("final answer")));
 });
 
-loomTest("leader-workers gates phased work with user-advocate before next phase", async (t) => {
+heddleTest("leader-workers gates phased work with user-advocate before next phase", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
@@ -230,7 +230,7 @@ loomTest("leader-workers gates phased work with user-advocate before next phase"
   assert.match(rootLeaderRules, /수정-검증 루프를 반복한다/);
 });
 
-loomTest("POST /runs accepts the current flow and persists the mocked local CLI run", async (t) => {
+heddleTest("POST /runs accepts the current flow and persists the mocked local CLI run", async (t) => {
   const app = createTestApp(t);
   const userPrompt = "Inspect the local-only runtime path";
 
@@ -263,7 +263,7 @@ loomTest("POST /runs accepts the current flow and persists the mocked local CLI 
   assert.equal(detailBody.source, "server");
 });
 
-loomTest("GET /runs/:id returns 404 for a missing run", async (t) => {
+heddleTest("GET /runs/:id returns 404 for a missing run", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
@@ -275,7 +275,7 @@ loomTest("GET /runs/:id returns 404 for a missing run", async (t) => {
   assert.deepEqual(response.json(), { error: { message: "run not found" } });
 });
 
-loomTest("runs register, batched events, stale transitions, and per-run SSE work together", async (t) => {
+heddleTest("runs register, batched events, stale transitions, and per-run SSE work together", async (t) => {
   const app = createTestApp(t);
   const runId = "run-events-smoke";
   const now = Date.now();
@@ -402,7 +402,7 @@ loomTest("runs register, batched events, stale transitions, and per-run SSE work
   assert.equal(markStaleRuns(now + (11 * 60 * 1000)), 1);
 });
 
-loomTest("POST /runs/:id/abort returns 404 when the run does not exist", async (t) => {
+heddleTest("POST /runs/:id/abort returns 404 when the run does not exist", async (t) => {
   const app = createTestApp(t);
 
   const response = await app.inject({
@@ -414,7 +414,7 @@ loomTest("POST /runs/:id/abort returns 404 when the run does not exist", async (
   assert.deepEqual(response.json(), { error: { message: "run not found" } });
 });
 
-loomTest("PUT /flows/save round-trips the current recursive flow through YAML", async (t) => {
+heddleTest("PUT /flows/save round-trips the current recursive flow through YAML", async (t) => {
   const app = createTestApp(t);
   const flowPath = "examples/_roundtrip.yaml";
 
@@ -456,7 +456,7 @@ loomTest("PUT /flows/save round-trips the current recursive flow through YAML", 
   });
 });
 
-loomTest("PUT /flows/save rejects invalid recursive flow bodies and bad paths", async (t) => {
+heddleTest("PUT /flows/save rejects invalid recursive flow bodies and bad paths", async (t) => {
   const app = createTestApp(t);
 
   const invalidSchemaResponse = await app.inject({

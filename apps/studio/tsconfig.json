@@ -11,7 +11,7 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@aproto9787/loom-core": ["../../packages/core/src/index.ts"]
+      "@aproto9787/heddle-core": ["../../packages/core/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],

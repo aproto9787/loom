@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AgentConfig, DelegationRule, RoleDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, DelegationRule, RoleDefinition } from "@aproto9787/heddle-core";
 import { SERVER_ORIGIN } from "./sse-run.js";
 import { darkButtonLink, darkCardMuted, inputDark, selectDark } from "./panelStyles.js";
 import { getAgentAtPath, useRunStore, type AgentConfigTab, type DiscoveredResource } from "./store.js";

@@ -1,10 +1,10 @@
-import type { AgentConfig, SkillDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, SkillDefinition } from "@aproto9787/heddle-core";
 
 export function buildParallelChildPrompt(parentPrompt: string, siblingNames: string[]): string {
   return [
     parentPrompt,
     "",
-    `Parallel hint: if this task should be split, use Loom MCP delegation tools for: ${siblingNames.join(", ")}.`,
+    `Parallel hint: if this task should be split, use Heddle MCP delegation tools for: ${siblingNames.join(", ")}.`,
     "Do not emit DELEGATE lines or JSON delegation directives.",
   ].join("\n");
 }

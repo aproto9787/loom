@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { createCodexInstructionHome } from "./codex-home.js";
 
 test("createCodexInstructionHome mirrors host Codex home and replaces AGENTS.md", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "loom-codex-home-test-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "heddle-codex-home-test-"));
   const realCodexHome = path.join(root, "real");
   const parentDir = path.join(root, "homes");
   await mkdir(path.join(realCodexHome, "skills"), { recursive: true });
@@ -23,7 +23,7 @@ test("createCodexInstructionHome mirrors host Codex home and replaces AGENTS.md"
   try {
     const agents = await readFile(path.join(home.codexHome, "AGENTS.md"), "utf8");
     assert.match(agents, /# Global Rules/);
-    assert.match(agents, /# Loom flow instructions/);
+    assert.match(agents, /# Heddle flow instructions/);
     assert.match(agents, /flow rule\nworker roster/);
     assert.match(agents, /Wait for the user's next task before doing any work\./);
 

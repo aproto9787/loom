@@ -1,4 +1,4 @@
-import type { AgentConfig, FlowDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, FlowDefinition } from "@aproto9787/heddle-core";
 import { directChildren } from "../agent-tree.js";
 import { resolveAgentResources } from "../resources/index.js";
 import type { RunResources } from "../resources/index.js";
@@ -57,7 +57,7 @@ export function buildAgentPrompt(
           ? `Delegation rules for this agent:\n${formatDelegation(agent.delegation)}`
           : "No explicit delegation rules are configured.",
         "Use this child-agent metadata as planning guidance only.",
-        "Actual child-agent launch mechanics are injected by the Loom Delegation Protocol.",
+        "Actual child-agent launch mechanics are injected by the Heddle Delegation Protocol.",
         "If the user explicitly asks to delegate, assign work, use workers/agents/team members, or parallelize, delegate the relevant non-trivial work instead of completing the whole task yourself.",
         "Do not emit DELEGATE lines or JSON delegation directives.",
         "If you can finish the task yourself, respond with the final answer normally.",

@@ -1,11 +1,11 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import type { AgentConfig, HookEvent } from "@aproto9787/loom-core";
+import type { AgentConfig, HookEvent } from "@aproto9787/heddle-core";
 import type { RunResources } from "./resource-loader.js";
 
 const execAsync = promisify(exec);
 
-export type { HookEvent } from "@aproto9787/loom-core";
+export type { HookEvent } from "@aproto9787/heddle-core";
 
 export async function runHooks(
   agent: AgentConfig,

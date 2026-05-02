@@ -3,7 +3,7 @@ import { access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { AgentType, ProviderAuthState, ProviderProfile } from "@aproto9787/loom-core";
+import type { AgentType, ProviderAuthState, ProviderProfile } from "@aproto9787/heddle-core";
 
 const execFileAsync = promisify(execFile);
 

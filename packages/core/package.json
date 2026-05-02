@@ -1,7 +1,7 @@
 {
-  "name": "@aproto9787/loom-core",
+  "name": "@aproto9787/heddle-core",
   "version": "0.1.0",
-  "description": "Shared schemas and types for Loom local agent workflows.",
+  "description": "Shared schemas and types for Heddle local agent workflows.",
   "license": "GPL-3.0-only",
   "type": "module",
   "main": "dist/index.js",
@@ -12,15 +12,15 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aproto9787/loom.git",
+    "url": "git+https://github.com/aproto9787/heddle.git",
     "directory": "packages/core"
   },
-  "homepage": "https://aproto9787.github.io/loom/",
+  "homepage": "https://aproto9787.github.io/heddle/",
   "bugs": {
-    "url": "https://github.com/aproto9787/loom/issues"
+    "url": "https://github.com/aproto9787/heddle/issues"
   },
   "keywords": [
-    "loom",
+    "heddle",
     "ai-agents",
     "coding-agents",
     "workflow",

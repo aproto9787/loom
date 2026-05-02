@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import type { RoleDefinition } from "@aproto9787/loom-core";
+import type { RoleDefinition } from "@aproto9787/heddle-core";
 import { darkButton, darkCardMuted, inputDark, selectDark } from "./panelStyles.js";
 import { useRunStore } from "./store.js";
 
 const SERVER_ORIGIN =
-  (import.meta.env?.VITE_LOOM_SERVER as string | undefined) ?? "http://localhost:8787";
+  (import.meta.env?.VITE_HEDDLE_SERVER as string | undefined) ?? "http://localhost:8787";
 
 function emptyRole(): RoleDefinition {
   return { name: "", type: "claude-code", system: "" };

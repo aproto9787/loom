@@ -6,7 +6,7 @@ import {
   type HookDefinition,
   type RoleDefinition,
   type SkillDefinition,
-} from "@aproto9787/loom-core";
+} from "@aproto9787/heddle-core";
 import { getResourceRoot } from "./root.js";
 import { loadYamlDirectory } from "./yaml-directory.js";
 import type { ResourceLoadOptions, RunResources } from "./types.js";

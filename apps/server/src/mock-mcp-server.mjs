@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A tiny self-contained MCP server used by Loom demos so that the
+// A tiny self-contained MCP server used by Heddle demos so that the
 // mcp.server node can spawn a real subprocess and walk through a real
 // JSON-RPC handshake without requiring any external binary. It speaks
 // newline-delimited JSON on stdin/stdout and implements just enough of
@@ -52,7 +52,7 @@ rl.on("line", (line) => {
       id,
       result: {
         protocolVersion: "2025-11-25",
-        serverInfo: { name: "loom-mock-mcp", version: "0.1.0" },
+        serverInfo: { name: "heddle-mock-mcp", version: "0.1.0" },
         capabilities: { tools: {} },
       },
     });

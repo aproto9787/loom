@@ -1,4 +1,4 @@
-import type { AgentConfig, FlowDefinition } from "@aproto9787/loom-core";
+import type { AgentConfig, FlowDefinition } from "@aproto9787/heddle-core";
 import { uniqueStrings } from "./root.js";
 import type { AgentResourceScope } from "./types.js";
 

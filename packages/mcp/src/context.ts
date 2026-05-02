@@ -1,4 +1,4 @@
-export interface LoomMcpContext {
+export interface HeddleMcpContext {
   flowPath: string;
   cwd: string;
   currentAgentName: string;
@@ -19,22 +19,22 @@ export function parsePositiveNumber(value: string | undefined, fallback: number)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-export function buildContext(env: NodeJS.ProcessEnv): LoomMcpContext {
-  const flowPath = env.LOOM_FLOW_PATH;
+export function buildContext(env: NodeJS.ProcessEnv): HeddleMcpContext {
+  const flowPath = env.HEDDLE_FLOW_PATH;
   if (!flowPath) {
-    throw new Error("LOOM_FLOW_PATH is required for loom mcp");
+    throw new Error("HEDDLE_FLOW_PATH is required for heddle mcp");
   }
-  const subagentBin = env.LOOM_SUBAGENT_BIN;
+  const subagentBin = env.HEDDLE_SUBAGENT_BIN;
   if (!subagentBin) {
-    throw new Error("LOOM_SUBAGENT_BIN is required for loom mcp");
+    throw new Error("HEDDLE_SUBAGENT_BIN is required for heddle mcp");
   }
   return {
     flowPath,
-    cwd: env.LOOM_FLOW_CWD ?? process.cwd(),
-    currentAgentName: env.LOOM_AGENT ?? "leader",
-    parentDepth: parsePositiveInteger(env.LOOM_PARENT_DEPTH, 0),
-    runId: env.LOOM_RUN_ID,
-    serverOrigin: env.LOOM_SERVER_ORIGIN,
+    cwd: env.HEDDLE_FLOW_CWD ?? process.cwd(),
+    currentAgentName: env.HEDDLE_AGENT ?? "leader",
+    parentDepth: parsePositiveInteger(env.HEDDLE_PARENT_DEPTH, 0),
+    runId: env.HEDDLE_RUN_ID,
+    serverOrigin: env.HEDDLE_SERVER_ORIGIN,
     subagentBin,
   };
 }

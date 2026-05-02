@@ -7,7 +7,7 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@aproto9787/loom-core": ["../core/src/index.ts"]
+      "@aproto9787/heddle-core": ["../core/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"],

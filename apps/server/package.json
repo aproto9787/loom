@@ -1,5 +1,5 @@
 {
-  "name": "@loom/server",
+  "name": "@heddle/server",
   "version": "0.1.0",
   "license": "GPL-3.0-only",
   "private": true,
@@ -8,11 +8,11 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
-    "test": "LOOM_SERVER_AUTOSTART=0 LOOM_MOCK=1 node --test dist/**/*.test.js"
+    "test": "HEDDLE_SERVER_AUTOSTART=0 HEDDLE_MOCK=1 node --test dist/**/*.test.js"
   },
   "dependencies": {
-    "@aproto9787/loom-core": "workspace:^",
-    "@aproto9787/loom-runtime": "workspace:^",
+    "@aproto9787/heddle-core": "workspace:^",
+    "@aproto9787/heddle-runtime": "workspace:^",
     "fastify": "^5.8.4",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"

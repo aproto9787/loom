@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import type { HookDefinition, HookEvent, SkillDefinition } from "@aproto9787/loom-core";
+import type { HookDefinition, HookEvent, SkillDefinition } from "@aproto9787/heddle-core";
 import { useRunStore, type DiscoveredResource } from "./store.js";
 
 const SERVER_ORIGIN =
-  (import.meta.env?.VITE_LOOM_SERVER as string | undefined) ?? "http://localhost:8787";
+  (import.meta.env?.VITE_HEDDLE_SERVER as string | undefined) ?? "http://localhost:8787";
 
 const inputLight =
   "px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-mono placeholder:text-slate-400 focus:outline-none focus:border-blue-400 transition-colors";

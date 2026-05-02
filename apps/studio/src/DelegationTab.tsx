@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { AgentConfig } from "@aproto9787/loom-core";
+import type { AgentConfig } from "@aproto9787/heddle-core";
 import { DelegationRowEditor } from "./AgentConfigForm.js";
 import { darkCard, darkCardMuted } from "./panelStyles.js";
 import { getAgentAtPath, useRunStore } from "./store.js";

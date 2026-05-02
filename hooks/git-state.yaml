@@ -1,4 +1,4 @@
 name: git-state
 event: on_start
-command: '(git -C "${LOOM_FLOW_CWD:-$PWD}" rev-parse --is-inside-work-tree >/dev/null 2>&1 && git -C "${LOOM_FLOW_CWD:-$PWD}" log -1 --oneline 2>/dev/null || echo "[git] no commits yet or not a git repo") >> /tmp/loom-hooks.log'
+command: '(git -C "${HEDDLE_FLOW_CWD:-$PWD}" rev-parse --is-inside-work-tree >/dev/null 2>&1 && git -C "${HEDDLE_FLOW_CWD:-$PWD}" log -1 --oneline 2>/dev/null || echo "[git] no commits yet or not a git repo") >> /tmp/heddle-hooks.log'
 description: 현재 HEAD 커밋 기록 (빈 레포 / non-git 안전)
