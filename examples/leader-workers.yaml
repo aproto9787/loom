@@ -192,6 +192,8 @@ orchestrator:
     file:line evidence.
   flowMdRef: root-leader-rules
   effort: xhigh
+  skills:
+    - outcome-contract
   delegation:
     - to: codex-impl-1
       when: A non-trivial backend implementation slice can run independently.
@@ -238,6 +240,7 @@ orchestrator:
         - to: leader
           when: Validation complete.
       skills:
+        - outcome-contract
         - verification-checklist
         - concise
     - name: codex-impl-1
