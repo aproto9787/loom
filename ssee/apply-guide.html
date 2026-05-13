@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Apply Heddle Risk-Tier Governance</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f8f8;
+        --paper: #ffffff;
+        --ink: #17212b;
+        --muted: #687684;
+        --line: #d9e2e6;
+        --soft: #eef4f5;
+        --brand: #0d7c86;
+        --brand-2: #2f6e4e;
+        --ok: #24734d;
+        --warn: #a45b13;
+        --bad: #a33a3a;
+        --shadow: 0 18px 52px rgba(23, 38, 50, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(180deg, rgba(13, 124, 134, 0.11), transparent 430px),
+          var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .shell {
+        width: min(1440px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: 38px 0 20px;
+      }
+
+      .eyebrow {
+        color: var(--brand);
+        font-size: 12px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 1050px;
+        margin: 10px 0 12px;
+        color: #101820;
+        font-size: clamp(34px, 4vw, 62px);
+        line-height: 1.02;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 920px;
+        margin: 0;
+        color: #40515f;
+        font-size: 17px;
+        line-height: 1.65;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1fr 430px;
+        gap: 22px;
+        align-items: stretch;
+        margin-top: 24px;
+      }
+
+      .verdict,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .verdict {
+        display: grid;
+        grid-template-columns: 128px 1fr;
+        gap: 18px;
+        align-items: center;
+        padding: 22px;
+      }
+
+      .meter {
+        width: 120px;
+        height: 120px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at center, #fff 58%, transparent 59%),
+          conic-gradient(var(--ok) 0 88%, #dfe8ec 88% 100%);
+      }
+
+      .meter strong {
+        font-size: 27px;
+      }
+
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+
+      .stat {
+        min-height: 108px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      .stat .label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .stat .value {
+        margin-top: 8px;
+        color: #101820;
+        font-size: 22px;
+        font-weight: 850;
+      }
+
+      .stat .sub {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid rgba(217, 226, 230, 0.9);
+        background: rgba(246, 248, 248, 0.92);
+        backdrop-filter: blur(16px);
+      }
+
+      .nav-inner {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+      }
+
+      .tabs,
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .tab,
+      .chip,
+      .choice,
+      .copy {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        color: #30414f;
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      .tab,
+      .chip {
+        padding: 0 14px;
+      }
+
+      .tab.active,
+      .chip.active,
+      .choice.active {
+        border-color: rgba(13, 124, 134, 0.42);
+        background: var(--brand);
+        color: #fff;
+      }
+
+      .search {
+        width: min(360px, 34vw);
+        min-height: 40px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        outline: none;
+      }
+
+      main {
+        padding: 26px 0 64px;
+      }
+
+      .section {
+        display: none;
+      }
+
+      .section.active {
+        display: block;
+      }
+
+      .pad {
+        padding: 18px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 16px;
+      }
+
+      .span-4 {
+        grid-column: span 4;
+      }
+
+      .span-5 {
+        grid-column: span 5;
+      }
+
+      .span-6 {
+        grid-column: span 6;
+      }
+
+      .span-7 {
+        grid-column: span 7;
+      }
+
+      .span-8 {
+        grid-column: span 8;
+      }
+
+      .span-12 {
+        grid-column: span 12;
+      }
+
+      h2,
+      h3 {
+        margin: 0;
+        color: #101820;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: 24px;
+      }
+
+      h3 {
+        font-size: 16px;
+      }
+
+      .kicker {
+        color: var(--brand);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .small {
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 850;
+        white-space: nowrap;
+      }
+
+      .badge.ok {
+        background: rgba(36, 115, 77, 0.13);
+        color: var(--ok);
+      }
+
+      .badge.warn {
+        background: rgba(164, 91, 19, 0.13);
+        color: var(--warn);
+      }
+
+      .badge.info {
+        background: rgba(13, 124, 134, 0.13);
+        color: var(--brand);
+      }
+
+      .badge.bad {
+        background: rgba(163, 58, 58, 0.13);
+        color: var(--bad);
+      }
+
+      .list {
+        display: grid;
+        gap: 10px;
+        margin: 14px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .list li {
+        display: flex;
+        gap: 10px;
+        color: #354553;
+        line-height: 1.55;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        flex: 0 0 8px;
+        margin-top: 8px;
+        border-radius: 50%;
+        background: var(--brand);
+      }
+
+      .timeline {
+        display: grid;
+        gap: 10px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 92px 1fr auto;
+        gap: 14px;
+        align-items: start;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      .step button {
+        min-height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #fff;
+        color: #30414f;
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      .detail {
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: 8px;
+        background: #eef7f7;
+        color: #25454b;
+        line-height: 1.6;
+      }
+
+      .command {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: start;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #111b24;
+        color: #edf6f7;
+      }
+
+      .command code {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .copy {
+        min-height: 34px;
+        min-width: 76px;
+        padding: 0 10px;
+        border-radius: 6px;
+      }
+
+      .command-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .impact-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .impact-card {
+        min-height: 220px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .impact-card strong.value {
+        display: block;
+        margin: 12px 0 6px;
+        color: #101820;
+        font-size: 34px;
+        line-height: 1;
+      }
+
+      .bar {
+        height: 9px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e1eaee;
+      }
+
+      .bar span {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--brand), var(--brand-2));
+      }
+
+      .compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .compare > div {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      .compare .after {
+        border-color: rgba(36, 115, 77, 0.32);
+        background: #f4faf6;
+      }
+
+      .workflow-layout {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 16px;
+      }
+
+      .choices {
+        display: grid;
+        gap: 8px;
+      }
+
+      .choice {
+        min-height: 48px;
+        padding: 0 14px;
+        text-align: left;
+      }
+
+      .workflow-detail {
+        min-height: 330px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .table th,
+      .table td {
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .table th {
+        background: var(--soft);
+        color: #314350;
+        font-size: 12px;
+      }
+
+      .table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .note {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      @media (max-width: 1080px) {
+        .hero-grid,
+        .workflow-layout,
+        .compare {
+          grid-template-columns: 1fr;
+        }
+
+        .impact-grid,
+        .status-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .span-4,
+        .span-5,
+        .span-6,
+        .span-7,
+        .span-8,
+        .span-12 {
+          grid-column: span 12;
+        }
+
+        .nav-inner {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .search {
+          width: 100%;
+        }
+      }
+
+      @media (max-width: 700px) {
+        .shell {
+          width: min(100% - 24px, 1440px);
+        }
+
+        .verdict,
+        .step,
+        .command {
+          grid-template-columns: 1fr;
+        }
+
+        .impact-grid,
+        .status-grid {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          font-size: 36px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="shell">
+        <div class="eyebrow">Application guide and expected gains</div>
+        <h1>적용 방법과 기존 대비 개선도</h1>
+        <p class="lead">
+          이 문서는 `feat/risk-tier-governance`를 main Heddle에 실제 적용하는 절차와, 적용 후
+          기존 workflow 대비 얻는 안전성, 능률, 추적성 개선을 정리합니다. 개선 수치는 실측 벤치마크가
+          아니라 현재 구현 구조를 기준으로 한 운영 기대치입니다.
+        </p>
+
+        <div class="hero-grid">
+          <section class="verdict">
+            <div class="meter"><strong>Apply</strong></div>
+            <div>
+              <div class="kicker">Recommended action</div>
+              <h2>PR merge 후 main checkout에 pull하고 Heddle 세션을 재시작하십시오</h2>
+              <ul class="list">
+                <li><span class="dot"></span><span>현재 브랜치는 commit/push 완료: <span class="mono">65c4a4c</span></span></li>
+                <li><span class="dot"></span><span>직접 복사 대신 PR merge를 기준으로 적용해야 main checkout drift를 막을 수 있습니다.</span></li>
+                <li><span class="dot"></span><span>적용 후 MCP/server/studio는 재시작해야 새 tool surface와 default flow가 반영됩니다.</span></li>
+              </ul>
+            </div>
+          </section>
+
+          <aside class="panel pad">
+            <div class="status-grid">
+              <div class="stat">
+                <div class="label">Branch</div>
+                <div class="value">Pushed</div>
+                <div class="sub">origin/feat/risk-tier-governance</div>
+              </div>
+              <div class="stat">
+                <div class="label">Apply mode</div>
+                <div class="value">PR</div>
+                <div class="sub">direct merge 아님</div>
+              </div>
+              <div class="stat">
+                <div class="label">Workflow</div>
+                <div class="value">Ready</div>
+                <div class="sub">Codex-only risk-tier</div>
+              </div>
+              <div class="stat">
+                <div class="label">Risk</div>
+                <div class="value">Medium</div>
+                <div class="sub">default flow 변경 포함</div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </header>
+
+    <nav>
+      <div class="shell nav-inner">
+        <div class="tabs" role="tablist" aria-label="application guide sections">
+          <button class="tab active" data-section="apply">적용 순서</button>
+          <button class="tab" data-section="commands">명령</button>
+          <button class="tab" data-section="impact">개선도</button>
+          <button class="tab" data-section="usage">사용법</button>
+          <button class="tab" data-section="guardrails">주의점</button>
+        </div>
+        <input id="search" class="search" type="search" placeholder="merge, restart, side-effect, 능률 검색" />
+      </div>
+    </nav>
+
+    <main class="shell">
+      <section id="apply" class="section active">
+        <div class="grid">
+          <article class="panel pad span-8">
+            <div class="kicker">Apply sequence</div>
+            <h2>적용 순서</h2>
+            <div id="timeline" class="timeline" style="margin-top: 14px"></div>
+            <div id="stepDetail" class="detail">단계를 누르면 목적과 실패 시 대응을 볼 수 있습니다.</div>
+          </article>
+
+          <article class="panel pad span-4">
+            <div class="kicker">Decision</div>
+            <h2>바로 바꿀 만한가</h2>
+            <ul class="list">
+              <li><span class="dot"></span><span><b>예.</b> main workflow로 전환할 만합니다.</span></li>
+              <li><span class="dot"></span><span>이유는 Claude auth 의존 제거, side-effect gate 강제, Studio manifest 가시화입니다.</span></li>
+              <li><span class="dot"></span><span>단, default flow와 runtime provider surface가 바뀌므로 PR/CI/review를 거쳐야 합니다.</span></li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="commands" class="section">
+        <div class="panel pad">
+          <div class="kicker">Commands</div>
+          <h2>적용 명령 세트</h2>
+          <div class="chips" style="margin: 14px 0">
+            <button class="chip active" data-command-set="pr">PR 준비</button>
+            <button class="chip" data-command-set="pull">main 적용</button>
+            <button class="chip" data-command-set="restart">재시작</button>
+            <button class="chip" data-command-set="smoke">적용 확인</button>
+          </div>
+          <div id="commandList" class="command-list"></div>
+        </div>
+      </section>
+
+      <section id="impact" class="section">
+        <div class="grid">
+          <article class="panel pad span-12">
+            <div class="kicker">Expected gain</div>
+            <h2>기존 대비 개선도</h2>
+            <p class="note">아래 수치는 벤치마크가 아니라 운영 기대치입니다. low-risk 작업은 속도를 유지하고, high-risk 작업은 일부 시간이 늘어나는 대신 사고 가능성을 낮추는 구조입니다.</p>
+            <div id="impactGrid" class="impact-grid" style="margin-top: 14px"></div>
+          </article>
+
+          <article class="panel pad span-12">
+            <div class="kicker">Before and after</div>
+            <h2>원래 workflow 대비</h2>
+            <div class="compare" style="margin-top: 14px">
+              <div>
+                <h3>기존</h3>
+                <ul class="list">
+                  <li><span class="dot"></span><span>Claude-backed worker가 auth 상태에 막힐 수 있었습니다.</span></li>
+                  <li><span class="dot"></span><span>위험 작업 판단이 leader prompt와 문서 규칙에 많이 의존했습니다.</span></li>
+                  <li><span class="dot"></span><span>gate, approval, rollback 상태가 run detail에서 한눈에 이어지지 않았습니다.</span></li>
+                  <li><span class="dot"></span><span>side-effect 실행 직전 차단이 실제 서버 enforcement로 고정되지 않았습니다.</span></li>
+                </ul>
+              </div>
+              <div class="after">
+                <h3>적용 후</h3>
+                <ul class="list">
+                  <li><span class="dot"></span><span>active runtime/default flow가 Codex-only로 정리됩니다.</span></li>
+                  <li><span class="dot"></span><span>risk tier가 manifest로 남고 Studio에서 보입니다.</span></li>
+                  <li><span class="dot"></span><span>Tier C+는 approval + rollback evidence 없이는 gate pass가 안 됩니다.</span></li>
+                  <li><span class="dot"></span><span>MCP governance tools로 worker가 상태를 직접 기록합니다.</span></li>
+                </ul>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="usage" class="section">
+        <div class="panel pad">
+          <div class="kicker">Operating guide</div>
+          <h2>적용 후 사용법</h2>
+          <div class="workflow-layout" style="margin-top: 14px">
+            <div id="workflowChoices" class="choices"></div>
+            <div id="workflowDetail" class="workflow-detail"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="guardrails" class="section">
+        <div class="grid">
+          <article class="panel pad span-6">
+            <div class="kicker">Do not</div>
+            <h2>적용 시 하지 말 것</h2>
+            <ul class="list">
+              <li><span class="dot"></span><span>worktree 파일을 main checkout에 수동 복사하지 않습니다.</span></li>
+              <li><span class="dot"></span><span>PR/CI 없이 default workflow 변경을 바로 main에 섞지 않습니다.</span></li>
+              <li><span class="dot"></span><span>실행 중인 오래된 Heddle MCP/server/studio를 그대로 두고 새 동작이라 판단하지 않습니다.</span></li>
+              <li><span class="dot"></span><span>side-effect gate가 막힌 것을 문서로만 우회하지 않습니다.</span></li>
+            </ul>
+          </article>
+
+          <article class="panel pad span-6">
+            <div class="kicker">Watch points</div>
+            <h2>적용 후 관찰 지점</h2>
+            <table class="table" style="margin-top: 14px">
+              <thead>
+                <tr><th>지점</th><th>봐야 할 것</th><th>문제 신호</th></tr>
+              </thead>
+              <tbody id="watchRows"></tbody>
+            </table>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const steps = [
+        ["1", "GitHub에서 PR 생성", "현재 branch는 이미 push됐습니다. PR URL에서 draft PR을 만들고 검증 결과를 본문에 적습니다.", "PR 없이 main에 직접 섞으면 변경 범위가 큰 default workflow 전환을 검토하기 어렵습니다."],
+        ["2", "CI/review 확인", "build/typecheck/test가 원격에서도 통과하는지 확인합니다. 로컬에서는 이미 통과했습니다.", "CI 실패 시 해당 로그 기준으로 fix commit을 추가합니다."],
+        ["3", "PR merge", "검토가 끝나면 main/master에 merge합니다. 변경이 하나의 제품 기능이므로 squash merge도 적합합니다.", "merge 전 main checkout은 그대로 둡니다."],
+        ["4", "main checkout pull", "`/home/argoss/asos/dev/Project/heddle`에서 `git pull --ff-only`로 반영합니다.", "수동 복사나 checkout reset은 피합니다."],
+        ["5", "빌드 및 재시작", "pull 후 build/test를 돌리고 Heddle MCP, server, Studio 세션을 재시작합니다.", "재시작 전에는 이전 dist/tool surface가 계속 보일 수 있습니다."],
+        ["6", "새 workflow smoke", "quick/code/side_effect 각각 하나씩 작은 run을 만들어 Studio manifest와 gate 동작을 확인합니다.", "side-effect gate가 approval/rollback 없이 pass되면 즉시 롤백해야 합니다."]
+      ];
+
+      const commandSets = {
+        pr: [
+          ["PR URL", "https://github.com/aproto9787/heddle/pull/new/feat/risk-tier-governance"],
+          ["브랜치 확인", "cd /home/argoss/asos/dev/worktrees/heddle-risk-tier\ngit status --short --branch\ngit log --oneline -3 --decorate"]
+        ],
+        pull: [
+          ["main checkout 적용", "cd /home/argoss/asos/dev/Project/heddle\ngit fetch origin\ngit switch master\ngit pull --ff-only"],
+          ["의존성 확인", "pnpm install --frozen-lockfile\n# package manager가 lock mismatch를 내지 않으면 그대로 진행"]
+        ],
+        restart: [
+          ["빌드", "pnpm -r build"],
+          ["검증", "pnpm -r typecheck && pnpm -r test"],
+          ["세션 재시작", "# 실행 중인 Heddle MCP/server/studio 세션을 종료 후 다시 시작\n# Codex/Heddle host session도 새로 열어 MCP tool list를 새 dist 기준으로 로드"]
+        ],
+        smoke: [
+          ["서버 health", "curl -sS http://127.0.0.1:8787/health"],
+          ["Studio", "curl -sS http://localhost:5173/ | sed -n '1,4p'"],
+          ["Side-effect smoke", "# docs/risk-tier-governance/smoke-flow.md 절차대로\n# 1. manifest_update\n# 2. evidence 없는 gate_record pass가 409인지 확인\n# 3. approval_recorded + rollback_recorded 후 gate pass 확인"]
+        ]
+      };
+
+      const impacts = [
+        ["Claude auth 제거", "+높음", 92, "user-advocate/worker가 Claude login 상태에 막히던 경로를 active surface에서 제거합니다."],
+        ["Side-effect 안전성", "+매우 높음", 96, "approval과 rollback evidence 없이는 Tier C+ gate가 서버에서 pass되지 않습니다."],
+        ["추적성", "+높음", 90, "manifest_update, gate_record, approval, rollback event가 run detail과 traces.db에 남습니다."],
+        ["Low-risk 속도", "유지", 82, "quick tier는 reviewer/user-advocate를 강제하지 않아 기존 direct path를 유지합니다."],
+        ["High-risk 능률", "+중간", 76, "승인/rollback 기록 때문에 단기 overhead는 생기지만 실패 후 복구와 리뷰 시간이 줄어듭니다."],
+        ["운영 판단", "+높음", 88, "Studio에서 tier, pack, gate timeline, blocker를 한 화면에서 확인할 수 있습니다."]
+      ];
+
+      const workflows = {
+        quick: {
+          label: "Quick",
+          title: "단순 read-only 작업",
+          body: "기존처럼 빠르게 처리합니다. risk manifest가 없어도 됩니다.",
+          bullets: ["상태 확인, 문서 읽기, 단순 질문", "worker 위임 불필요", "governance가 속도를 잡아먹지 않음"]
+        },
+        code: {
+          label: "Code",
+          title: "일반 코드 변경",
+          body: "기능 구현, 테스트 추가, server/runtime 변경은 code tier로 봅니다.",
+          bullets: ["변경 전 acceptance 고정", "필요 시 Codex worker 위임", "다파일/런타임 변경은 reviewer gate"]
+        },
+        side: {
+          label: "Side-effect",
+          title: "삭제/배포/설정 변경",
+          body: "되돌리기 어렵거나 외부 영향이 있는 작업은 side_effect tier로 올립니다.",
+          bullets: ["heddle_require_approval", "heddle_record_approval", "heddle_record_rollback", "heddle_record_gate pass"]
+        },
+        enterprise: {
+          label: "Enterprise",
+          title: "릴리즈/보안/대형 작업",
+          body: "여러 phase와 reviewer/user-advocate gate가 필요한 작업입니다.",
+          bullets: ["phase acceptance 먼저 고정", "각 phase 후 gate", "미구현 enterprise registry는 별도 spec"]
+        }
+      };
+
+      const watchRows = [
+        ["MCP tool list", "governance tools가 보이는지", "old dist가 계속 로드됨"],
+        ["Default flow", "leader-workers가 Codex-backed인지", "legacy Claude role이 active로 보임"],
+        ["Studio run detail", "risk tier/gate/approval/rollback 표시", "events는 있는데 manifest panel이 비어 있음"],
+        ["Side-effect gate", "evidence 전 409 차단", "approval 없이 pass됨"],
+        ["Low-risk task", "빠른 direct 처리 유지", "모든 작업에 reviewer가 강제됨"]
+      ];
+
+      let activeSection = "apply";
+      let activeCommand = "pr";
+      let activeWorkflow = "code";
+      let query = "";
+
+      function showSection(name) {
+        activeSection = name;
+        document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.section === name));
+        document.querySelectorAll(".section").forEach((section) => section.classList.toggle("active", section.id === name));
+      }
+
+      function renderTimeline() {
+        const box = document.getElementById("timeline");
+        box.innerHTML = steps.map((step, index) => `
+          <div class="step">
+            <span class="badge info">Step ${step[0]}</span>
+            <div><strong>${step[1]}</strong><div class="small muted">${step[2]}</div></div>
+            <button type="button" data-step="${index}">보기</button>
+          </div>
+        `).join("");
+        box.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-step]");
+          if (!button) return;
+          const step = steps[Number(button.dataset.step)];
+          document.getElementById("stepDetail").textContent = `${step[1]}: ${step[2]} 실패/주의: ${step[3]}`;
+        });
+      }
+
+      function renderCommands() {
+        document.querySelectorAll(".chip").forEach((chip) => chip.classList.toggle("active", chip.dataset.commandSet === activeCommand));
+        document.getElementById("commandList").innerHTML = commandSets[activeCommand].map(([label, command], index) => `
+          <div>
+            <div class="small muted" style="margin: 0 0 6px 2px">${label}</div>
+            <div class="command">
+              <code id="cmd-${activeCommand}-${index}">${command}</code>
+              <button class="copy" type="button" data-copy="cmd-${activeCommand}-${index}">copy</button>
+            </div>
+          </div>
+        `).join("");
+      }
+
+      function renderImpacts() {
+        const visible = impacts.filter((impact) => !query || impact.join(" ").toLowerCase().includes(query.toLowerCase()));
+        document.getElementById("impactGrid").innerHTML = visible.map((impact) => `
+          <article class="impact-card">
+            <span class="badge ${impact[1] === "유지" ? "info" : "ok"}">${impact[1]}</span>
+            <h3 style="margin-top: 12px">${impact[0]}</h3>
+            <strong class="value">${impact[2]}</strong>
+            <div class="bar"><span style="width:${impact[2]}%"></span></div>
+            <p class="muted" style="line-height:1.6">${impact[3]}</p>
+          </article>
+        `).join("") || `<div class="muted">검색 결과가 없습니다.</div>`;
+      }
+
+      function renderWorkflow() {
+        document.getElementById("workflowChoices").innerHTML = Object.entries(workflows).map(([key, workflow]) => `
+          <button class="choice ${activeWorkflow === key ? "active" : ""}" type="button" data-workflow="${key}">${workflow.label}</button>
+        `).join("");
+        const workflow = workflows[activeWorkflow];
+        document.getElementById("workflowDetail").innerHTML = `
+          <span class="badge info">${workflow.label}</span>
+          <h2 style="margin-top:12px">${workflow.title}</h2>
+          <p style="color:#3c4b58;line-height:1.7">${workflow.body}</p>
+          <ul class="list">${workflow.bullets.map((line) => `<li><span class="dot"></span><span>${line}</span></li>`).join("")}</ul>
+        `;
+        document.querySelectorAll(".choice").forEach((button) => {
+          button.addEventListener("click", () => {
+            activeWorkflow = button.dataset.workflow;
+            renderWorkflow();
+          });
+        });
+      }
+
+      function renderWatchRows() {
+        document.getElementById("watchRows").innerHTML = watchRows.map((row) => `
+          <tr><td><strong>${row[0]}</strong></td><td>${row[1]}</td><td>${row[2]}</td></tr>
+        `).join("");
+      }
+
+      document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => showSection(tab.dataset.section)));
+      document.querySelectorAll(".chip").forEach((chip) => chip.addEventListener("click", () => {
+        activeCommand = chip.dataset.commandSet;
+        renderCommands();
+      }));
+      document.addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-copy]");
+        if (!button) return;
+        const text = document.getElementById(button.dataset.copy).textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.textContent = "copied";
+          setTimeout(() => (button.textContent = "copy"), 1000);
+        } catch {
+          button.textContent = "select";
+        }
+      });
+      document.getElementById("search").addEventListener("input", (event) => {
+        query = event.target.value.trim();
+        renderImpacts();
+        if (query) showSection("impact");
+      });
+
+      renderTimeline();
+      renderCommands();
+      renderImpacts();
+      renderWorkflow();
+      renderWatchRows();
+    </script>
+  </body>
+</html>
