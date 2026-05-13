@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentConfig, DelegationRule, RoleDefinition } from "@aproto9787/heddle-core";
 import { SERVER_ORIGIN } from "./sse-run.js";
 import { darkButtonLink, darkCardMuted, inputDark, selectDark } from "./panelStyles.js";
-import { getAgentAtPath, useRunStore, type AgentConfigTab, type DiscoveredResource } from "./store.js";
+import { CODEX_AGENT_TYPE, getAgentAtPath, useRunStore, type AgentConfigTab, type DiscoveredResource } from "./store.js";
 
 function toTabId(tab: "flowMd" | "delegation"): AgentConfigTab {
   return tab === "flowMd" ? "flow-md" : "delegation";
@@ -274,14 +274,12 @@ export function AgentConfigForm({
   const updateAgent = useRunStore((s) => s.updateAgent);
   const removeAgent = useRunStore((s) => s.removeAgent);
   const roles = useRunStore((s) => s.roles);
-  const availableMcps = useRunStore((s) => s.availableMcps);
   const discoveredResources = useRunStore((s) => s.discoveredResources);
   const providers = useRunStore((s) => s.providers);
-  const fetchMcps = useRunStore((s) => s.fetchMcps);
   const discoverResources = useRunStore((s) => s.discoverResources);
 
   const [name, setName] = useState(agent.name);
-  const [type, setType] = useState(agent.type);
+  const [type, setType] = useState<AgentConfig["type"]>(CODEX_AGENT_TYPE);
   const [model, setModel] = useState(agent.model ?? "");
   const [effort, setEffort] = useState(agent.effort ?? "");
   const [teamId, setTeamId] = useState(agent.team?.[0]?.id ?? "");
@@ -297,7 +295,7 @@ export function AgentConfigForm({
 
   useEffect(() => {
     setName(agent.name);
-    setType(agent.type);
+    setType(CODEX_AGENT_TYPE);
     setModel(agent.model ?? "");
     setEffort(agent.effort ?? "");
     setTeamId(agent.team?.[0]?.id ?? "");
@@ -307,25 +305,19 @@ export function AgentConfigForm({
 
   const role = useMemo(() => roles.find((entry) => entry.name === agent.role), [agent.role, roles]);
 
-  const effectiveType = agent.type ?? role?.type ?? type;
-  const modelOptions =
-    effectiveType === "claude-code"
-      ? ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
-      : ["gpt-5.5", "gpt-5.5-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
+  const effectiveType = CODEX_AGENT_TYPE;
+  const modelOptions = ["gpt-5.5", "gpt-5.5-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"];
 
   useEffect(() => {
-    fetchMcps(SERVER_ORIGIN);
     discoverResources(SERVER_ORIGIN);
-  }, [discoverResources, fetchMcps]);
+  }, [discoverResources]);
 
-  const resourcePlatform: DiscoveredResource["platform"] = effectiveType === "codex" ? "codex" : "claude";
+  const resourcePlatform = CODEX_AGENT_TYPE;
   const mcpOptions = useMemo(
     () => {
-      // availableMcps comes from /mcps (Claude-only) — skip it for Codex agents
-      const base = resourcePlatform === "claude" ? availableMcps : [];
-      return uniqueSorted([...base, ...getDiscoveredNames(discoveredResources, "mcp", resourcePlatform)]);
+      return uniqueSorted(getDiscoveredNames(discoveredResources, "mcp", resourcePlatform));
     },
-    [availableMcps, discoveredResources, resourcePlatform],
+    [discoveredResources, resourcePlatform],
   );
   const hookOptions = useMemo(
     () => uniqueSorted(getDiscoveredNames(discoveredResources, "hook", resourcePlatform)),
@@ -389,7 +381,7 @@ export function AgentConfigForm({
       >
         <span className="font-semibold font-mono">{agent.name}</span>
         <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">
-          {agent.type}
+          {CODEX_AGENT_TYPE}
         </span>
         <span className="ml-auto text-xs text-slate-400">
           {expanded ? "\u25be" : "\u25b8"}
@@ -400,7 +392,7 @@ export function AgentConfigForm({
           <nav className="flex flex-wrap gap-2 pt-1">
             {TAB_ORDER
               // Leader (root orchestrator) runs in the host's real HOME with
-              // the user's full Claude Code setup — flow-scoped MCP/hooks/skills
+              // the user's full Codex setup — flow-scoped MCP/hooks/skills
               // are not applied to it. Hide the Resources tab so it doesn't
               // mislead the user into thinking their toggles have effect.
               .filter((tab) => !(isRoot && tab.id === "resources"))
@@ -462,10 +454,9 @@ export function AgentConfigForm({
                   onChange={(e) => {
                     const next = e.target.value as AgentConfig["type"];
                     setType(next);
-                    updateAgent(path, { type: next });
+                    updateAgent(path, { type: CODEX_AGENT_TYPE });
                   }}
                 >
-                  <option value="claude-code">claude-code</option>
                   <option value="codex">codex</option>
                 </select>
               </label>
@@ -549,8 +540,7 @@ export function AgentConfigForm({
                     title={role?.system ? `Role system: ${role.system}` : undefined}
                     onChange={(e) => {
                       const value = e.target.value || undefined;
-                      const nextRole = roles.find((entry) => entry.name === value);
-                      setType(agent.type ?? nextRole?.type ?? "claude-code");
+                      setType(CODEX_AGENT_TYPE);
                       setModel(agent.model ?? "");
                       setEffort(agent.effort ?? "");
                       updateAgent(path, { role: value });

@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import type { AgentConfig } from "@aproto9787/heddle-core";
+import {
+  approvalRecordSchema,
+  gateRecordSchema,
+  rollbackRecordSchema,
+  type AgentConfig,
+  type ApprovalRecord,
+  type GateRecord,
+  type RollbackRecord,
+} from "@aproto9787/heddle-core";
 import {
   directChildren,
   findAgentByName,
@@ -23,6 +31,25 @@ import { buildTools, childNames, dynamicToolMap } from "./tools.js";
 interface ToolCallParams {
   name?: string;
   arguments?: unknown;
+}
+
+type GovernanceEventType =
+  | "gate_record"
+  | "manifest_update"
+  | "approval_required"
+  | "approval_recorded"
+  | "rollback_recorded";
+
+interface ManifestUpdate {
+  traceId?: string;
+  request?: string;
+  interpretedGoal?: string;
+  riskTier?: "quick" | "code" | "side_effect" | "enterprise";
+  governancePack?: string;
+  workers?: string[];
+  result?: "running" | "pass" | "fail" | "blocked" | "aborted";
+  summary?: string;
+  updatedAt?: string;
 }
 
 export interface HeddleMcpServerOptions {
@@ -151,7 +178,205 @@ export class HeddleMcpServer {
         cancelled: true,
       });
     }
+    if (name === "heddle_record_gate") {
+      return textResult(await this.recordGate(args));
+    }
+    if (name === "heddle_read_manifest") {
+      return textResult(await this.readManifest(args));
+    }
+    if (name === "heddle_update_manifest") {
+      return textResult(await this.updateManifest(args));
+    }
+    if (name === "heddle_require_approval") {
+      return textResult(await this.requireApproval(args));
+    }
+    if (name === "heddle_record_approval") {
+      return textResult(await this.recordApproval(args));
+    }
+    if (name === "heddle_record_rollback") {
+      return textResult(await this.recordRollback(args));
+    }
     return textResult(`unknown tool: ${name ?? "<missing>"}`, true);
+  }
+
+  private resolveGovernanceContext(args: unknown): { context: HeddleMcpContext; runId: string; serverOrigin: string } {
+    const context = buildContext(this.env);
+    const object = asObject(args);
+    const runId = typeof object.runId === "string" && object.runId.trim()
+      ? object.runId.trim()
+      : context.runId;
+    if (!runId) {
+      throw new Error("runId is required; provide runId or set HEDDLE_RUN_ID");
+    }
+    if (!context.serverOrigin) {
+      throw new Error("HEDDLE_SERVER_ORIGIN is required for governance tools");
+    }
+    return {
+      context,
+      runId,
+      serverOrigin: context.serverOrigin.replace(/\/+$/, ""),
+    };
+  }
+
+  private async postGovernanceEvent(
+    args: unknown,
+    type: GovernanceEventType,
+    raw: GateRecord | ManifestUpdate | ApprovalRecord | RollbackRecord,
+    summary: string,
+  ): Promise<unknown> {
+    const { context, runId, serverOrigin } = this.resolveGovernanceContext(args);
+    const response = await fetch(`${serverOrigin}/runs/${encodeURIComponent(runId)}/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        events: [
+          {
+            ts: Date.now(),
+            type,
+            summary,
+            agentName: context.currentAgentName,
+            agentDepth: context.parentDepth,
+            raw,
+          },
+        ],
+      }),
+    });
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) as unknown : {};
+    if (!response.ok) {
+      const message = typeof payload === "object" && payload !== null && "error" in payload
+        ? JSON.stringify((payload as { error: unknown }).error)
+        : text;
+      throw new Error(`governance event rejected (${response.status}): ${message}`);
+    }
+    return {
+      runId,
+      eventType: type,
+      raw,
+      response: payload,
+    };
+  }
+
+  private async recordGate(args: unknown): Promise<unknown> {
+    const context = buildContext(this.env);
+    const object = asObject(args);
+    const record = gateRecordSchema.parse({
+      gate: object.gate,
+      status: object.status,
+      reason: object.reason,
+      evidence: object.evidence,
+      blockers: object.blockers,
+      recordedBy: typeof object.recordedBy === "string" ? object.recordedBy : context.currentAgentName,
+      recordedAt: new Date().toISOString(),
+    });
+    return this.postGovernanceEvent(args, "gate_record", record, `gate ${record.gate}: ${record.status}`);
+  }
+
+  private async readManifest(args: unknown): Promise<unknown> {
+    const { runId, serverOrigin } = this.resolveGovernanceContext(args);
+    const response = await fetch(`${serverOrigin}/runs/${encodeURIComponent(runId)}/manifest`);
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) as unknown : {};
+    if (!response.ok) {
+      throw new Error(`manifest read failed (${response.status}): ${text}`);
+    }
+    return payload;
+  }
+
+  private parseManifestUpdate(args: unknown): ManifestUpdate {
+    const object = asObject(args);
+    const update: ManifestUpdate = {};
+    for (const key of ["traceId", "request", "interpretedGoal", "governancePack", "summary"] as const) {
+      if (typeof object[key] === "string" && object[key].trim()) {
+        update[key] = object[key].trim();
+      }
+    }
+    if (typeof object.riskTier === "string") {
+      const riskTier = object.riskTier.trim();
+      if (!["quick", "code", "side_effect", "enterprise"].includes(riskTier)) {
+        throw new Error("riskTier must be one of quick, code, side_effect, enterprise");
+      }
+      update.riskTier = riskTier as ManifestUpdate["riskTier"];
+    }
+    if (typeof object.result === "string") {
+      const result = object.result.trim();
+      if (!["running", "pass", "fail", "blocked", "aborted"].includes(result)) {
+        throw new Error("result must be one of running, pass, fail, blocked, aborted");
+      }
+      update.result = result as ManifestUpdate["result"];
+    }
+    if (Array.isArray(object.workers)) {
+      const workers = object.workers.filter((worker): worker is string => typeof worker === "string" && worker.trim().length > 0)
+        .map((worker) => worker.trim());
+      if (workers.length !== object.workers.length) {
+        throw new Error("workers must contain non-empty strings");
+      }
+      update.workers = workers;
+    }
+    update.updatedAt = new Date().toISOString();
+    const meaningfulKeys = Object.keys(update).filter((key) => key !== "updatedAt");
+    if (meaningfulKeys.length === 0) {
+      throw new Error("manifest update must include at least one bounded field");
+    }
+    return update;
+  }
+
+  private async updateManifest(args: unknown): Promise<unknown> {
+    const update = this.parseManifestUpdate(args);
+    return this.postGovernanceEvent(args, "manifest_update", update, "manifest updated");
+  }
+
+  private async requireApproval(args: unknown): Promise<unknown> {
+    const context = buildContext(this.env);
+    const object = asObject(args);
+    const record = approvalRecordSchema.parse({
+      id: typeof object.id === "string" && object.id.trim() ? object.id.trim() : randomUUID(),
+      gate: object.gate,
+      status: "required",
+      target: object.target,
+      reason: object.reason,
+      requestedBy: typeof object.requestedBy === "string" ? object.requestedBy : context.currentAgentName,
+      evidence: object.evidence,
+      recordedAt: new Date().toISOString(),
+    });
+    return this.postGovernanceEvent(args, "approval_required", record, `approval required: ${record.target}`);
+  }
+
+  private async recordApproval(args: unknown): Promise<unknown> {
+    const object = asObject(args);
+    const status = object.status;
+    if (status !== "approved" && status !== "rejected") {
+      throw new Error("status must be approved or rejected");
+    }
+    const record = approvalRecordSchema.parse({
+      id: typeof object.id === "string" && object.id.trim() ? object.id.trim() : randomUUID(),
+      gate: object.gate,
+      status,
+      target: object.target,
+      reason: object.reason,
+      approver: object.approver,
+      approvalText: object.approvalText,
+      evidence: object.evidence,
+      recordedAt: new Date().toISOString(),
+    });
+    return this.postGovernanceEvent(args, "approval_recorded", record, `approval ${record.status}: ${record.target}`);
+  }
+
+  private async recordRollback(args: unknown): Promise<unknown> {
+    const object = asObject(args);
+    const record = rollbackRecordSchema.parse({
+      id: typeof object.id === "string" && object.id.trim() ? object.id.trim() : randomUUID(),
+      gate: object.gate,
+      status: typeof object.status === "string" ? object.status : "planned",
+      target: object.target,
+      rollbackPlan: object.rollbackPlan,
+      currentState: object.currentState,
+      backupRef: object.backupRef,
+      lastSafeCheckpoint: object.lastSafeCheckpoint,
+      evidence: object.evidence,
+      recordedAt: new Date().toISOString(),
+    });
+    return this.postGovernanceEvent(args, "rollback_recorded", record, `rollback ${record.status}: ${record.target}`);
   }
 
   private async delegate(args: unknown, defaultWait = true): Promise<unknown> {

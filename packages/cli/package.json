@@ -1,7 +1,7 @@
 {
   "name": "@aproto9787/heddle",
   "version": "0.1.2",
-  "description": "Local agent control plane for Claude Code, Codex, MCP tools, and repository workflows.",
+  "description": "Local agent control plane for Codex, MCP tools, and repository workflows.",
   "license": "GPL-3.0-only",
   "type": "module",
   "main": "dist/index.js",
@@ -24,7 +24,6 @@
     "heddle",
     "ai-agents",
     "coding-agents",
-    "claude-code",
     "codex",
     "mcp",
     "model-context-protocol",

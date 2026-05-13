@@ -1,0 +1,1083 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Heddle Risk-Tier Governance Status</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f7f9;
+        --panel: #ffffff;
+        --panel-2: #eef3f7;
+        --text: #17212b;
+        --muted: #667481;
+        --line: #d8e0e7;
+        --strong: #0f1720;
+        --accent: #0f7b8f;
+        --accent-2: #2f6f4e;
+        --warn: #a55b15;
+        --danger: #9f3434;
+        --pass: #24724a;
+        --shadow: 0 18px 50px rgba(20, 37, 52, 0.1);
+        --radius: 8px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(180deg, rgba(15, 123, 143, 0.09), transparent 360px),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .page {
+        min-height: 100vh;
+      }
+
+      .shell {
+        width: min(1440px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .hero {
+        padding: 36px 0 22px;
+      }
+
+      .eyebrow {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 420px;
+        gap: 24px;
+        align-items: end;
+      }
+
+      h1 {
+        margin: 10px 0 12px;
+        max-width: 920px;
+        color: var(--strong);
+        font-size: clamp(34px, 4vw, 62px);
+        line-height: 1.02;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 820px;
+        margin: 0;
+        color: #42505c;
+        font-size: 17px;
+        line-height: 1.65;
+      }
+
+      .status-strip {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+
+      .stat {
+        min-height: 92px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.74);
+        box-shadow: 0 10px 28px rgba(20, 37, 52, 0.06);
+      }
+
+      .stat .label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .stat .value {
+        margin-top: 8px;
+        color: var(--strong);
+        font-size: 23px;
+        font-weight: 850;
+      }
+
+      .stat .sub {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid rgba(216, 224, 231, 0.9);
+        background: rgba(245, 247, 249, 0.9);
+        backdrop-filter: blur(16px);
+      }
+
+      .nav-inner {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+      }
+
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .tab,
+      .chip,
+      .seg-btn,
+      .toggle-btn {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        color: #31404d;
+        cursor: pointer;
+        font-weight: 750;
+      }
+
+      .tab {
+        min-height: 38px;
+        padding: 0 14px;
+      }
+
+      .tab.active,
+      .seg-btn.active,
+      .toggle-btn.active {
+        border-color: rgba(15, 123, 143, 0.45);
+        background: #0f7b8f;
+        color: #fff;
+      }
+
+      .search {
+        width: min(380px, 34vw);
+        min-height: 40px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--text);
+        outline: none;
+      }
+
+      main {
+        padding: 26px 0 60px;
+      }
+
+      .section {
+        display: none;
+      }
+
+      .section.active {
+        display: block;
+      }
+
+      .grid-12 {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 16px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .panel-pad {
+        padding: 18px;
+      }
+
+      .span-3 {
+        grid-column: span 3;
+      }
+
+      .span-4 {
+        grid-column: span 4;
+      }
+
+      .span-5 {
+        grid-column: span 5;
+      }
+
+      .span-6 {
+        grid-column: span 6;
+      }
+
+      .span-7 {
+        grid-column: span 7;
+      }
+
+      .span-8 {
+        grid-column: span 8;
+      }
+
+      .span-12 {
+        grid-column: span 12;
+      }
+
+      h2,
+      h3 {
+        margin: 0;
+        color: var(--strong);
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: 24px;
+      }
+
+      h3 {
+        font-size: 16px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .small {
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .kicker {
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .divider {
+        height: 1px;
+        margin: 14px 0;
+        background: var(--line);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 850;
+        white-space: nowrap;
+      }
+
+      .badge.pass {
+        background: rgba(36, 114, 74, 0.13);
+        color: var(--pass);
+      }
+
+      .badge.warn {
+        background: rgba(165, 91, 21, 0.13);
+        color: var(--warn);
+      }
+
+      .badge.info {
+        background: rgba(15, 123, 143, 0.13);
+        color: var(--accent);
+      }
+
+      .badge.gray {
+        background: #edf1f4;
+        color: #50606e;
+      }
+
+      .summary-list {
+        display: grid;
+        gap: 10px;
+        margin: 14px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .summary-list li {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        color: #2f3c48;
+        line-height: 1.5;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        flex: 0 0 8px;
+        margin-top: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      .progress-box {
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 18px;
+        align-items: center;
+      }
+
+      .ring {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at center, #fff 58%, transparent 59%),
+          conic-gradient(var(--pass) 0 94%, #dce5eb 94% 100%);
+        display: grid;
+        place-items: center;
+      }
+
+      .ring strong {
+        font-size: 30px;
+      }
+
+      .bar-row {
+        display: grid;
+        gap: 10px;
+      }
+
+      .bar-line {
+        display: grid;
+        grid-template-columns: 120px 1fr 44px;
+        gap: 10px;
+        align-items: center;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .bar {
+        height: 9px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e6edf2;
+      }
+
+      .bar span {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      }
+
+      .phase-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .phase {
+        display: grid;
+        grid-template-columns: 88px 1fr auto;
+        gap: 12px;
+        align-items: start;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fbfcfd;
+      }
+
+      .phase strong {
+        color: var(--strong);
+      }
+
+      .phase button {
+        min-height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+        color: #30404e;
+        font-weight: 750;
+      }
+
+      .phase-detail {
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: var(--radius);
+        background: #eef5f6;
+        color: #25434a;
+        line-height: 1.55;
+      }
+
+      .compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .compare-col {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fbfcfd;
+      }
+
+      .compare-col.after {
+        border-color: rgba(47, 111, 78, 0.3);
+        background: #f4faf6;
+      }
+
+      .item-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .item {
+        min-height: 178px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fff;
+      }
+
+      .item-head {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        justify-content: space-between;
+      }
+
+      .item p {
+        margin: 10px 0 0;
+        color: #3d4a55;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .path {
+        display: block;
+        margin-top: 10px;
+        color: #5d6b77;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 14px 0;
+      }
+
+      .chip,
+      .toggle-btn {
+        min-height: 34px;
+        padding: 0 12px;
+      }
+
+      .risk-layout {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 16px;
+      }
+
+      .segments {
+        display: grid;
+        gap: 8px;
+      }
+
+      .seg-btn {
+        min-height: 46px;
+        padding: 0 14px;
+        text-align: left;
+      }
+
+      .risk-detail {
+        min-height: 270px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fbfcfd;
+      }
+
+      .gate-flow {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .gate-step {
+        min-height: 110px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fff;
+      }
+
+      .gate-step strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .evidence-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .evidence {
+        display: grid;
+        grid-template-columns: 142px 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fff;
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fff;
+      }
+
+      .table th,
+      .table td {
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .table th {
+        background: #eef3f7;
+        color: #30404e;
+        font-size: 12px;
+      }
+
+      .table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .footer-note {
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      @media (max-width: 1050px) {
+        .hero-grid,
+        .risk-layout,
+        .compare,
+        .progress-box {
+          grid-template-columns: 1fr;
+        }
+
+        .status-strip,
+        .item-grid,
+        .gate-flow {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .span-3,
+        .span-4,
+        .span-5,
+        .span-6,
+        .span-7,
+        .span-8,
+        .span-12 {
+          grid-column: span 12;
+        }
+
+        .search {
+          width: 100%;
+        }
+
+        .nav-inner {
+          align-items: stretch;
+          flex-direction: column;
+        }
+      }
+
+      @media (max-width: 680px) {
+        .shell {
+          width: min(100% - 24px, 1440px);
+        }
+
+        .status-strip,
+        .item-grid,
+        .gate-flow {
+          grid-template-columns: 1fr;
+        }
+
+        .phase,
+        .evidence {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          font-size: 36px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <div class="shell hero-grid">
+          <div>
+            <div class="eyebrow">Heddle branch status report</div>
+            <h1>Codex-only risk-tier governance 구현 상태</h1>
+            <p class="lead">
+              `/home/argoss/asos/dev/worktrees/heddle-risk-tier` 브랜치의 현재 구현, 미구현, 검증,
+              개선 효과를 한 화면에서 추적하는 대시보드입니다. 기준 시점은 2026-05-12, 현재
+              worktree 상태와 직전 `/goal` 완료 결과를 반영했습니다.
+            </p>
+          </div>
+          <div class="status-strip" aria-label="current status metrics">
+            <div class="stat">
+              <div class="label">Goal</div>
+              <div class="value">Complete</div>
+              <div class="sub">/goal 완료 처리됨</div>
+            </div>
+            <div class="stat">
+              <div class="label">Runtime</div>
+              <div class="value">Codex-only</div>
+              <div class="sub">active surface 기준</div>
+            </div>
+            <div class="stat">
+              <div class="label">Live</div>
+              <div class="value">Online</div>
+              <div class="sub">server 8797, studio 5173</div>
+            </div>
+            <div class="stat">
+              <div class="label">Git</div>
+              <div class="value">Dirty</div>
+              <div class="sub">commit/push 전 상태</div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <nav class="nav">
+        <div class="shell nav-inner">
+          <div class="tabs" role="tablist" aria-label="report sections">
+            <button class="tab active" data-section="overview">요약</button>
+            <button class="tab" data-section="implementation">구현 맵</button>
+            <button class="tab" data-section="risk">리스크 티어</button>
+            <button class="tab" data-section="verification">검증</button>
+            <button class="tab" data-section="gaps">안 된 것</button>
+            <button class="tab" data-section="evidence">근거</button>
+          </div>
+          <input id="search" class="search" type="search" placeholder="구현 항목, 파일, 상태 검색" />
+        </div>
+      </nav>
+
+      <main class="shell">
+        <section id="overview" class="section active">
+          <div class="grid-12">
+            <article class="panel panel-pad span-7">
+              <div class="kicker">Current judgment</div>
+              <h2>제품 기능으로는 완성, 운영 작업은 남아 있음</h2>
+              <ul class="summary-list">
+                <li><span class="dot"></span><span>risk-tier governance는 schema, server, MCP, Studio, docs, tests까지 실제 경로에 붙었습니다.</span></li>
+                <li><span class="dot"></span><span>Claude는 active product/runtime/default flow surface에서 제거됐고, 남은 문자열은 legacy migration/test/history 성격입니다.</span></li>
+                <li><span class="dot"></span><span>Tier C+ side-effect gate는 approval과 rollback evidence가 없으면 `409`로 막히고, 막힌 gate도 manifest에 보입니다.</span></li>
+                <li><span class="dot"></span><span>서버와 Studio는 현재 응답 중입니다. Studio에서 seeded governance run을 확인할 수 있습니다.</span></li>
+                <li><span class="dot"></span><span>커밋, 푸시, PR 생성은 아직 실행하지 않았습니다.</span></li>
+              </ul>
+            </article>
+
+            <article class="panel panel-pad span-5">
+              <div class="kicker">Completion map</div>
+              <div class="progress-box">
+                <div class="ring" aria-label="94 percent complete"><strong>94%</strong></div>
+                <div class="bar-row">
+                  <div class="bar-line"><span>구현</span><div class="bar"><span style="width: 96%"></span></div><b>96</b></div>
+                  <div class="bar-line"><span>검증</span><div class="bar"><span style="width: 94%"></span></div><b>94</b></div>
+                  <div class="bar-line"><span>사용 가능성</span><div class="bar"><span style="width: 92%"></span></div><b>92</b></div>
+                  <div class="bar-line"><span>운영 마감</span><div class="bar"><span style="width: 68%"></span></div><b>68</b></div>
+                </div>
+              </div>
+              <p class="footer-note">점수는 테스트 통과와 live smoke까지 반영한 운영 메모입니다. 낮은 운영 마감 점수는 commit/push/PR, browser screenshot 검증이 아직 남아 있기 때문입니다.</p>
+            </article>
+
+            <article class="panel panel-pad span-12">
+              <div class="kicker">Phase status</div>
+              <h2>페이즈별 완료 상태</h2>
+              <div id="phaseList" class="phase-list" aria-live="polite"></div>
+              <div id="phaseDetail" class="phase-detail">페이즈의 세부 내용을 보려면 `보기`를 누르세요.</div>
+            </article>
+
+            <article class="panel panel-pad span-12">
+              <div class="kicker">Before and after</div>
+              <h2>개선된 상황</h2>
+              <div class="compare" style="margin-top: 14px">
+                <div class="compare-col">
+                  <h3>이전 상태</h3>
+                  <ul class="summary-list">
+                    <li><span class="dot"></span><span>Claude auth 실패가 user-advocate와 worker validation을 막을 수 있었습니다.</span></li>
+                    <li><span class="dot"></span><span>위험도별 governance가 문서/아이디어 수준에 가까웠고, run trace와 Studio 표시가 분리되어 있었습니다.</span></li>
+                    <li><span class="dot"></span><span>side-effect 실행 전 승인/rollback evidence를 강제하는 런타임 경계가 없었습니다.</span></li>
+                  </ul>
+                </div>
+                <div class="compare-col after">
+                  <h3>현재 상태</h3>
+                  <ul class="summary-list">
+                    <li><span class="dot"></span><span>active runtime/default flow가 Codex-only로 정리되어 Claude auth에 의존하지 않습니다.</span></li>
+                    <li><span class="dot"></span><span>governance events가 기존 trace path에 저장되고 manifest로 재구성됩니다.</span></li>
+                    <li><span class="dot"></span><span>Studio run detail에서 tier, pack, gates, approvals, rollback을 볼 수 있습니다.</span></li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="implementation" class="section">
+          <div class="panel panel-pad">
+            <div class="kicker">Implementation map</div>
+            <h2>구현된 영역</h2>
+            <div class="filters">
+              <button class="chip active" data-filter="all">전체</button>
+              <button class="chip" data-filter="done">완료</button>
+              <button class="chip" data-filter="verified">검증됨</button>
+              <button class="chip" data-filter="followup">운영 후속</button>
+              <button class="chip" data-filter="not-scope">비범위</button>
+            </div>
+            <div id="itemGrid" class="item-grid"></div>
+          </div>
+        </section>
+
+        <section id="risk" class="section">
+          <div class="grid-12">
+            <article class="panel panel-pad span-12">
+              <div class="kicker">Risk-tier behavior</div>
+              <h2>리스크 티어별 동작</h2>
+              <div class="risk-layout" style="margin-top: 14px">
+                <div class="segments" id="riskSegments"></div>
+                <div id="riskDetail" class="risk-detail"></div>
+              </div>
+            </article>
+
+            <article class="panel panel-pad span-12">
+              <div class="kicker">Gate path</div>
+              <h2>Tier C+ side-effect gate 흐름</h2>
+              <div class="gate-flow">
+                <div class="gate-step"><strong>1. 분류</strong><span class="small muted">manifest_update로 side_effect tier와 pack 기록</span></div>
+                <div class="gate-step"><strong>2. 시도</strong><span class="small muted">evidence 전 gate pass 시도는 409로 차단</span></div>
+                <div class="gate-step"><strong>3. 승인</strong><span class="small muted">approval_required, approval_recorded 기록</span></div>
+                <div class="gate-step"><strong>4. 복구 계획</strong><span class="small muted">rollback_recorded로 되돌릴 경로 기록</span></div>
+                <div class="gate-step"><strong>5. 통과</strong><span class="small muted">approval + rollback evidence 후 gate pass</span></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="verification" class="section">
+          <div class="grid-12">
+            <article class="panel panel-pad span-8">
+              <div class="kicker">Verification</div>
+              <h2>검증된 범위</h2>
+              <div id="evidenceList" class="evidence-list" style="margin-top: 14px"></div>
+            </article>
+            <article class="panel panel-pad span-4">
+              <div class="kicker">Live endpoints</div>
+              <h2>현재 실행 상태</h2>
+              <ul class="summary-list">
+                <li><span class="dot"></span><span><b>Server</b><br /><span class="mono small">http://127.0.0.1:8797</span><br /><span class="badge pass">health OK</span></span></li>
+                <li><span class="dot"></span><span><b>Studio</b><br /><span class="mono small">http://localhost:5173/</span><br /><span class="badge pass">HTML 응답 OK</span></span></li>
+                <li><span class="dot"></span><span><b>Live smoke</b><br /><span class="mono small">governance-final-live-1778489601</span><br /><span class="badge pass">409 block 후 pass</span></span></li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="gaps" class="section">
+          <div class="grid-12">
+            <article class="panel panel-pad span-6">
+              <div class="kicker">Not done yet</div>
+              <h2>아직 안 된 것</h2>
+              <table class="table" style="margin-top: 14px">
+                <thead>
+                  <tr><th>항목</th><th>상태</th><th>이유</th></tr>
+                </thead>
+                <tbody id="gapRows"></tbody>
+              </table>
+            </article>
+            <article class="panel panel-pad span-6">
+              <div class="kicker">Out of scope</div>
+              <h2>이번 목표에서 제외된 것</h2>
+              <ul class="summary-list">
+                <li><span class="dot"></span><span>실제 배포, 결제, 계정 변경, 삭제 같은 real side effect 실행</span></li>
+                <li><span class="dot"></span><span>enterprise compliance registry, RACI, cost tracking, external deployment automation</span></li>
+                <li><span class="dot"></span><span>모든 low-risk 작업에 reviewer/user-advocate를 강제하는 무거운 워크플로</span></li>
+                <li><span class="dot"></span><span>main checkout `/home/argoss/asos/dev/Project/heddle` 수정</span></li>
+              </ul>
+              <p class="footer-note">제외 항목은 구현 누락이 아니라 spec의 non-goal 또는 side-effect 안전 경계입니다.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="evidence" class="section">
+          <div class="grid-12">
+            <article class="panel panel-pad span-12">
+              <div class="kicker">Evidence index</div>
+              <h2>파일 근거와 상태</h2>
+              <table class="table" style="margin-top: 14px">
+                <thead>
+                  <tr><th>영역</th><th>핵심 파일</th><th>확인한 내용</th></tr>
+                </thead>
+                <tbody id="evidenceRows"></tbody>
+              </table>
+              <p class="footer-note">이 HTML은 standalone report입니다. server/studio가 없어도 열리지만 live endpoint 상태는 생성 시점 확인값입니다.</p>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const phases = [
+        ["Phase 0", "Codex-only migration", "완료", "Claude active surface를 제거하고 legacy claude-code YAML은 명시적 migration note와 함께 codex로 변환하도록 정리했습니다."],
+        ["Phase 1", "Schema and contracts", "완료", "RiskTier, GovernancePack, GateRecord, ApprovalRecord, RollbackRecord, RunManifest가 core schema로 들어갔습니다."],
+        ["Phase 2", "Trace and server persistence", "완료", "governance events가 기존 run event path와 traces.db raw payload로 저장되고 manifest로 재구성됩니다."],
+        ["Phase 3", "MCP governance tools", "완료", "record/read/update/approval/rollback MCP tools가 추가됐고 valid/invalid call tests가 있습니다."],
+        ["Phase 4", "Runtime enforcement", "완료", "Tier C+ side-effect gate는 approval + rollback evidence 없이는 pass가 409로 차단됩니다."],
+        ["Phase 5", "Studio product UI", "완료", "run detail에서 risk tier, pack, gate timeline, approval, rollback, manifest summary를 볼 수 있습니다."],
+        ["Phase 6", "Docs and smoke", "완료", "STATUS와 smoke-flow가 구현 상태 기준으로 갱신됐습니다."],
+        ["Phase 7", "Final review and usable verification", "완료", "build/typecheck/test/diff check, codex-reviewer PASS, user-advocate PASS, live smoke가 끝났습니다."]
+      ];
+
+      const items = [
+        { title: "Codex-only active runtime", status: "done verified", badge: "완료", desc: "schema/provider/adapter/default flow가 Codex-only로 정리됐습니다.", path: "packages/core/src/index.ts, packages/adapters/src/index.ts, packages/runtime/src/provider-discovery.ts" },
+        { title: "Legacy Claude migration", status: "done verified", badge: "검증됨", desc: "기존 claude-code YAML은 load/save 경계에서 codex로 변환하고 migration note를 남깁니다.", path: "packages/core/src/index.ts, apps/server/src/index.test.ts" },
+        { title: "Governance contracts", status: "done verified", badge: "완료", desc: "risk tier, gate, approval, rollback, manifest type/schema가 core에 추가됐습니다.", path: "packages/core/src/index.ts:159-296" },
+        { title: "Trace persistence", status: "done verified", badge: "검증됨", desc: "governance event가 server intake를 통해 저장되고 events/manifest endpoint로 읽힙니다.", path: "apps/server/src/index.ts, apps/server/src/trace-store.ts" },
+        { title: "Tier C+ enforcement", status: "done verified", badge: "검증됨", desc: "side-effect gate pass는 approval과 rollback 기록 전 409로 차단됩니다. 차단 기록도 manifest에 남습니다.", path: "apps/server/src/index.ts:418-449" },
+        { title: "MCP governance tools", status: "done verified", badge: "검증됨", desc: "record gate, read/update manifest, require/record approval, record rollback 도구가 추가됐습니다.", path: "packages/mcp/src/tools.ts, packages/mcp/src/server.ts" },
+        { title: "Studio governance panel", status: "done verified", badge: "완료", desc: "run detail에서 manifest를 재구성하고 gate/approval/rollback을 인터랙티브하게 표시합니다.", path: "apps/studio/src/AppSections.tsx:609-806" },
+        { title: "Docs and smoke path", status: "done verified", badge: "완료", desc: "STATUS와 smoke-flow가 실제 구현 기준으로 정리됐습니다.", path: "docs/risk-tier-governance/STATUS.md, smoke-flow.md" },
+        { title: "Final commit/push/PR", status: "followup", badge: "후속", desc: "사용자 지시 전에는 commit, push, PR을 만들지 않았습니다.", path: "git status: dirty worktree" },
+        { title: "Browser screenshot test", status: "followup", badge: "후속", desc: "Studio HTML 응답과 live smoke는 확인했지만 Playwright screenshot 검증은 실행하지 않았습니다.", path: "http://localhost:5173/" },
+        { title: "Real side effects", status: "not-scope", badge: "비범위", desc: "실제 배포/삭제/계정 변경 등은 spec non-goal이며 안전상 실행하지 않았습니다.", path: "docs/specs/2026-05-11-heddle-risk-tier-governance.md" },
+        { title: "Enterprise registry", status: "not-scope", badge: "비범위", desc: "RACI, compliance registry, cost tracking 같은 enterprise SDLC 기능은 이번 목표에서 제외됐습니다.", path: "spec non-goals" }
+      ];
+
+      const risks = {
+        quick: {
+          label: "quick",
+          title: "Tier A: 빠른 low-risk 작업",
+          body: "문서 확인, 단순 질답, 작은 read-only 확인처럼 side effect가 없는 작업은 governance를 강제하지 않습니다.",
+          gates: "기본 직접 처리. manifest가 없어도 기존 run UI 동작 유지."
+        },
+        code: {
+          label: "code",
+          title: "Tier B: 코드 변경 기본값",
+          body: "일반 구현/수정은 schema와 테스트 기반으로 검증됩니다. reviewer gate는 변경 위험이 있을 때 붙습니다.",
+          gates: "code-change-default pack. 기존 flow 속도를 크게 늦추지 않는 구조."
+        },
+        side_effect: {
+          label: "side_effect",
+          title: "Tier C: side-effect guarded",
+          body: "삭제, 배포, 계정 변경, 설정 변경처럼 되돌리기 어렵거나 외부 영향이 있는 작업은 승인과 rollback evidence가 있어야 gate pass가 됩니다.",
+          gates: "side-effect-boundary gate. evidence 전 pass 시도는 409 + blocked manifest record."
+        },
+        enterprise: {
+          label: "enterprise",
+          title: "Tier D: enterprise-controlled",
+          body: "보안, 릴리즈, billing, 다단계 작업 같은 무거운 흐름을 위해 전체 governance pack을 선택할 수 있습니다.",
+          gates: "이번 구현은 pack과 gate surface를 제공하며 enterprise registry 같은 추가 SDLC 도구는 비범위."
+        }
+      };
+
+      const verification = [
+        ["Build", "PASS", "pnpm -r build"],
+        ["Typecheck", "PASS", "pnpm -r typecheck"],
+        ["Tests", "PASS", "pnpm -r test: core 7, runtime 2, mcp 12, server 24"],
+        ["Diff whitespace", "PASS", "git diff --check"],
+        ["Reviewer", "PASS", "Heddle codex-reviewer final report"],
+        ["User advocate", "PASS", "intent alignment, over-engineering, goal shrinking, direction drift 모두 PASS"],
+        ["Live smoke", "PASS", "governance-final-live-1778489601: 409 block 후 manifest pass"],
+        ["Studio reachability", "PASS", "http://localhost:5173/ HTML 응답 확인"]
+      ];
+
+      const gaps = [
+        ["Commit", "미실행", "사용자가 아직 commit을 요청하지 않았습니다."],
+        ["Push/PR", "미실행", "branch는 PR-ready에 가깝지만 원격 push와 PR 생성은 별도 지시가 필요합니다."],
+        ["Playwright screenshot", "미실행", "Playwright package가 없는 환경이라 screenshot 기반 시각 검증은 남아 있습니다."],
+        ["Long-running soak", "미실행", "서버/Studio 응답과 live smoke는 확인했지만 장시간 soak는 이번 요청 범위가 아닙니다."]
+      ];
+
+      const evidenceRows = [
+        ["Spec", "docs/specs/2026-05-11-heddle-risk-tier-governance.md", "목표, scope, non-goal, phase acceptance 기준"],
+        ["Core", "packages/core/src/index.ts", "Codex-only agent type, governance schemas, legacy migration helpers"],
+        ["Server", "apps/server/src/index.ts", "governance event parsing, manifest reconstruction, side-effect gate enforcement"],
+        ["MCP", "packages/mcp/src/tools.ts, packages/mcp/src/server.ts", "governance tools definition and event posting"],
+        ["Studio", "apps/studio/src/AppSections.tsx, apps/studio/src/store.ts", "run detail governance manifest UI and event data"],
+        ["Default flow", "examples/leader-workers.yaml, roles/*.yaml", "Codex-backed workers and governance packs"],
+        ["Tests", "packages/core/src/index.test.ts, apps/server/src/index.test.ts, packages/mcp/src/index.test.ts", "schema, persistence, enforcement, MCP valid/invalid calls"],
+        ["Docs", "docs/risk-tier-governance/STATUS.md, smoke-flow.md", "implemented behavior and manual smoke path"]
+      ];
+
+      const badgeClass = (status) => {
+        if (status.includes("followup")) return "warn";
+        if (status.includes("not-scope")) return "gray";
+        if (status.includes("verified")) return "pass";
+        return "info";
+      };
+
+      const state = {
+        section: "overview",
+        filter: "all",
+        risk: "side_effect",
+        query: ""
+      };
+
+      function renderPhases() {
+        const list = document.getElementById("phaseList");
+        list.innerHTML = "";
+        phases.forEach((phase, index) => {
+          const row = document.createElement("div");
+          row.className = "phase";
+          row.innerHTML = `
+            <span class="badge pass">${phase[0]}</span>
+            <div><strong>${phase[1]}</strong><div class="small muted">${phase[2]}</div></div>
+            <button type="button" data-phase="${index}">보기</button>
+          `;
+          list.appendChild(row);
+        });
+        list.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-phase]");
+          if (!button) return;
+          const phase = phases[Number(button.dataset.phase)];
+          document.getElementById("phaseDetail").textContent = `${phase[0]} ${phase[1]}: ${phase[3]}`;
+        });
+      }
+
+      function renderItems() {
+        const grid = document.getElementById("itemGrid");
+        const query = state.query.trim().toLowerCase();
+        const filtered = items.filter((item) => {
+          const filterOk = state.filter === "all" || item.status.includes(state.filter);
+          const queryOk = !query || `${item.title} ${item.desc} ${item.path} ${item.badge}`.toLowerCase().includes(query);
+          return filterOk && queryOk;
+        });
+        grid.innerHTML = filtered.map((item) => `
+          <article class="item">
+            <div class="item-head">
+              <h3>${item.title}</h3>
+              <span class="badge ${badgeClass(item.status)}">${item.badge}</span>
+            </div>
+            <p>${item.desc}</p>
+            <span class="path">${item.path}</span>
+          </article>
+        `).join("") || `<div class="panel-pad muted">검색 결과가 없습니다.</div>`;
+      }
+
+      function renderRisk() {
+        const seg = document.getElementById("riskSegments");
+        seg.innerHTML = Object.entries(risks).map(([key, risk]) => `
+          <button class="seg-btn ${state.risk === key ? "active" : ""}" data-risk="${key}" type="button">${risk.label}</button>
+        `).join("");
+        const risk = risks[state.risk];
+        document.getElementById("riskDetail").innerHTML = `
+          <span class="badge info">${risk.label}</span>
+          <h2 style="margin-top: 12px">${risk.title}</h2>
+          <p style="line-height: 1.7; color: #3d4a55">${risk.body}</p>
+          <div class="divider"></div>
+          <h3>Gate behavior</h3>
+          <p class="muted" style="line-height: 1.7">${risk.gates}</p>
+        `;
+        seg.querySelectorAll("button").forEach((button) => {
+          button.addEventListener("click", () => {
+            state.risk = button.dataset.risk;
+            renderRisk();
+          });
+        });
+      }
+
+      function renderVerification() {
+        document.getElementById("evidenceList").innerHTML = verification.map((row) => `
+          <div class="evidence">
+            <strong>${row[0]}</strong>
+            <span class="mono small">${row[2]}</span>
+            <span class="badge pass">${row[1]}</span>
+          </div>
+        `).join("");
+      }
+
+      function renderGaps() {
+        document.getElementById("gapRows").innerHTML = gaps.map((row) => `
+          <tr><td><strong>${row[0]}</strong></td><td><span class="badge warn">${row[1]}</span></td><td>${row[2]}</td></tr>
+        `).join("");
+      }
+
+      function renderEvidenceRows() {
+        document.getElementById("evidenceRows").innerHTML = evidenceRows.map((row) => `
+          <tr><td><strong>${row[0]}</strong></td><td class="mono small">${row[1]}</td><td>${row[2]}</td></tr>
+        `).join("");
+      }
+
+      function activateSection(name) {
+        state.section = name;
+        document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.section === name));
+        document.querySelectorAll(".section").forEach((section) => section.classList.toggle("active", section.id === name));
+      }
+
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", () => activateSection(tab.dataset.section));
+      });
+
+      document.querySelectorAll(".chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          state.filter = chip.dataset.filter;
+          document.querySelectorAll(".chip").forEach((item) => item.classList.toggle("active", item === chip));
+          renderItems();
+          activateSection("implementation");
+        });
+      });
+
+      document.getElementById("search").addEventListener("input", (event) => {
+        state.query = event.target.value;
+        renderItems();
+        if (state.query.trim()) activateSection("implementation");
+      });
+
+      renderPhases();
+      renderItems();
+      renderRisk();
+      renderVerification();
+      renderGaps();
+      renderEvidenceRows();
+    </script>
+  </body>
+</html>

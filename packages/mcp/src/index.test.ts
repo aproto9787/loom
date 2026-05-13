@@ -41,9 +41,16 @@ test("tools/list exposes only enabled direct children", async () => {
 
     const response = await server.handleRequest({ id: 1, method: "tools/list" });
     const tools = (response?.result as { tools: Array<{ name: string; inputSchema: { properties: { agent?: { enum: string[] } } } }> }).tools;
+    const toolNames = tools.map((tool) => tool.name);
     const delegateAgent = tools.find((tool) => tool.inputSchema.properties.agent)?.inputSchema.properties.agent;
     assert.deepEqual(delegateAgent?.enum, ["reviewer"]);
-    assert.ok(tools.some((tool) => tool.name === "heddle_delegate_reviewer"));
+    assert.ok(toolNames.includes("heddle_delegate_reviewer"));
+    assert.ok(toolNames.includes("heddle_record_gate"));
+    assert.ok(toolNames.includes("heddle_read_manifest"));
+    assert.ok(toolNames.includes("heddle_update_manifest"));
+    assert.ok(toolNames.includes("heddle_require_approval"));
+    assert.ok(toolNames.includes("heddle_record_approval"));
+    assert.ok(toolNames.includes("heddle_record_rollback"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -117,6 +124,205 @@ function parseToolText(response: Awaited<ReturnType<HeddleMcpServer["handleReque
   const content = (response?.result as { content: Array<{ text: string }> }).content;
   return JSON.parse(content[0]!.text) as Record<string, unknown>;
 }
+
+test("governance tools post typed events and read the run manifest", async () => {
+  const { root, flowPath } = await createTestFlow();
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; body?: unknown }> = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) as unknown : undefined;
+    requests.push({ url, body });
+    if (url.endsWith("/runs/run-1/manifest")) {
+      return new Response(JSON.stringify({
+        runId: "run-1",
+        hasGovernance: true,
+        manifest: {
+          runId: "run-1",
+          request: "change setting",
+          interpretedGoal: "guard the change",
+          riskTier: "side_effect",
+          governancePack: "side-effect-guarded",
+          workers: ["leader"],
+          gates: [],
+          result: "running",
+        },
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ runId: "run-1", count: 1 }), { status: 201 });
+  }) as typeof fetch;
+
+  try {
+    const server = new HeddleMcpServer({
+      env: {
+        HEDDLE_FLOW_PATH: flowPath,
+        HEDDLE_FLOW_CWD: root,
+        HEDDLE_AGENT: "leader",
+        HEDDLE_RUN_ID: "run-1",
+        HEDDLE_SERVER_ORIGIN: "http://127.0.0.1:8787",
+        HEDDLE_SUBAGENT_BIN: "/tmp/heddle-subagent.js",
+      },
+    });
+
+    const recordResponse = await server.handleRequest({
+      id: 11,
+      method: "tools/call",
+      params: {
+        name: "heddle_record_gate",
+        arguments: {
+          gate: "acceptance",
+          status: "pass",
+          reason: "Acceptance criteria matched.",
+          evidence: ["apps/server/src/index.ts"],
+        },
+      },
+    });
+    const recorded = parseToolText(recordResponse);
+    assert.equal(recorded.eventType, "gate_record");
+
+    const postedBody = requests[0]?.body as { events: Array<{ type: string; agentName: string; raw: { gate: string; status: string; recordedBy: string } }> };
+    assert.equal(postedBody.events[0]?.type, "gate_record");
+    assert.equal(postedBody.events[0]?.agentName, "leader");
+    assert.equal(postedBody.events[0]?.raw.gate, "acceptance");
+    assert.equal(postedBody.events[0]?.raw.status, "pass");
+    assert.equal(postedBody.events[0]?.raw.recordedBy, "leader");
+
+    await server.handleRequest({
+      id: 12,
+      method: "tools/call",
+      params: {
+        name: "heddle_update_manifest",
+        arguments: {
+          request: "change setting",
+          interpretedGoal: "guard the change",
+          riskTier: "side_effect",
+          governancePack: "side-effect-guarded",
+          workers: ["leader", "reviewer"],
+          result: "running",
+        },
+      },
+    });
+    await server.handleRequest({
+      id: 13,
+      method: "tools/call",
+      params: {
+        name: "heddle_require_approval",
+        arguments: {
+          gate: "side-effect-boundary",
+          target: "guarded setting",
+          reason: "Approval required before side effect.",
+        },
+      },
+    });
+    await server.handleRequest({
+      id: 14,
+      method: "tools/call",
+      params: {
+        name: "heddle_record_approval",
+        arguments: {
+          gate: "side-effect-boundary",
+          status: "approved",
+          target: "guarded setting",
+          approver: "user",
+          approvalText: "Approved.",
+        },
+      },
+    });
+    await server.handleRequest({
+      id: 15,
+      method: "tools/call",
+      params: {
+        name: "heddle_record_rollback",
+        arguments: {
+          gate: "side-effect-boundary",
+          target: "guarded setting",
+          rollbackPlan: "Restore the previous value.",
+        },
+      },
+    });
+
+    const eventTypes = requests
+      .map((request) => (request.body as { events?: Array<{ type: string }> } | undefined)?.events?.[0]?.type)
+      .filter(Boolean);
+    assert.deepEqual(eventTypes, [
+      "gate_record",
+      "manifest_update",
+      "approval_required",
+      "approval_recorded",
+      "rollback_recorded",
+    ]);
+
+    const manifestResponse = await server.handleRequest({
+      id: 16,
+      method: "tools/call",
+      params: {
+        name: "heddle_read_manifest",
+        arguments: {},
+      },
+    });
+    const manifest = parseToolText(manifestResponse);
+    assert.equal((manifest.manifest as { riskTier: string }).riskTier, "side_effect");
+    assert.ok(requests.some((request) => request.url.endsWith("/runs/run-1/manifest")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("governance tools reject invalid arguments before posting events", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+
+  try {
+    const server = new HeddleMcpServer();
+    const response = await server.handleRequest({
+      id: 17,
+      method: "tools/call",
+      params: {
+        name: "heddle_update_manifest",
+        arguments: { riskTier: "danger" },
+      },
+    });
+    assert.equal((response?.error as { code: number }).code, -32000);
+    assert.match((response?.error as { message: string }).message, /riskTier must be one of/);
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("heddle_record_approval rejects required before posting events", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+
+  try {
+    const server = new HeddleMcpServer();
+    const response = await server.handleRequest({
+      id: 18,
+      method: "tools/call",
+      params: {
+        name: "heddle_record_approval",
+        arguments: {
+          status: "required",
+          target: "guarded setting",
+        },
+      },
+    });
+    assert.equal((response?.error as { code: number }).code, -32000);
+    assert.match((response?.error as { message: string }).message, /status must be approved or rejected/);
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 function fakeResult(agent: string, status: RunSubagentTaskResult["status"] = "done"): RunSubagentTaskResult {
   return {

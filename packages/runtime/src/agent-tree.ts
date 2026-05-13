@@ -31,7 +31,7 @@ export function findParentAgent(root: AgentConfig, childName: string): AgentConf
 export function resolveAgentRuntime(agent: AgentConfig, isRoot: boolean): Required<AgentRuntimeConfig> {
   return {
     mode: agent.runtime?.mode ?? (isRoot ? "host" : "isolated"),
-    profile: agent.runtime?.profile ?? `${agent.type === "codex" ? "codex" : "claude"}-default`,
+    profile: agent.runtime?.profile ?? "codex-default",
     applyResources: agent.runtime?.applyResources ?? (isRoot ? "prompt-only" : "scoped-home"),
     delegationTransport: "mcp",
   };

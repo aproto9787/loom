@@ -51,12 +51,8 @@ button:disabled {
   background: rgb(248 250 252) !important;
 }
 
-.heddle-agent--claude-code {
-  border-left: 3px solid rgb(59 130 246) !important;
-}
-
 .heddle-agent--codex {
-  border-left: 3px solid rgb(168 85 247) !important;
+  border-left: 3px solid rgb(59 130 246) !important;
 }
 
 .heddle-agent--state-running {

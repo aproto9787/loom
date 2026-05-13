@@ -7,7 +7,7 @@ const SERVER_ORIGIN =
   (import.meta.env?.VITE_HEDDLE_SERVER as string | undefined) ?? "http://localhost:8787";
 
 function emptyRole(): RoleDefinition {
-  return { name: "", type: "claude-code", system: "" };
+  return { name: "", type: "codex", system: "" };
 }
 
 export function RolesPanel() {
@@ -164,7 +164,6 @@ export function RolesPanel() {
                   }))
                 }
               >
-                <option value="claude-code">claude-code</option>
                 <option value="codex">codex</option>
               </select>
             </label>

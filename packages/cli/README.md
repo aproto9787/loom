@@ -1,6 +1,6 @@
 # @aproto9787/heddle
 
-Local agent control plane for Claude Code, Codex, MCP tools, and repository workflows.
+Local agent control plane for Codex, MCP tools, and repository workflows.
 
 ## Install
 
@@ -14,9 +14,10 @@ tools, and runs Heddle-managed child agents locally.
 
 ## What It Does
 
-- Uses your local Claude Code or Codex profile as the host leader.
+- Uses your local Codex profile as the host leader.
 - Adds run-scoped Heddle MCP delegation tools to that leader.
 - Exposes child agents as typed tools such as `heddle_delegate_reviewer`.
+- Exposes governance tools for gate, manifest, approval, and rollback records.
 - Runs delegated workers locally with isolated HOME/config directories.
 - Writes reports and trace events back to the local Heddle run history.
 
@@ -32,7 +33,7 @@ heddle mcp
 ## Requirements
 
 - Node.js `>=22.13.0`
-- Claude Code and/or Codex installed locally for real provider-backed runs
+- Codex installed locally for real provider-backed runs
 
 Project site: https://aproto9787.github.io/heddle/
 

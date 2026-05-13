@@ -6,11 +6,11 @@ test("getAgentAtPath resolves nested agents", () => {
   const agent = getAgentAtPath(
     {
       name: "lead",
-      type: "claude-code",
+      type: "codex",
       agents: [
         {
           name: "writer",
-          type: "claude-code",
+          type: "codex",
           agents: [{ name: "reviewer", type: "codex" }],
         },
       ],
@@ -27,12 +27,12 @@ test("store addAgent and removeAgent update the tree selection", () => {
     loadedFlow: {
       name: "demo",
       repo: ".",
-      orchestrator: { name: "lead", type: "claude-code", agents: [] },
+      orchestrator: { name: "lead", type: "codex", agents: [] },
     },
     flowDraft: {
       name: "demo",
       repo: ".",
-      orchestrator: { name: "lead", type: "claude-code", agents: [] },
+      orchestrator: { name: "lead", type: "codex", agents: [] },
     },
     selectedAgentPath: ["lead"],
     isDirty: false,

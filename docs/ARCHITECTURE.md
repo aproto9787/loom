@@ -42,7 +42,6 @@ Heddle-managed workers, and MCP-based delegation.
               │
 ┌─────────────▼──────────────┐
 │ packages/adapters           │
-│ - claude-code adapter        │
 │ - codex adapter              │
 │ - delegation protocol parser │
 └─────────────┬──────────────┘
@@ -71,7 +70,8 @@ Owns the current recursive agent-tree schema:
 
 Important current schema facts:
 
-- Agent types are exactly `claude-code` and `codex`.
+- Agent types are exactly `codex`.
+- Legacy `claude-code` YAML is migrated to `codex` before active validation and reports migration notes.
 - `AgentConfig` has `enabled`, `runtime`, `team`, `delegation`, `flowMdRef`, `timeout`, `parallel`, `mcps`, `hooks`, `skills`, and recursive `agents`.
 - `AgentConfig` does not currently define `isolated` or `capabilities`.
 - `RoleDefinition` currently defines `name`, `type`, `model`, `system`, `effort`, `description`, and `mcps`.
@@ -83,7 +83,7 @@ Currently provides flow validation helpers, not a DAG node runtime. `validateFlo
 
 ### `packages/adapters`
 
-Provides the `AgentAdapter` interface and two concrete CLI-backed adapters.
+Provides the `AgentAdapter` interface and the Codex CLI-backed adapter.
 
 ```ts
 type AgentEvent =
@@ -95,7 +95,6 @@ type AgentEvent =
 
 The adapter registry maps:
 
-- `claude-code` → `claudeCodeAdapter`
 - `codex` → `codexAdapter`
 
 Delegation output is parsed in two formats:
@@ -127,7 +126,7 @@ Provides the main CLI plus subcommands/binaries:
 
 - `heddle`: interactive flow launcher.
 - `heddle mcp`: stdio MCP delegation bridge for host leader sessions.
-- `heddle-subagent`: generalized recursive child-agent launcher for Claude or Codex backends.
+- `heddle-subagent`: generalized recursive child-agent launcher for Codex backends.
 - `heddle-subagent`: legacy Codex conductor launcher, retained for compatibility.
 
 `heddle` currently imports built server modules from `apps/server/dist`, so the server package must be built before running the CLI from source.
@@ -162,8 +161,8 @@ Flow path validation rejects absolute paths, path escapes outside `examples/`, a
 
 ### Run routes
 
-- `POST /runs` executes through the deprecated server runner and returns a collected response.
-- `POST /runs + GET /runs/:id/stream` executes through the deprecated server runner and emits SSE lifecycle events.
+- `POST /runs` registers a run and starts the built `heddle` CLI in `--headless` mode.
+- `POST /runs + GET /runs/:id/stream` executes through the local CLI path and emits persisted SSE events.
 - `POST /runs/register` creates a running record for a CLI-launched run.
 - `POST /runs/:id/events` appends CLI-launched run events.
 - `GET /runs/:id/events` returns stored events.
@@ -174,8 +173,8 @@ Flow path validation rejects absolute paths, path escapes outside `examples/`, a
 
 ### Resource routes
 
-- `GET /mcps` discovers MCP server names from Claude/workspace config.
-- `GET /discover` discovers provider profiles plus MCPs, hooks, and skills from Claude, Codex, and Heddle workspace locations.
+- `GET /mcps` discovers MCP server names from workspace config.
+- `GET /discover` discovers Codex provider profiles plus MCPs, hooks, and skills from Codex and Heddle workspace locations.
 - `GET /roles`, `GET /roles/:name`, `PUT /roles/save`, `DELETE /roles/:name`.
 - `GET /hooks`, `PUT /hooks/save`, `DELETE /hooks/:name`.
 - `GET /skills`, `PUT /skills/save`, `DELETE /skills/:name`.
@@ -191,9 +190,9 @@ This is the newer path.
 1. `heddle` loads a flow.
 2. It builds the configured root agent.
 3. It injects a delegation protocol into the root agent prompt.
-4. The root agent is spawned as Claude Code or Codex.
+4. The root agent is spawned as Codex.
 5. The root agent receives a temporary Heddle MCP server config and must call Heddle MCP delegation tools for child work. `heddle-subagent` remains the internal worker runtime behind the MCP server.
-6. `heddle-subagent` maps Claude/Codex stream frames to Heddle events.
+6. `heddle-subagent` maps Codex stream frames to Heddle events.
 7. The server stores those events through `/runs/:id/events`.
 8. Studio can follow `/runs/:id/stream` for persisted event updates.
 
@@ -241,10 +240,7 @@ If `agent.parallel` is true and children exist, the prompt also includes the JSO
 
 `resolveAgentResources()` merges flow-level and agent-level resource name lists.
 
-`createScopedMcpConfig()` reads MCP server definitions from:
-
-- `<home>/.claude.json`
-- workspace `.mcp.json`
+`createScopedMcpConfig()` reads MCP server definitions from workspace `.mcp.json`.
 
 It writes a temporary `.mcp.json` containing only the selected MCP server names. If no selected servers resolve, no temporary MCP config is returned.
 
@@ -268,9 +264,8 @@ Heddle should be treated as a trusted-local-workspace tool.
 
 Current behavior includes:
 
-- Claude Code adapter passes `--permission-mode bypassPermissions`.
 - Codex adapter passes `--dangerously-bypass-approvals-and-sandbox` and `--ephemeral`.
-- CLI root launch uses dangerous bypass flags for Claude/Codex.
+- CLI root launch uses dangerous bypass flags for Codex.
 - Hooks execute arbitrary shell commands through `child_process.exec` with the current process environment plus Heddle variables.
 - CORS is permissive for local development.
 
@@ -282,7 +277,7 @@ Before broader distribution, the project should make trust boundaries explicit i
 - `runner-executor.ts` is deprecated but still active for server/studio run routes.
 - Schema/docs previously mentioned `isolated` and `capabilities`, but those fields are absent from the current core schema.
 - The example set currently centers on `examples/leader-workers.yaml`; smaller onboarding flows would make the project easier to test and explain.
-- Golden-path recursive execution is still largely manual; a fake Claude/Codex harness would make it testable without launching real CLIs.
+- Golden-path recursive execution is still largely manual; a fake Codex harness would make it testable without launching real CLIs.
 - MCP cancellation is best-effort and currently depends on local process signaling.
 
 
@@ -294,7 +289,7 @@ For the source-checkout workflow, the CLI path is the primary runtime:
 Studio or API request
   -> apps/server creates a run row
   -> apps/server spawns node packages/cli/dist/index.js --headless
-  -> heddle launches the root Claude/Codex process
+  -> heddle launches the root Codex process
   -> root agents delegate through Heddle MCP tools
   -> heddle / heddle-subagent POST timeline events back to apps/server
   -> apps/server persists events in .heddle/traces.db

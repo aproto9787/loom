@@ -19,7 +19,7 @@
   <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-orange.svg">
 </p>
 
-Heddle is a local control plane for Claude Code, Codex, MCP tools, and repository workflows.
+Heddle is a local control plane for Codex, MCP tools, and repository workflows.
 
 It starts from a simple idea: keep your existing coding agents local, then give them a browser workspace, a team structure, scoped worker sessions, and a traceable delegation layer.
 
@@ -27,7 +27,7 @@ It starts from a simple idea: keep your existing coding agents local, then give 
 Start Heddle locally
   -> choose a YAML flow
   -> Heddle injects run-scoped MCP delegation tools
-  -> your host Claude Code or Codex session leads the work
+  -> your host Codex session leads the work
   -> isolated Heddle workers handle delegated tasks
   -> Studio shows reports, events, and run history
 ```
@@ -52,14 +52,14 @@ Heddle is not a cloud runtime and it is not a blank node-graph builder. The curr
 
 Most coding-agent setups hit the same wall:
 
-- Claude Code and Codex are useful, but they live as separate local sessions.
+- Codex is powerful locally, but multi-agent work still needs explicit structure.
 - MCP servers, hooks, roles, and repo conventions are scattered across config files.
 - Delegation is usually prompt text, shell copy-paste, or invisible sub-sessions.
 - Browser UX is convenient, but developers still want code execution to stay local.
 
 Heddle stitches those pieces into one local workspace:
 
-- Host leader session: your normal local Claude Code or Codex profile.
+- Host leader session: your normal local Codex profile.
 - Heddle overlay: flow instructions, child-agent list, delegation rules, and reporting protocol.
 - MCP delegation: typed tools such as `heddle_delegate_reviewer` and `heddle_delegate_many`.
 - Isolated workers: scoped HOME/config, scoped resources, mandatory REPORT output.
@@ -71,9 +71,9 @@ Heddle stitches those pieces into one local workspace:
 flowchart LR
   Studio["Heddle Studio<br/>browser control panel"]
   Server["Local Heddle Server<br/>flows, runs, events"]
-  Leader["Host Leader Session<br/>Claude Code or Codex"]
+  Leader["Host Leader Session<br/>Codex"]
   MCP["Heddle MCP Bridge<br/>delegate / status / report / cancel"]
-  Workers["Heddle-managed Workers<br/>isolated Claude/Codex sessions"]
+  Workers["Heddle-managed Workers<br/>isolated Codex sessions"]
   Repo["Local repository<br/>your files stay local"]
   Trace[".heddle/traces.db<br/>events and reports"]
 
@@ -96,15 +96,17 @@ MCP connects them with a traceable delegation boundary.
 
 ## Current Highlights
 
-- Recursive agent-tree flow schema with `claude-code` and `codex` agent types.
+- Recursive agent-tree flow schema with Codex-backed agent trees.
 - Host/isolated runtime metadata with MCP-only delegation transport.
-- Provider profile discovery for local Claude Code and Codex installs.
+- Provider profile discovery for local Codex installs.
 - Run-scoped MCP config injection for host leader sessions.
 - Dynamic MCP tools for enabled direct children, including `heddle_delegate_<agent>`.
 - `heddle_delegate_many` for parallel worker dispatch from a single tool call.
+- Governance MCP tools for manifest updates, gate records, approvals, and rollback records.
 - SQLite-backed run and event persistence under `.heddle/traces.db`.
-- Studio UI for flows, roles, hooks, skills, resources, and run detail views.
+- Studio UI for flows, roles, hooks, skills, resources, run detail views, and risk-tier governance state.
 - Default `leader-workers` flow with implementers, analysts, reviewer, fixer, debaters, synthesizer, and user-advocate.
+- Tier C+ side-effect gates block until approval and rollback evidence are recorded.
 - Phase-gated workflow policy: phase work can require `user-advocate` PASS before moving forward.
 - Debate routing policy: casual `debate`, `vs`, comparison, recommendation, or decision prompts can route through debater agents.
 
@@ -120,7 +122,7 @@ heddle
 Requirements:
 
 - Node.js `>=22.13.0`
-- Local Claude Code and/or Codex if you want real provider-backed runs
+- Local Codex if you want real provider-backed runs
 
 Heddle scans the current directory and packaged example flows, lets you choose a YAML flow, then launches the selected host leader with run-scoped MCP delegation tools.
 
@@ -301,7 +303,6 @@ If you need the current baseline before changing docs, read [`docs/CURRENT_STATE
 
 Current code paths include powerful execution modes:
 
-- Claude Code adapter uses `--permission-mode bypassPermissions`.
 - Codex adapter uses `--dangerously-bypass-approvals-and-sandbox`.
 - CLI launch uses dangerous permission/sandbox bypass flags for root agents.
 - Hooks run shell commands through `child_process.exec`.

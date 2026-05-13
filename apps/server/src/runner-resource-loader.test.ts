@@ -10,7 +10,7 @@ test("resolveAgentResources merges flow and agent resources without duplicates",
   const flow: FlowDefinition = {
     name: "demo",
     repo: ".",
-    orchestrator: { name: "lead", type: "claude-code" },
+    orchestrator: { name: "lead", type: "codex" },
     resources: {
       mcps: ["shared", "flow"],
       hooks: ["boot"],
@@ -32,12 +32,10 @@ test("resolveAgentResources merges flow and agent resources without duplicates",
   });
 });
 
-test("createScopedMcpConfig writes a filtered config for requested servers", async () => {
-  const tempHome = await mkdtemp(path.join(os.tmpdir(), "heddle-home-"));
-  const originalHome = process.env.HOME;
-  process.env.HOME = tempHome;
+test("createScopedMcpConfig writes a filtered config for requested workspace servers", async () => {
+  const tempWorkspace = await mkdtemp(path.join(os.tmpdir(), "heddle-workspace-"));
   await writeFile(
-    path.join(tempHome, ".claude.json"),
+    path.join(tempWorkspace, ".mcp.json"),
     JSON.stringify({ mcpServers: { alpha: { command: "a" }, beta: { command: "b" } } }),
     "utf8",
   );
@@ -45,36 +43,29 @@ test("createScopedMcpConfig writes a filtered config for requested servers", asy
   const flow: FlowDefinition = {
     name: "demo",
     repo: ".",
-    orchestrator: { name: "lead", type: "claude-code" },
+    orchestrator: { name: "lead", type: "codex" },
   };
   const agent: AgentConfig = {
     name: "child",
-    type: "claude-code",
+    type: "codex",
     mcps: ["beta"],
   };
 
   try {
-    const configPath = await createScopedMcpConfig(agent, flow, tempHome);
+    const configPath = await createScopedMcpConfig(agent, flow, undefined, { workspaceRoot: tempWorkspace });
     assert.ok(configPath);
     const raw = await readFile(configPath, "utf8");
     assert.deepEqual(JSON.parse(raw), { mcpServers: { beta: { command: "b" } } });
     await rm(path.dirname(configPath), { recursive: true, force: true });
   } finally {
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempWorkspace, { recursive: true, force: true });
   }
 });
 
-test("createScopedMcpConfig reads home MCP config for requested servers", async () => {
-  const tempHome = await mkdtemp(path.join(os.tmpdir(), "heddle-home-"));
-  const originalHome = process.env.HOME;
-  process.env.HOME = tempHome;
+test("createScopedMcpConfig reads workspace MCP config for requested servers", async () => {
+  const tempWorkspace = await mkdtemp(path.join(os.tmpdir(), "heddle-workspace-"));
   await writeFile(
-    path.join(tempHome, ".claude.json"),
+    path.join(tempWorkspace, ".mcp.json"),
     JSON.stringify({ mcpServers: { alpha: { command: "a" } } }),
     "utf8",
   );
@@ -82,38 +73,31 @@ test("createScopedMcpConfig reads home MCP config for requested servers", async 
   const flow: FlowDefinition = {
     name: "demo",
     repo: ".",
-    orchestrator: { name: "lead", type: "claude-code" },
+    orchestrator: { name: "lead", type: "codex" },
   };
   const agent: AgentConfig = {
     name: "child",
-    type: "claude-code",
+    type: "codex",
     mcps: ["alpha"],
   };
 
   try {
-    const configPath = await createScopedMcpConfig(agent, flow, tempHome);
+    const configPath = await createScopedMcpConfig(agent, flow, undefined, { workspaceRoot: tempWorkspace });
     assert.ok(configPath);
     const raw = await readFile(configPath, "utf8");
     assert.deepEqual(JSON.parse(raw), { mcpServers: { alpha: { command: "a" } } });
     await rm(path.dirname(configPath), { recursive: true, force: true });
   } finally {
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempWorkspace, { recursive: true, force: true });
   }
 });
 
 test("createScopedMcpConfig warns when a config source cannot be parsed", async () => {
-  const tempHome = await mkdtemp(path.join(os.tmpdir(), "heddle-home-"));
-  const originalHome = process.env.HOME;
+  const tempWorkspace = await mkdtemp(path.join(os.tmpdir(), "heddle-workspace-"));
   const errors: string[] = [];
   const originalWarn = console.warn;
-  process.env.HOME = tempHome;
-  await mkdir(path.join(tempHome), { recursive: true });
-  await writeFile(path.join(tempHome, ".claude.json"), "not json", "utf8");
+  await mkdir(path.join(tempWorkspace), { recursive: true });
+  await writeFile(path.join(tempWorkspace, ".mcp.json"), "not json", "utf8");
   console.warn = (message: string) => {
     errors.push(message);
   };
@@ -121,26 +105,21 @@ test("createScopedMcpConfig warns when a config source cannot be parsed", async 
   const flow: FlowDefinition = {
     name: "demo",
     repo: ".",
-    orchestrator: { name: "lead", type: "claude-code" },
+    orchestrator: { name: "lead", type: "codex" },
   };
   const agent: AgentConfig = {
     name: "child",
-    type: "claude-code",
+    type: "codex",
     mcps: ["alpha"],
   };
 
   try {
-    const configPath = await createScopedMcpConfig(agent, flow, tempHome);
+    const configPath = await createScopedMcpConfig(agent, flow, undefined, { workspaceRoot: tempWorkspace });
     assert.equal(configPath, undefined);
     assert.ok(errors.length >= 1);
     assert.ok(errors.every((message) => /Failed to read MCP config/.test(message)));
   } finally {
     console.warn = originalWarn;
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempWorkspace, { recursive: true, force: true });
   }
 });

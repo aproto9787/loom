@@ -13,7 +13,6 @@ Heddle is a local control plane for coding agents.
 The product should not feel like a blank node workflow builder. It should feel
 like a browser workspace for the user's existing local AI development tools:
 
-- Claude Code
 - Codex
 - MCP servers
 - local repositories
@@ -26,7 +25,7 @@ Developer starts Heddle locally
   -> Heddle detects local providers, MCPs, repo, and .heddle config
   -> Studio shows a connected local workspace
   -> User edits the agent bench and workflows in the browser
-  -> Host leader runs through the user's local Claude Code or Codex environment
+  -> Host leader runs through the user's local Codex environment
   -> Heddle-managed workers run locally in isolated sessions
   -> Reports and trace events return to Studio
 ```
@@ -40,7 +39,7 @@ Your local AI dev team, controlled from the browser.
 More precise technical language:
 
 ```text
-Heddle discovers local Claude Code, Codex, MCP, and repository state, then exposes
+Heddle discovers local Codex, MCP, and repository state, then exposes
 a browser control plane for composing and running local coding-agent teams.
 ```
 
@@ -59,11 +58,11 @@ Target runtime:
 ```text
 Heddle Studio / Server
   -> Host Leader Session
-       user-local Claude Code or Codex
+       user-local Codex
        plus Heddle leader overlay
   -> Heddle MCP delegation tools
   -> Heddle Subagent Runtime
-       isolated Claude Code or Codex child sessions
+       isolated Codex child sessions
   -> events / reports / traces
   -> .heddle/traces.db and Studio
 ```
@@ -71,7 +70,7 @@ Heddle Studio / Server
 ### Host Leader Session
 
 The root leader is not a new agent invented by Heddle. It is a host-backed session
-using the user's local Claude Code or Codex provider profile.
+using the user's local Codex provider profile.
 
 The leader keeps the normal host experience:
 
@@ -108,14 +107,14 @@ Workers should use:
 - timeout and concurrency limits
 
 This keeps worker behavior reproducible and traceable without polluting the
-user's host Claude Code or Codex configuration.
+user's host Codex configuration.
 
 ## Provider Profiles
 
 Provider discovery should become a first-class concept.
 
 ```ts
-type ProviderKind = "claude-code" | "codex";
+type ProviderKind = "codex";
 
 interface ProviderProfile {
   id: string;
@@ -131,7 +130,6 @@ interface ProviderProfile {
 Examples:
 
 ```text
-claude-default -> Claude Code from the user's host environment
 codex-default  -> Codex from the user's host environment
 ```
 
@@ -139,11 +137,6 @@ Studio should expose provider status directly:
 
 ```text
 Detected local providers
-
-Claude Code
-Status: Ready
-Profile: claude-default
-Command: claude
 
 Codex
 Status: Ready
@@ -176,7 +169,7 @@ interface AgentRuntimeConfig {
 
 interface AgentConfig {
   name: string;
-  type: "claude-code" | "codex";
+  type: "codex";
   enabled?: boolean;
   runtime?: AgentRuntimeConfig;
   agents?: AgentConfig[];
@@ -213,11 +206,11 @@ orchestrator:
         Implement the assigned patch and report changed files.
 
     - name: reviewer
-      type: claude-code
+      type: codex
       enabled: true
       runtime:
         mode: isolated
-        profile: claude-default
+        profile: codex-default
         applyResources: scoped-home
       system: |
         Review the assigned patch for correctness, regressions, and missing
@@ -252,6 +245,12 @@ Heddle MCP Server
   - heddle_get_status
   - heddle_read_report
   - heddle_cancel
+  - heddle_record_gate
+  - heddle_read_manifest
+  - heddle_update_manifest
+  - heddle_require_approval
+  - heddle_record_approval
+  - heddle_record_rollback
 ```
 
 Agent-specific dynamic tools are generated from enabled direct children:
@@ -264,6 +263,26 @@ heddle_delegate_tester
 
 The generic tool remains available because it is easier to validate, test, and
 keep stable across UI edits.
+
+## Governance Event Surface
+
+Risk-tier governance is recorded through the same run trace path as delegation.
+The leader records bounded manifest updates, gate results, approval requirements,
+approval decisions, and rollback evidence through Heddle MCP tools.
+
+The current event types are:
+
+```text
+manifest_update
+gate_record
+approval_required
+approval_recorded
+rollback_recorded
+```
+
+Tier C+ side-effect gates must not pass until both approval and rollback
+evidence exist in the run manifest. The server enforces this at event intake, so
+the rule is not only prompt text.
 
 ### Direct-Child Rule
 
@@ -363,7 +382,7 @@ plumbing.
 Agent Bench
 
 [ON]  Implementer   Codex       -> exposed as a Heddle delegation tool
-[ON]  Reviewer      Claude Code -> exposed as a Heddle delegation tool
+[ON]  Reviewer      Codex       -> exposed as a Heddle delegation tool
 [OFF] Tester        Codex       -> not exposed to the leader
 ```
 
@@ -411,7 +430,7 @@ Recommended order:
    `runtime.mode`, `runtime.profile`, `runtime.applyResources`,
    `runtime.delegationTransport`, and `enabled`.
 3. Add provider discovery:
-   Claude Code, Codex, command path, version, auth/config source.
+   Codex command path, version, auth/config source.
 4. Extract subagent execution from the CLI wrapper into shared runtime helpers.
 5. Add `packages/mcp` and a `heddle mcp` stdio command.
 6. Implement `heddle_delegate` with sync execution through the shared subagent
@@ -432,7 +451,7 @@ This direction does not require:
 - typed edges
 - general graph node execution
 - cloud execution of repository code
-- rewriting the user's global Claude Code or Codex config by default
+- rewriting the user's global Codex config by default
 
 YAML remains the source of truth for shareable flow state, but the primary user
 experience should be browser-based local agent control.

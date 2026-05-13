@@ -8,7 +8,7 @@ test("runHooks executes matching hooks and ignores missing ones", async () => {
   const originalEnv = process.env.HEDDLE_HOOK_RUNNER_TEST;
   const agent: AgentConfig = {
     name: "lead",
-    type: "claude-code",
+    type: "codex",
     hooks: ["start", "missing"],
   };
   const resources: RunResources = {
@@ -41,7 +41,7 @@ test("runHooks swallows hook failures after logging them", async () => {
   try {
     const agent: AgentConfig = {
       name: "lead",
-      type: "claude-code",
+      type: "codex",
       hooks: ["broken"],
     };
     const resources: RunResources = {

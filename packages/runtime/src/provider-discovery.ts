@@ -89,17 +89,6 @@ export async function discoverProviderProfiles(
   const commandRunner = options.commandRunner ?? defaultCommandRunner;
   const candidates: ProviderCandidate[] = [
     {
-      id: "claude-default",
-      kind: "claude-code",
-      displayName: "Claude Code",
-      command: "claude",
-      versionArgs: ["--version"],
-      configCandidates: [
-        path.join(homeDir, ".claude.json"),
-        path.join(homeDir, ".claude"),
-      ],
-    },
-    {
       id: "codex-default",
       kind: "codex",
       displayName: "Codex",

@@ -11,7 +11,6 @@ The active schema lives in `packages/core/src/index.ts`.
 
 Supported agent types:
 
-- `claude-code`
 - `codex`
 
 Current `AgentConfig` fields:
@@ -62,18 +61,21 @@ Do not document these as implemented unless the code changes first:
 - Server run routes that create local run records and spawn the built `heddle` CLI in `--headless` mode.
 - CLI-launched runs with event registration and persisted event streaming.
 - `@aproto9787/heddle-runtime` as the shared home for flow loading, resource loading, prompt building, scoped MCP config generation, and hook execution.
-- Provider profile discovery for local Claude Code and Codex installs.
+- Provider profile discovery for local Codex installs.
 - `@aproto9787/heddle-mcp` as a stdio MCP delegation bridge.
 - Published npm CLI package at `@aproto9787/heddle`.
 - `heddle mcp` as the CLI subcommand that exposes Heddle delegation tools to host leaders.
 - Agent-specific dynamic MCP tools such as `heddle_delegate_reviewer`, alongside stable generic tools such as `heddle_delegate`.
 - Best-effort async cancellation for MCP-delegated subagent processes started with `wait: false`.
-- Root leader MCP config injection for Claude Code and Codex host sessions. Host leaders are instructed to use Heddle MCP delegation only; `heddle-subagent` is the internal worker runtime behind the MCP server.
+- Root leader MCP config injection for Codex host sessions. Host leaders are instructed to use Heddle MCP delegation only; `heddle-subagent` is the internal worker runtime behind the MCP server.
 - `heddle-subagent` as the generalized child-agent launcher.
-- Claude Code and Codex CLI adapters.
+- Codex CLI adapter.
 - Role/hook/skill YAML CRUD.
 - MCP/resource discovery and selected MCP config generation.
 - SQLite run/event persistence under `.heddle/traces.db`.
+- Risk-tier governance schemas, governance event persistence, reconstructed run manifests, and Studio run-detail governance panels.
+- MCP governance tools for gate records, manifest updates, approvals, and rollback records.
+- Tier C+ side-effect gate enforcement that blocks pass records until approval and rollback evidence exist.
 
 ## Active runtime split
 
@@ -85,7 +87,7 @@ Shared flow/resource/prompt/hook helpers now live in `packages/runtime`. Server/
 
 Use wording like:
 
-> Heddle currently runs recursive YAML-defined agent trees using Claude Code and Codex CLI processes.
+> Heddle currently runs recursive YAML-defined agent trees using Codex CLI processes.
 
 Avoid wording like:
 

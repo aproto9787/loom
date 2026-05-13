@@ -1,6 +1,8 @@
 import { create } from "zustand";
-import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, ProviderProfile, RoleDefinition, RunEvent, RunSource, RunStatus, SkillDefinition } from "@aproto9787/heddle-core";
+import type { AgentConfig, AgentType, FlowDefinition, HookDefinition, ProviderProfile, RoleDefinition, RunEvent, RunSource, RunStatus, SkillDefinition, TimelineEventType } from "@aproto9787/heddle-core";
 import { duplicateFlow as duplicateFlowRequest } from "./api.js";
+
+export const CODEX_AGENT_TYPE: AgentType = "codex";
 
 // --- Agent path helpers ---
 
@@ -57,8 +59,8 @@ function addAgentToPath(
   }));
 }
 
-function nextAgentName(parent: AgentConfig, type: AgentType): string {
-  const base = type === "claude-code" ? "agent" : "codex-agent";
+function nextAgentName(parent: AgentConfig): string {
+  const base = "codex-agent";
   let counter = 1;
   const existing = new Set((parent.agents ?? []).map((a) => a.name));
   while (existing.has(`${base}-${counter}`)) counter++;
@@ -84,7 +86,7 @@ export interface DiscoveredResource {
   type: "mcp" | "hook" | "skill";
   name: string;
   source: string;
-  platform: "claude" | "codex";
+  platform: string;
   event?: string;
   command?: string;
   prompt?: string;
@@ -143,13 +145,14 @@ export interface RunHistoryItem {
 export interface RunDetailEvent {
   runId: string;
   ts: number;
-  type: "user" | "assistant" | "tool_use" | "tool_result" | "error";
+  type: TimelineEventType;
   summary?: string;
   toolName?: string;
   agentName?: string;
   agentDepth?: number;
   parentAgent?: string;
   agentKind?: string;
+  raw?: unknown;
 }
 
 interface StudioState {
@@ -157,6 +160,7 @@ interface StudioState {
   availableFlows: string[];
   loadedFlow?: FlowDefinition;
   flowDraft?: FlowDefinition;
+  migrationNotes: string[];
   isDirty: boolean;
   selectedAgentPath: string[];
   agentConfigTab: AgentConfigTab;
@@ -195,7 +199,7 @@ interface StudioState {
   // Actions
   setFlowPath: (value: string) => void;
   setAvailableFlows: (flows: string[]) => void;
-  setLoadedFlow: (flow: FlowDefinition | undefined) => void;
+  setLoadedFlow: (flow: FlowDefinition | undefined, migrationNotes?: string[]) => void;
   setLoadError: (message: string | undefined) => void;
 
   selectAgent: (path: string[]) => void;
@@ -247,6 +251,7 @@ const DEFAULT_FLOW_PATH = "examples/leader-workers.yaml";
 export const useRunStore = create<StudioState>((set) => ({
   flowPath: DEFAULT_FLOW_PATH,
   availableFlows: [],
+  migrationNotes: [],
   isDirty: false,
   selectedAgentPath: [],
   agentConfigTab: "basic",
@@ -276,6 +281,7 @@ export const useRunStore = create<StudioState>((set) => ({
       flowPath: value,
       flowDraft: undefined,
       loadedFlow: undefined,
+      migrationNotes: [],
       isDirty: false,
       selectedAgentPath: [],
       saveError: undefined,
@@ -297,6 +303,7 @@ export const useRunStore = create<StudioState>((set) => ({
         flowPath: nextFlowPath,
         flowDraft: undefined,
         loadedFlow: undefined,
+        migrationNotes: [],
         isDirty: false,
         selectedAgentPath: [],
         saveError: undefined,
@@ -304,10 +311,11 @@ export const useRunStore = create<StudioState>((set) => ({
       };
     }),
 
-  setLoadedFlow: (flow) =>
+  setLoadedFlow: (flow, migrationNotes = []) =>
     set({
       loadedFlow: flow,
       flowDraft: flow ? cloneFlow(flow) : undefined,
+      migrationNotes,
       isDirty: false,
       selectedAgentPath: flow ? [flow.orchestrator.name] : [],
       saveError: undefined,
@@ -349,14 +357,14 @@ export const useRunStore = create<StudioState>((set) => ({
       };
     }),
 
-  addAgent: (parentPath, type) =>
+  addAgent: (parentPath, _type) =>
     set((state) => {
       if (!state.flowDraft) return state;
       const draft = cloneFlow(state.flowDraft);
       const parent = getAgentAtPath(draft.orchestrator, parentPath);
       if (!parent) return state;
-      const name = nextAgentName(parent, type);
-      const newAgent: AgentConfig = { name, type };
+      const name = nextAgentName(parent);
+      const newAgent: AgentConfig = { name, type: CODEX_AGENT_TYPE };
       draft.orchestrator = addAgentToPath(draft.orchestrator, parentPath, newAgent);
       return {
         flowDraft: draft,
@@ -543,6 +551,7 @@ export const useRunStore = create<StudioState>((set) => ({
               flowPath: nextFlows[0] ?? DEFAULT_FLOW_PATH,
               flowDraft: undefined,
               loadedFlow: undefined,
+              migrationNotes: [],
               isDirty: false,
               selectedAgentPath: [],
             }

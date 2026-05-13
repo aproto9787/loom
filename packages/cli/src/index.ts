@@ -2,16 +2,17 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, watch } from "node:fs";
+import { existsSync } from "node:fs";
 import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig, AgentType, TimelineEvent } from "@aproto9787/heddle-core";
+import YAML from "yaml";
+import * as HeddleCore from "@aproto9787/heddle-core";
+import type { AgentConfig, AgentType, FlowDefinition, TimelineEvent } from "@aproto9787/heddle-core";
 import { runHeddleMcpServer } from "@aproto9787/heddle-mcp";
-import { loadFlow } from "@aproto9787/heddle-runtime";
 import { buildConfiguredAgent } from "@aproto9787/heddle-runtime";
 import { createCodexInstructionHome, type CodexInstructionHome } from "./codex-home.js";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
@@ -178,7 +179,8 @@ interface LoadedCliFlow {
   absolutePath: string;
   relativePath: string;
   flowDir: string;
-  flow: Awaited<ReturnType<typeof loadFlow>>["flow"];
+  flow: FlowDefinition;
+  migrationNotes: string[];
 }
 
 interface SelectionResult {
@@ -192,20 +194,11 @@ interface RunRegistration {
 }
 
 interface LeaderMcpConfig {
-  claudeConfigPath: string;
   codexConfigToml: string;
   cleanup: () => Promise<void>;
 }
 
 type HeddleRunEvent = TimelineEvent;
-
-interface TranscriptTailState {
-  readonly transcriptDir: string;
-  readonly discoveredFiles: ReadonlySet<string>;
-  readonly eventCount: number;
-  close: () => Promise<void>;
-  flushBundle: () => Promise<void>;
-}
 
 async function pathExists(targetPath: string): Promise<boolean> {
   try {
@@ -275,12 +268,20 @@ async function loadCliFlow(flowPath: string, cwd: string): Promise<LoadedCliFlow
     ];
     absolutePath = candidates.find((candidate) => existsSync(candidate)) ?? absolutePath;
   }
-  const loaded = await loadFlow(absolutePath);
+  const raw = await readFile(absolutePath, "utf8");
+  const migration = migrateLegacyFlowToCodex(YAML.parse(raw));
+  const flow = HeddleCore.flowSchema.parse(migration.value);
+  const validationErrors = HeddleCore.validateFlow(flow);
+  if (validationErrors.length > 0) {
+    throw new Error(validationErrors.join("; "));
+  }
+  logMigrationNotes(`flow ${flowPath}`, migration.notes);
   return {
-    absolutePath: loaded.absolutePath,
+    absolutePath,
     relativePath: flowPath,
-    flowDir: loaded.flowDir,
-    flow: loaded.flow,
+    flowDir: path.dirname(absolutePath),
+    flow,
+    migrationNotes: migration.notes,
   };
 }
 
@@ -290,19 +291,155 @@ function resolveFlowCwd(flow: LoadedCliFlow): string {
   return path.isAbsolute(repo) ? repo : path.resolve(process.cwd(), repo);
 }
 
-function buildSpawnArgs(agent: AgentConfig): { command: string; args: string[] } {
-  if (agent.type === "claude-code") {
-    const args = ["--dangerously-skip-permissions"];
-    if (agent.model) {
-      args.push("--model", agent.model);
+interface MigrationResult<T> {
+  value: T;
+  notes: string[];
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function hasLegacyAgentType(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  if ((value as { type?: unknown }).type === "claude-code") return true;
+  if ((value as { agentType?: unknown }).agentType === "claude-code") return true;
+  if (Array.isArray(value)) return value.some((entry) => hasLegacyAgentType(entry));
+  return Object.values(value as Record<string, unknown>).some((entry) => hasLegacyAgentType(entry));
+}
+
+function migrationNotesFrom(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  const notes = record.notes ?? record.migrationNotes ?? record.warnings;
+  if (Array.isArray(notes)) {
+    return notes
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        if (!entry || typeof entry !== "object") return "";
+        const note = entry as { path?: unknown; from?: unknown; to?: unknown; message?: unknown };
+        const pathLabel = typeof note.path === "string" ? note.path : "legacy";
+        const from = typeof note.from === "string" ? note.from : undefined;
+        const to = typeof note.to === "string" ? note.to : undefined;
+        const message = typeof note.message === "string" ? note.message : undefined;
+        return [pathLabel, from && to ? `${from} -> ${to}` : undefined, message].filter(Boolean).join(": ");
+      })
+      .filter((entry) => entry.trim().length > 0);
+  }
+  return [];
+}
+
+function migrationValueFrom<T>(value: unknown): T | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  return (record.flow ?? record.value ?? record.migrated ?? record.result ?? value) as T;
+}
+
+function runCoreLegacyMigration<T>(value: T): MigrationResult<T> | undefined {
+  const helpers = [
+    "migrateLegacyFlowDefinitionInput",
+    "migrateLegacyFlowToCodex",
+    "migrateLegacyAgentTypesToCodex",
+    "migrateLegacyClaudeCodeToCodex",
+    "normalizeLegacyAgentTypes",
+  ];
+  const coreExports = HeddleCore as Record<string, unknown>;
+
+  for (const helperName of helpers) {
+    const helper = coreExports[helperName];
+    if (typeof helper !== "function") continue;
+    try {
+      const migrated = helper(cloneJson(value)) as unknown;
+      const migrationValue = migrationValueFrom<T>(migrated);
+      if (!migrationValue) continue;
+      const notes = migrationNotesFrom(migrated);
+      return {
+        value: migrationValue,
+        notes: notes.length > 0 ? notes : [`core legacy migration helper ${helperName} applied`],
+      };
+    } catch {
+      return undefined;
     }
-    return { command: "claude", args };
+  }
+  return undefined;
+}
+
+function migrateRuntimeDefaults(agent: Record<string, unknown>, pathLabel: string, notes: string[]): void {
+  const runtime = agent.runtime && typeof agent.runtime === "object"
+    ? { ...(agent.runtime as Record<string, unknown>) }
+    : {};
+  if (runtime.profile === undefined || runtime.profile === "claude-default") {
+    runtime.profile = "codex-default";
+    notes.push(`${pathLabel}.runtime.profile -> codex-default`);
+  }
+  if (runtime.mode === undefined) runtime.mode = "host";
+  if (runtime.applyResources === undefined) runtime.applyResources = "prompt-only";
+  if (runtime.delegationTransport === undefined) runtime.delegationTransport = "mcp";
+  agent.runtime = runtime;
+
+  if (agent.model === undefined || (typeof agent.model === "string" && agent.model.startsWith("claude-"))) {
+    agent.model = "gpt-5.5";
+    notes.push(`${pathLabel}.model -> gpt-5.5`);
+  }
+}
+
+function migrateAgentRecord(value: unknown, pathLabel: string, notes: string[]): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const agent = { ...(value as Record<string, unknown>) };
+  if (agent.type === "claude-code") {
+    agent.type = "codex";
+    notes.push(`${pathLabel}.type claude-code -> codex`);
+  }
+  if (agent.type === "codex") {
+    migrateRuntimeDefaults(agent, pathLabel, notes);
+  }
+  if (Array.isArray(agent.agents)) {
+    agent.agents = agent.agents.map((child, index) => migrateAgentRecord(child, `${pathLabel}.agents.${index}`, notes));
+  }
+  return agent;
+}
+
+function applyBuiltInFlowMigration<T>(value: T): MigrationResult<T> {
+  const notes: string[] = [];
+  if (!value || typeof value !== "object") return { value, notes };
+  const flow = { ...(value as Record<string, unknown>) };
+  if (flow.orchestrator) {
+    flow.orchestrator = migrateAgentRecord(flow.orchestrator, "orchestrator", notes);
+  }
+  return { value: flow as T, notes };
+}
+
+function migrateLegacyFlowToCodex<T>(value: T): MigrationResult<T> {
+  if (!hasLegacyAgentType(value)) {
+    return { value, notes: [] };
   }
 
-  const args = ["--dangerously-bypass-approvals-and-sandbox"];
-  if (agent.model) {
-    args.push("-m", agent.model);
+  const coreMigration = runCoreLegacyMigration(value);
+  const builtInMigration = applyBuiltInFlowMigration(coreMigration?.value ?? value);
+  return {
+    value: builtInMigration.value,
+    notes: [
+      ...(coreMigration?.notes ?? ["core legacy migration helper unavailable; applied built-in Codex migration"]),
+      ...builtInMigration.notes,
+    ],
+  };
+}
+
+function migrateLegacyAgentToCodex(agent: AgentConfig, pathLabel: string): MigrationResult<AgentConfig> {
+  const flowMigration = migrateLegacyFlowToCodex({ orchestrator: agent });
+  const migrated = flowMigration.value as { orchestrator: AgentConfig };
+  return { value: migrated.orchestrator, notes: flowMigration.notes.map((note) => note.replace(/^orchestrator/, pathLabel)) };
+}
+
+function logMigrationNotes(scope: string, notes: string[]): void {
+  for (const note of notes) {
+    console.warn(`[heddle] migrated legacy Claude configuration in ${scope}: ${note}`);
   }
+}
+
+function buildSpawnArgs(agent: AgentConfig): { command: string; args: string[] } {
+  const args = ["--dangerously-bypass-approvals-and-sandbox"];
+  args.push("-m", agent.model ?? "gpt-5.5");
   return { command: "codex", args };
 }
 
@@ -345,22 +482,7 @@ async function createLeaderMcpConfig(
     HEDDLE_PARENT_DEPTH: "0",
     HEDDLE_SUBAGENT_BIN: subagentBin,
   };
-  const claudeConfigPath = path.join(tempDir, "mcp.json");
-  await writeFile(
-    claudeConfigPath,
-    JSON.stringify({
-      mcpServers: {
-        heddle: {
-          command: process.execPath,
-          args: [cliBin, "mcp"],
-          env,
-        },
-      },
-    }, null, 2),
-    "utf8",
-  );
   return {
-    claudeConfigPath,
     codexConfigToml: buildCodexMcpConfigToml(env, process.execPath, [cliBin, "mcp"]),
     cleanup: async () => {
       await rm(tempDir, { recursive: true, force: true });
@@ -400,212 +522,6 @@ function extractMessageText(message: unknown): string | undefined {
   return undefined;
 }
 
-function mapTranscriptMessageType(role: string | undefined): HeddleRunEvent["type"] {
-  if (role === "user") return "user";
-  if (role === "assistant") return "assistant";
-  return "error";
-}
-
-function coerceAgentDepth(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function mapTranscriptLine(runId: string, line: string, leaderName = "leader"): HeddleRunEvent | null {
-  const trimmed = line.trim();
-  if (!trimmed) return null;
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    return {
-      runId,
-      ts: Date.now(),
-      type: "error",
-      summary: summarizeText(trimmed, 100),
-      raw: trimmed,
-    };
-  }
-
-  const ts = parseEventTimestamp(parsed.timestamp ?? parsed.ts);
-  const transcriptType = typeof parsed.type === "string" ? parsed.type : undefined;
-  if (transcriptType === "user") {
-    const message = parsed.message as Record<string, unknown> | undefined;
-    const messageContent = message?.content;
-    // Detect tool_result user frames (Claude Code sends tool returns as
-    // user role with content=[{type:"tool_result", ...}]). Promote those
-    // to a tool_result event instead of a blank USER row.
-    if (Array.isArray(messageContent)) {
-      for (const part of messageContent) {
-        if (!part || typeof part !== "object") continue;
-        const typedPart = part as Record<string, unknown>;
-        if (typedPart.type === "tool_result") {
-          const toolUseId = typeof typedPart.tool_use_id === "string" ? typedPart.tool_use_id : undefined;
-          const resultText = extractMessageText(typedPart.content);
-          return {
-            runId,
-            ts,
-            type: "tool_result",
-            summary: summarizeText(resultText ?? (toolUseId ? `result ${toolUseId.slice(0, 8)}` : "tool result"), 120),
-            agentName: leaderName,
-            agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
-            agentKind: "claude",
-            raw: parsed,
-          };
-        }
-      }
-    }
-    const fallbackContent = typeof parsed.content === "string" ? parsed.content : undefined;
-    const summary = summarizeText(extractMessageText(messageContent) ?? fallbackContent);
-    if (!summary) return null;
-    return {
-      runId,
-      ts,
-      type: "user",
-      summary,
-      agentName: leaderName,
-      agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
-      agentKind: "claude",
-      raw: parsed,
-    };
-  }
-  if (transcriptType === "assistant") {
-    const message = parsed.message as Record<string, unknown> | undefined;
-    const role = typeof message?.role === "string" ? message.role : undefined;
-    const content = Array.isArray(message?.content) ? message.content : [];
-    const agentName = typeof parsed.agentName === "string"
-      ? parsed.agentName
-      : typeof parsed.agent_name === "string"
-        ? parsed.agent_name
-        : leaderName;
-    const agentDepth = coerceAgentDepth(parsed.parentUuid ? 1 : parsed.agentDepth ?? parsed.agent_depth);
-
-    for (const part of content) {
-      if (!part || typeof part !== "object") continue;
-      const typedPart = part as Record<string, unknown>;
-      const partType = typeof typedPart.type === "string" ? typedPart.type : undefined;
-      if (partType === "tool_use") {
-        const toolName = typeof typedPart.name === "string" ? typedPart.name : undefined;
-        const input = (typedPart.input ?? {}) as Record<string, unknown>;
-        let toolDetail: string | undefined;
-        if (toolName === "Agent") {
-          const subagent = typeof input.subagent_type === "string" ? input.subagent_type : undefined;
-          const desc = typeof input.description === "string" ? input.description : undefined;
-          if (subagent && desc) toolDetail = `${subagent} — ${desc}`;
-          else if (subagent) toolDetail = subagent;
-          else if (desc) toolDetail = desc;
-        } else if (toolName === "Bash") {
-          const cmd = typeof input.command === "string" ? input.command : undefined;
-          if (cmd) toolDetail = cmd;
-        }
-        const summaryText = toolName
-          ? (toolDetail ? `${toolName}: ${toolDetail}` : `tool ${toolName}`)
-          : "tool use";
-        return {
-          runId,
-          ts,
-          type: "tool_use",
-          summary: summarizeText(summaryText, 140),
-          toolName,
-          agentName,
-          agentDepth,
-          agentKind: "claude",
-          raw: parsed,
-        };
-      }
-      if (partType === "tool_result") {
-        const toolUseId = typeof typedPart.tool_use_id === "string" ? typedPart.tool_use_id : undefined;
-        return {
-          runId,
-          ts,
-          type: "tool_result",
-          summary: summarizeText(toolUseId ? `result ${toolUseId}` : "tool result", 100),
-          agentName,
-          agentDepth,
-          agentKind: "claude",
-          raw: parsed,
-        };
-      }
-      if (partType === "text") {
-        const textSummary = summarizeText(typeof typedPart.text === "string" ? typedPart.text : undefined);
-        if (!textSummary) continue;
-        return {
-          runId,
-          ts,
-          type: mapTranscriptMessageType(role),
-          summary: textSummary,
-          agentName,
-          agentDepth,
-          agentKind: "claude",
-          raw: parsed,
-        };
-      }
-    }
-
-    const errorText = typeof parsed.error === "string"
-      ? parsed.error
-      : typeof parsed.message === "string"
-        ? parsed.message
-        : undefined;
-    const fallbackSummary = summarizeText(errorText);
-    if (!fallbackSummary) return null;
-    return {
-      runId,
-      ts,
-      type: errorText ? "error" : mapTranscriptMessageType(role),
-      summary: fallbackSummary,
-      agentName,
-      agentDepth,
-      agentKind: "claude",
-      raw: parsed,
-    };
-  }
-
-  if (transcriptType === "attachment") {
-    const attachment = parsed.attachment as Record<string, unknown> | undefined;
-    const attachmentType = typeof attachment?.type === "string" ? attachment.type : undefined;
-    if (attachmentType === "hook_non_blocking_error") {
-      const hookName = typeof attachment?.hookName === "string" ? attachment.hookName : "hook";
-      const command = typeof attachment?.command === "string" ? attachment.command : "";
-      const stderr = typeof attachment?.stderr === "string" ? attachment.stderr : "";
-      const exitCode = typeof attachment?.exitCode === "number" ? attachment.exitCode : undefined;
-      const pieces = [hookName, exitCode !== undefined ? `exit ${exitCode}` : undefined, stderr || command].filter(Boolean);
-      return {
-        runId,
-        ts,
-        type: "error",
-        summary: summarizeText(pieces.join(" · "), 160),
-        toolName: `hook:${hookName}`,
-        agentName: leaderName,
-        agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
-        agentKind: "claude",
-        raw: parsed,
-      };
-    }
-    // other attachment subtypes (deferred_tools_delta, file-history-snapshot, etc.) are noise.
-    return null;
-  }
-
-  if (transcriptType === "queue-operation") {
-    return {
-      runId,
-      ts,
-      type: "user",
-      summary: summarizeText(typeof parsed.content === "string" ? parsed.content : typeof parsed.operation === "string" ? parsed.operation : transcriptType, 100),
-      agentName: leaderName,
-      agentDepth: coerceAgentDepth(parsed.agentDepth ?? parsed.agent_depth),
-      agentKind: "claude",
-      raw: parsed,
-    };
-  }
-
-  // Skip internal meta frames the orchestrator writes to transcript but which
-  // aren't useful to a human watcher (permission-mode, system bridge, file
-  // snapshots, summary blobs, etc.). Anything we don't explicitly understand
-  // is dropped rather than surfaced as a bogus ERROR row.
-  return null;
-}
-
 function mapCodexHeadlessLine(runId: string, line: string, leaderName = "leader"): HeddleRunEvent | null {
   let parsed: Record<string, unknown>;
   try {
@@ -642,11 +558,7 @@ function mapCodexHeadlessLine(runId: string, line: string, leaderName = "leader"
 }
 
 function mapHeadlessStdoutLine(runId: string, line: string, agentType: AgentType, leaderName = "leader"): HeddleRunEvent[] {
-  if (agentType === "codex") {
-    const mapped = mapCodexHeadlessLine(runId, line, leaderName);
-    return mapped ? [mapped] : [];
-  }
-  const mapped = mapTranscriptLine(runId, line, leaderName);
+  const mapped = mapCodexHeadlessLine(runId, line, leaderName);
   return mapped ? [mapped] : [];
 }
 
@@ -661,220 +573,6 @@ async function postRunEvents(origin: string, runId: string, events: HeddleRunEve
   } catch {
     // Event streaming is best-effort for CLI launches.
   }
-}
-
-async function readTranscriptEvents(runId: string, transcriptPath: string, offset: number): Promise<{ events: HeddleRunEvent[]; nextOffset: number }> {
-  let content: string;
-  try {
-    content = await readFile(transcriptPath, "utf8");
-  } catch {
-    return { events: [], nextOffset: offset };
-  }
-
-  if (offset >= content.length) {
-    return { events: [], nextOffset: content.length };
-  }
-
-  const chunk = content.slice(offset);
-  const trailingNewline = chunk.endsWith("\n");
-  const lines = chunk.split("\n");
-  const completeLines = trailingNewline ? lines : lines.slice(0, -1);
-  const consumedLength = completeLines.reduce((total, entry) => total + entry.length + 1, 0);
-  return {
-    events: completeLines.map((entry) => mapTranscriptLine(runId, entry)).filter((entry): entry is HeddleRunEvent => entry !== null),
-    nextOffset: offset + consumedLength,
-  };
-}
-
-async function collectTranscriptProjectDirs(projectsRoot: string): Promise<string[]> {
-  let entries;
-  try {
-    entries = await readdir(projectsRoot, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(projectsRoot, entry.name))
-    .sort((a, b) => a.localeCompare(b));
-}
-
-async function collectTranscriptFiles(projectsRoot: string): Promise<string[]> {
-  const projectDirs = await collectTranscriptProjectDirs(projectsRoot);
-  const files = await Promise.all(projectDirs.map(async (dir) => {
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return [];
-    }
-
-    return entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .map((entry) => path.join(dir, entry.name));
-  }));
-
-  return files.flat().sort((a, b) => a.localeCompare(b));
-}
-
-async function createTranscriptTail(runId: string, homeDir: string, cwd: string, origin: string, rootAgentName: string): Promise<TranscriptTailState> {
-  // Scope the watch to THIS cwd's project directory only. Claude Code
-  // stores transcripts at `~/.claude/projects/<cwd-with-slashes-as-dashes>/<uuid>.jsonl`,
-  // so watching the top-level `projects/` on the real HOME would scan every
-  // previous project the user has ever touched — enormous disk/inotify cost.
-  const cwdMangled = cwd.replace(/\//g, "-");
-  const scopedProjectDir = path.join(homeDir, ".claude", "projects", cwdMangled);
-  // Also snapshot which jsonl files already exist before the root agent starts,
-  // so we ignore pre-existing session transcripts. Only files that appear
-  // AFTER this function runs are treated as belonging to the current run.
-  const preExistingFiles = new Set<string>();
-  try {
-    const entries = await readdir(scopedProjectDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-        preExistingFiles.add(path.join(scopedProjectDir, entry.name));
-      }
-    }
-  } catch {
-    // directory may not exist yet — created below.
-  }
-  const projectsRoot = scopedProjectDir;
-  const offsets = new Map<string, number>();
-  const discoveredFiles = new Set<string>();
-  const deliveredLineKeys = new Set<string>();
-  let watcher: ReturnType<typeof watch> | undefined;
-  let pollTimer: NodeJS.Timeout | undefined;
-  let closed = false;
-  let discoveredTranscriptDir = path.join(projectsRoot, path.basename(cwd));
-  let eventCount = 0;
-  let polling = Promise.resolve();
-
-  const dedupeEvents = (file: string, startOffset: number, lines: string[], events: HeddleRunEvent[]): HeddleRunEvent[] => {
-    const deduped: HeddleRunEvent[] = [];
-    let offset = startOffset;
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      const event = events[index];
-      const key = `${file}:${offset}:${line}`;
-      offset += line.length + 1;
-      if (deliveredLineKeys.has(key)) continue;
-      deliveredLineKeys.add(key);
-      deduped.push(event);
-    }
-    return deduped;
-  };
-
-  const readDelta = async (file: string, startOffset: number): Promise<{ events: HeddleRunEvent[]; nextOffset: number }> => {
-    let content: string;
-    try {
-      content = await readFile(file, "utf8");
-    } catch {
-      return { events: [], nextOffset: startOffset };
-    }
-
-    if (startOffset >= content.length) {
-      return { events: [], nextOffset: content.length };
-    }
-
-    const chunk = content.slice(startOffset);
-    const trailingNewline = chunk.endsWith("\n");
-    const lines = chunk.split("\n");
-    // split("\n") always emits a trailing "" when the chunk ends with "\n",
-    // and a real partial segment when it doesn't. Either way the last element
-    // is NOT a complete line we should process.
-    const completeLines = lines.slice(0, -1);
-    const consumedLength = trailingNewline
-      ? chunk.length
-      : completeLines.reduce((total, entry) => total + entry.length + 1, 0);
-    const mappedEvents = completeLines
-      .map((entry) => mapTranscriptLine(runId, entry, rootAgentName))
-      .filter((entry): entry is HeddleRunEvent => entry !== null);
-    const eventLines = completeLines.filter((entry) => mapTranscriptLine(runId, entry, rootAgentName) !== null);
-    return {
-      events: dedupeEvents(file, startOffset, eventLines, mappedEvents),
-      nextOffset: startOffset + consumedLength,
-    };
-  };
-
-  const listRunFiles = async (): Promise<string[]> => {
-    let entries;
-    try {
-      entries = await readdir(projectsRoot, { withFileTypes: true });
-    } catch {
-      return [];
-    }
-    return entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .map((entry) => path.join(projectsRoot, entry.name))
-      .filter((fullPath) => !preExistingFiles.has(fullPath))
-      .sort((a, b) => a.localeCompare(b));
-  };
-
-  const pollOnce = async (): Promise<void> => {
-    const files = await listRunFiles();
-    for (const file of files) {
-      discoveredFiles.add(file);
-      discoveredTranscriptDir = path.dirname(file);
-      const currentOffset = offsets.get(file) ?? 0;
-      const { events, nextOffset } = await readDelta(file, currentOffset);
-      offsets.set(file, nextOffset);
-      if (events.length > 0) {
-        eventCount += events.length;
-        await postRunEvents(origin, runId, events);
-      }
-    }
-
-    for (const knownFile of [...offsets.keys()]) {
-      if (!files.includes(knownFile)) {
-        offsets.delete(knownFile);
-        discoveredFiles.delete(knownFile);
-      }
-    }
-  };
-
-  const queuePoll = () => {
-    polling = polling.then(pollOnce).catch(() => undefined);
-    return polling;
-  };
-
-  await mkdir(projectsRoot, { recursive: true });
-  await queuePoll();
-
-  try {
-    watcher = watch(projectsRoot, { recursive: true }, () => {
-      void queuePoll();
-    });
-  } catch {
-    watcher = undefined;
-  }
-
-  pollTimer = setInterval(() => {
-    void queuePoll();
-  }, 500);
-  pollTimer.unref();
-
-  return {
-    get transcriptDir() {
-      return discoveredTranscriptDir;
-    },
-    get discoveredFiles() {
-      return discoveredFiles;
-    },
-    get eventCount() {
-      return eventCount;
-    },
-    close: async () => {
-      if (closed) return;
-      closed = true;
-      watcher?.close();
-      if (pollTimer) clearInterval(pollTimer);
-      await queuePoll();
-    },
-    flushBundle: async () => {
-      await queuePoll();
-    },
-  };
 }
 
 async function reportCliRunStart(
@@ -958,37 +656,13 @@ function resolveAgentFlowMd(flow: LoadedCliFlow, agent: AgentConfig): string | u
 
 
 function buildHeadlessSpawnArgs(agent: AgentConfig, finalInstructions: string, userPrompt: string, mcpConfigPath?: string): { command: string; args: string[] } {
-  if (agent.type === "claude-code") {
-    const args = [
-      "--print",
-      "--output-format", "stream-json",
-      "--verbose",
-      "--session-id", randomUUID(),
-      "--no-session-persistence",
-      "--dangerously-skip-permissions",
-    ];
-    if (agent.model) {
-      args.push("--model", agent.model);
-    }
-    if (mcpConfigPath) {
-      args.push("--mcp-config", mcpConfigPath);
-    }
-    if (finalInstructions.trim()) {
-      args.push("--append-system-prompt", finalInstructions);
-    }
-    args.push(userPrompt);
-    return { command: "claude", args };
-  }
-
   const args = [
     "exec",
     "--json",
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
+    "--model", agent.model ?? "gpt-5.5",
   ];
-  if (agent.model) {
-    args.push("--model", agent.model);
-  }
   args.push(buildHeadlessPrompt(finalInstructions, userPrompt));
   return { command: "codex", args };
 }
@@ -1064,15 +738,17 @@ async function runHeadlessAgent(
 }
 
 async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<number> {
-  // The root agent runs with the host's normal config/login. Claude accepts
-  // hidden prompt injection directly; Codex gets an ephemeral CODEX_HOME whose
-  // AGENTS.md combines the real global AGENTS.md with this flow's instructions.
+  // The root agent runs with an ephemeral CODEX_HOME whose AGENTS.md combines
+  // the real global AGENTS.md with this flow's instructions.
   const agent: AgentConfig = { ...flow.flow.orchestrator };
-  const configuredAgent = buildConfiguredAgent(agent, flow.flow, flow.flow.repo, {
+  const rawConfiguredAgent = buildConfiguredAgent(agent, flow.flow, flow.flow.repo, {
     roles: new Map(),
     hooks: new Map(),
     skills: new Map(),
   });
+  const configuredAgentMigration = migrateLegacyAgentToCodex(rawConfiguredAgent, "orchestrator");
+  logMigrationNotes("configured agent", configuredAgentMigration.notes);
+  const configuredAgent = configuredAgentMigration.value;
   const agentFlowMd = resolveAgentFlowMd(flow, configuredAgent);
   const mergedInstructions = mergeFlowMd(flow.flow.flowMd, agentFlowMd, configuredAgent);
   const flowCwd = resolveFlowCwd(flow);
@@ -1091,15 +767,13 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
   if (options.headless) {
     let headlessCodexHome: CodexInstructionHome | undefined;
     const extraEnv: Record<string, string> = {};
-    if (configuredAgent.type === "codex") {
-      headlessCodexHome = await createCodexInstructionHome({
-        instructions: "",
-        configAppend: leaderMcpConfig.codexConfigToml,
-        writeAgents: false,
-      });
-      extraEnv.CODEX_HOME = headlessCodexHome.codexHome;
-      extraEnv.CODEX_CONFIG_DIR = headlessCodexHome.codexHome;
-    }
+    headlessCodexHome = await createCodexInstructionHome({
+      instructions: "",
+      configAppend: leaderMcpConfig.codexConfigToml,
+      writeAgents: false,
+    });
+    extraEnv.CODEX_HOME = headlessCodexHome.codexHome;
+    extraEnv.CODEX_CONFIG_DIR = headlessCodexHome.codexHome;
     try {
       return await runHeadlessAgent(
         flow,
@@ -1110,7 +784,6 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
         registration,
         getServerOrigin(options.serverOrigin),
         extraEnv,
-        configuredAgent.type === "claude-code" ? leaderMcpConfig.claudeConfigPath : undefined,
       );
     } finally {
       await headlessCodexHome?.cleanup().catch(() => undefined);
@@ -1120,28 +793,12 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
 
   const { command, args } = buildSpawnArgs(configuredAgent);
   let codexInstructionHome: CodexInstructionHome | undefined;
-  if (configuredAgent.type === "claude-code" && finalInstructions.trim().length > 0) {
-    args.push("--append-system-prompt", finalInstructions);
-  }
-  if (configuredAgent.type === "claude-code") {
-    args.push("--mcp-config", leaderMcpConfig.claudeConfigPath);
-  }
-  if (configuredAgent.type === "codex") {
-    codexInstructionHome = await createCodexInstructionHome({
-      instructions: finalInstructions,
-      configAppend: leaderMcpConfig.codexConfigToml,
-    });
-  }
+  codexInstructionHome = await createCodexInstructionHome({
+    instructions: finalInstructions,
+    configAppend: leaderMcpConfig.codexConfigToml,
+  });
 
-  const realHome = os.homedir();
-  const transcriptTail = configuredAgent.type === "claude-code"
-    ? await createTranscriptTail(registration.runId, realHome, flowCwd, getServerOrigin(options.serverOrigin), configuredAgent.name)
-    : undefined;
   const finalizeRun = async (exitCode: number) => {
-    if (transcriptTail) {
-      await transcriptTail.close();
-      await transcriptTail.flushBundle();
-    }
     await codexInstructionHome?.cleanup().catch(() => undefined);
     await leaderMcpConfig.cleanup().catch(() => undefined);
     await registration.cleanup(exitCode);
@@ -1149,7 +806,7 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
 
   // Hand the TTY back to the child cleanly: readline may have left stdin
   // in raw mode with bracketed-paste/mouse tracking off, which breaks
-  // ctrl+v, arrow keys, etc. when claude takes over with stdio:inherit.
+  // ctrl+v, arrow keys, etc. when the child takes over with stdio:inherit.
   if (process.stdin.isTTY) {
     try { process.stdin.setRawMode(false); } catch { /* ignore */ }
   }
@@ -1166,8 +823,8 @@ async function launchAgent(flow: LoadedCliFlow, options: CliOptions): Promise<nu
       HEDDLE_FLOW_PATH: flow.absolutePath,
       HEDDLE_FLOW_NAME: flow.flow.name,
       HEDDLE_FLOW_CWD: flowCwd,
-      HEDDLE_AGENT: agent.name,
-      HEDDLE_AGENT_TYPE: agent.type,
+      HEDDLE_AGENT: configuredAgent.name,
+      HEDDLE_AGENT_TYPE: configuredAgent.type,
       HEDDLE_RUN_ID: registration.runId,
       HEDDLE_SERVER_ORIGIN: getServerOrigin(options.serverOrigin),
       HEDDLE_PARENT_AGENT: configuredAgent.name,
@@ -1214,13 +871,13 @@ flowMd: |
 flowMdLibrary: {}
 orchestrator:
   name: leader
-  type: claude-code
+  type: codex
   runtime:
     mode: host
-    profile: claude-default
+    profile: codex-default
     applyResources: prompt-only
     delegationTransport: mcp
-  model: claude-opus-4-7
+  model: gpt-5.5
   system: |
     You are the orchestrator for ${name}. Delegate work to your team.
   effort: xhigh

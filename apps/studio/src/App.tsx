@@ -4,6 +4,38 @@ import { StaticTabView, TabBar } from "./app-shell.js";
 import { useRunStore } from "./store.js";
 import { SERVER_ORIGIN } from "./sse-run.js";
 
+function normalizeMigrationNotes(data: unknown): string[] {
+  if (!data || typeof data !== "object") return [];
+  const record = data as Record<string, unknown>;
+  const candidates = [
+    record.migrationNotes,
+    record.legacyMigrationNotes,
+    (record.migration && typeof record.migration === "object"
+      ? (record.migration as Record<string, unknown>).notes
+      : undefined),
+  ];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate
+        .map((note) => {
+          if (typeof note === "string") return note;
+          if (!note || typeof note !== "object") return "";
+          const record = note as Record<string, unknown>;
+          const path = typeof record.path === "string" ? record.path : "";
+          const from = typeof record.from === "string" ? record.from : "";
+          const to = typeof record.to === "string" ? record.to : "";
+          const message = typeof record.message === "string" ? record.message : "";
+          return [path && from && to ? `${path}: ${from} -> ${to}` : "", message].filter(Boolean).join(" - ");
+        })
+        .filter((note) => note.trim().length > 0);
+    }
+    if (typeof candidate === "string" && candidate.trim()) {
+      return [candidate];
+    }
+  }
+  return [];
+}
+
 export default function App() {
   const activeTab = useRunStore((s) => s.activeTab);
   const flowPath = useRunStore((s) => s.flowPath);
@@ -48,10 +80,10 @@ export default function App() {
           const body = await res.text().catch(() => "");
           throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
         }
-        return res.json() as Promise<{ flow: import("@aproto9787/heddle-core").FlowDefinition }>;
+        return res.json() as Promise<{ flow: import("@aproto9787/heddle-core").FlowDefinition } & Record<string, unknown>>;
       })
       .then((data) => {
-        if (active) setLoadedFlow(data.flow);
+        if (active) setLoadedFlow(data.flow, normalizeMigrationNotes(data));
       })
       .catch((error: unknown) => {
         if (active) setLoadError(error instanceof Error ? error.message : "failed to load flow");

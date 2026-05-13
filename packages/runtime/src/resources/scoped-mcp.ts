@@ -9,7 +9,7 @@ import type { ScopedMcpOptions } from "./types.js";
 export async function createScopedMcpConfig(
   agent: AgentConfig,
   flow: FlowDefinition,
-  homeDir?: string,
+  _homeDir?: string,
   options: ScopedMcpOptions = {},
 ): Promise<string | undefined> {
   const scopedMcps = resolveAgentResources(agent, flow).mcps;
@@ -19,7 +19,6 @@ export async function createScopedMcpConfig(
 
   const workspaceRoot = path.resolve(options.workspaceRoot ?? defaultWorkspaceRoot());
   const sources = [
-    path.join(homeDir ?? os.homedir(), ".claude.json"),
     path.join(workspaceRoot, ".mcp.json"),
   ];
 

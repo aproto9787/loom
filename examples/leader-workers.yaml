@@ -9,11 +9,56 @@ description: >
 
   analyst, frontend, debate team.
 repo: .
+governance:
+  defaultTier: quick
+  defaultPack: quick-direct
+  packs:
+    quick-direct:
+      tier: quick
+      requiredGates: []
+      optionalGates:
+        - acceptance
+      description: Keep low-risk answers, commands, and small edits direct-first.
+    code-change-default:
+      tier: code
+      requiredGates:
+        - acceptance
+        - scope-check
+        - codex-reviewer
+      optionalGates:
+        - user-advocate
+        - run-manifest
+      description: Use reviewer-backed gates for code, schema, or runtime changes.
+    side-effect-guarded:
+      tier: side_effect
+      requiredGates:
+        - acceptance
+        - side-effect-boundary
+        - approval-record
+        - rollback-record
+        - codex-reviewer
+      optionalGates:
+        - run-manifest
+      description: Require explicit approval and rollback evidence before side effects.
+    enterprise-controlled:
+      tier: enterprise
+      requiredGates:
+        - acceptance
+        - contract
+        - side-effect-boundary
+        - approval-record
+        - rollback-record
+        - codex-reviewer
+        - user-advocate
+        - run-manifest
+      optionalGates:
+        - release-readiness
+      description: Use full governance for release, security, billing, or multi-phase work.
 flowMd: |
   # Flow Common Policy (적용: 모든 에이전트)
 
   ## 지시 우선순위
-  1. system prompt (Codex / Claude Code 내장)
+  1. system prompt (Codex 내장)
   2. 이 파일 (flow-level flow.md)
   3. 각 agent의 flowMdRef — 역할별 규칙
   같은 레벨 충돌은 더 구체적인 규칙이 우선. 하위가 상위와 모순이면 상위 따름 + 모순 사실 보고.
@@ -142,7 +187,7 @@ flowMdLibrary:
 
     system prompt 끝에 주입되는 "Subagent Delegation Protocol" 섹션의 Heddle MCP tool만 사용한다.
 
-    Codex / Claude Code의 Agent tool 사용 금지. child-agent Bash spawn 금지. Heddle 런타임은 MCP로 위임된 worker를 추적한다.
+    provider-native Agent tool 사용 금지. child-agent Bash spawn 금지. Heddle 런타임은 MCP로 위임된 worker를 추적한다.
 
 
     ## 출력
@@ -169,7 +214,7 @@ teams:
   - id: research
     description: Read-only investigation and codebase analysis.
   - id: frontend
-    description: Opus-only UI specialist.
+    description: Codex UI specialist.
   - id: discussion
     description: Debater-synthesizer triplet for design decisions.
 orchestrator:
@@ -203,8 +248,8 @@ orchestrator:
     - to: codex-impl-3
       when: A third independent backend slice is available and parallelism will reduce
         wall time.
-    - to: claude-frontend
-      when: The task is frontend / UI work (Opus-only).
+    - to: codex-frontend
+      when: The task is frontend / UI work.
     - to: codex-analyst-1
       when: Read-only investigation is too broad for direct inspection or must precede
         implementation.
@@ -225,11 +270,11 @@ orchestrator:
       when: Debater outputs should be synthesized into a single recommendation or final answer.
   agents:
     - name: user-advocate
-      type: claude-code
+      type: codex
       role: user-advocate
       team:
         - id: execution
-      model: claude-opus-4-7
+      model: gpt-5.5
       system: |
         Validate the provided artifact against the user's original request
         on four axes: intent alignment, over-engineering, goal shrinking,
@@ -282,16 +327,16 @@ orchestrator:
       skills:
         - commit-style
         - concise
-    - name: claude-frontend
-      type: claude-code
-      role: claude-frontend
+    - name: codex-frontend
+      type: codex
+      role: frontend-dev
       team:
         - id: frontend
           role: specialist
-      model: claude-opus-4-7
+      model: gpt-5.5
       system: |
-        Frontend specialist (Opus only). Build/modify UI, validate
-        in browser when possible. Never hand off UI work to Codex.
+        Frontend specialist. Build/modify UI and validate in browser
+        when possible.
       flowMdRef: base-worker-rules
       effort: high
       mcps:
@@ -354,36 +399,36 @@ orchestrator:
       skills:
         - concise
     - name: debater-a
-      type: claude-code
+      type: codex
       role: debater
       team:
         - id: discussion
           role: debater
-      model: claude-sonnet-4-6
+      model: gpt-5.5
       system: First-stance debater. Argue the position with evidence.
       flowMdRef: base-worker-rules
       effort: high
       skills:
         - concise
     - name: debater-b
-      type: claude-code
+      type: codex
       role: debater
       team:
         - id: discussion
           role: debater
-      model: claude-sonnet-4-6
+      model: gpt-5.5
       system: Counter-stance debater. Argue the opposing position.
       flowMdRef: base-worker-rules
       effort: high
       skills:
         - concise
     - name: synthesizer
-      type: claude-code
+      type: codex
       role: synthesizer
       team:
         - id: discussion
           role: synthesizer
-      model: claude-sonnet-4-6
+      model: gpt-5.5
       system: |
         Read both debater outputs, pick a side or escalate. No bland
         compromise nobody argued for.

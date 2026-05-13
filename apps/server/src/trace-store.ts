@@ -113,6 +113,7 @@ export interface PersistedAgentResult {
 export interface PersistedRunDetail extends Omit<RunRecord, "agentResults"> {
   createdAt: string;
   cwd: string | null;
+  agentType?: AgentType;
   agentResults: PersistedAgentResult[];
 }
 
@@ -333,7 +334,7 @@ export function listRuns(
 
 export function getRun(runId: string): PersistedRunDetail | null {
   const runStatement = database.prepare(`
-    SELECT run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, created_at, cwd
+    SELECT run_id, flow_name, flow_path, requested_inputs, outputs, status, source, exit_code, started_at, ended_at, created_at, cwd, agent_type
     FROM runs
     WHERE run_id = ?
   `);
@@ -394,6 +395,7 @@ export function getRun(runId: string): PersistedRunDetail | null {
     endedAt: runRow.ended_at == null ? undefined : String(runRow.ended_at),
     createdAt: String(runRow.created_at),
     cwd: runRow.cwd == null ? null : String(runRow.cwd),
+    agentType: runRow.agent_type == null ? undefined : String(runRow.agent_type) as AgentType,
     agentResults,
     events,
   } as PersistedRunDetail & { events: PersistedRunEvent[] };

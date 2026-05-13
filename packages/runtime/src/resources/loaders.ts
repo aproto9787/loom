@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   hookDefinitionSchema,
+  migrateLegacyRoleDefinitionInput,
   roleDefinitionSchema,
   skillDefinitionSchema,
   type HookDefinition,
@@ -16,7 +17,7 @@ export async function loadRoleDefinitions(
 ): Promise<Map<string, RoleDefinition>> {
   return loadYamlDirectory(
     path.join(getResourceRoot(options), "roles"),
-    (value) => roleDefinitionSchema.safeParse(value),
+    (value) => roleDefinitionSchema.safeParse(migrateLegacyRoleDefinitionInput(value).value),
     (role) => role.name,
     "role",
   );
