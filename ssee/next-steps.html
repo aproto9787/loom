@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Heddle Risk-Tier Governance Next Steps</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f8;
+        --paper: #ffffff;
+        --ink: #17212b;
+        --muted: #687684;
+        --line: #d9e0e6;
+        --soft: #eef3f5;
+        --brand: #0d7c86;
+        --brand-2: #2e6d4b;
+        --warn: #a45b13;
+        --danger: #a33a3a;
+        --ok: #24734d;
+        --shadow: 0 18px 50px rgba(22, 38, 52, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(180deg, rgba(13, 124, 134, 0.1), transparent 420px),
+          var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      .shell {
+        width: min(1420px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: 38px 0 20px;
+      }
+
+      .eyebrow {
+        color: var(--brand);
+        font-size: 12px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 980px;
+        margin: 10px 0 12px;
+        color: #101820;
+        font-size: clamp(34px, 4vw, 60px);
+        line-height: 1.03;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 900px;
+        margin: 0;
+        color: #40505e;
+        font-size: 17px;
+        line-height: 1.65;
+      }
+
+      .top-grid {
+        display: grid;
+        grid-template-columns: 1fr 430px;
+        gap: 22px;
+        align-items: stretch;
+        margin-top: 24px;
+      }
+
+      .verdict {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 18px;
+        align-items: center;
+        min-height: 214px;
+        padding: 22px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .score {
+        width: 112px;
+        height: 112px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at center, #fff 56%, transparent 57%),
+          conic-gradient(var(--ok) 0 86%, #dde6eb 86% 100%);
+      }
+
+      .score strong {
+        font-size: 28px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .pad {
+        padding: 18px;
+      }
+
+      .status-cards {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+
+      .mini {
+        min-height: 102px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      .mini .label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .mini .value {
+        margin-top: 8px;
+        color: #111b24;
+        font-size: 22px;
+        font-weight: 850;
+      }
+
+      .mini .sub {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid rgba(217, 224, 230, 0.9);
+        background: rgba(246, 247, 248, 0.92);
+        backdrop-filter: blur(16px);
+      }
+
+      .nav-inner {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+      }
+
+      .tabs,
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .tab,
+      .pill,
+      .choice,
+      .copy-btn {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        color: #30414f;
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      .tab {
+        padding: 0 14px;
+      }
+
+      .tab.active,
+      .pill.active,
+      .choice.active {
+        border-color: rgba(13, 124, 134, 0.42);
+        background: var(--brand);
+        color: #fff;
+      }
+
+      .search {
+        width: min(360px, 34vw);
+        min-height: 40px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        outline: none;
+        background: #fff;
+      }
+
+      main {
+        padding: 26px 0 64px;
+      }
+
+      .section {
+        display: none;
+      }
+
+      .section.active {
+        display: block;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 16px;
+      }
+
+      .span-4 {
+        grid-column: span 4;
+      }
+
+      .span-5 {
+        grid-column: span 5;
+      }
+
+      .span-6 {
+        grid-column: span 6;
+      }
+
+      .span-7 {
+        grid-column: span 7;
+      }
+
+      .span-8 {
+        grid-column: span 8;
+      }
+
+      .span-12 {
+        grid-column: span 12;
+      }
+
+      h2,
+      h3 {
+        margin: 0;
+        color: #111b24;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: 24px;
+      }
+
+      h3 {
+        font-size: 16px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .small {
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .kicker {
+        color: var(--brand);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 850;
+        white-space: nowrap;
+      }
+
+      .badge.ok {
+        background: rgba(36, 115, 77, 0.12);
+        color: var(--ok);
+      }
+
+      .badge.warn {
+        background: rgba(164, 91, 19, 0.12);
+        color: var(--warn);
+      }
+
+      .badge.info {
+        background: rgba(13, 124, 134, 0.12);
+        color: var(--brand);
+      }
+
+      .badge.block {
+        background: rgba(163, 58, 58, 0.12);
+        color: var(--danger);
+      }
+
+      .list {
+        display: grid;
+        gap: 10px;
+        margin: 14px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .list li {
+        display: flex;
+        gap: 10px;
+        color: #354553;
+        line-height: 1.55;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        flex: 0 0 8px;
+        margin-top: 8px;
+        border-radius: 50%;
+        background: var(--brand);
+      }
+
+      .roadmap {
+        display: grid;
+        gap: 10px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 92px 1fr auto;
+        gap: 14px;
+        align-items: start;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      .step button {
+        min-height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+        color: #30414f;
+        font-weight: 800;
+      }
+
+      .detail {
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: 8px;
+        background: #eef6f7;
+        color: #26444a;
+        line-height: 1.6;
+      }
+
+      .decision-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .decision-card {
+        min-height: 240px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .decision-card.recommended {
+        border-color: rgba(36, 115, 77, 0.35);
+        background: #f4faf6;
+      }
+
+      .decision-card.blocked {
+        border-color: rgba(163, 58, 58, 0.25);
+        background: #fff7f7;
+      }
+
+      .command-box {
+        display: grid;
+        gap: 10px;
+      }
+
+      .command {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: stretch;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #111b24;
+        color: #eef5f7;
+      }
+
+      .command code {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .copy-btn {
+        min-width: 76px;
+        min-height: 34px;
+        padding: 0 10px;
+        border-radius: 6px;
+        align-self: start;
+      }
+
+      .workflow-layout {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 16px;
+      }
+
+      .choices {
+        display: grid;
+        gap: 8px;
+      }
+
+      .choice {
+        min-height: 46px;
+        padding: 0 14px;
+        text-align: left;
+      }
+
+      .workflow-detail {
+        min-height: 320px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .table th,
+      .table td {
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .table th {
+        background: var(--soft);
+        color: #314350;
+        font-size: 12px;
+      }
+
+      .table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .note {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .flow-step {
+        min-height: 120px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .flow-step strong {
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      @media (max-width: 1080px) {
+        .top-grid,
+        .workflow-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .decision-grid,
+        .flow,
+        .status-cards {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .span-4,
+        .span-5,
+        .span-6,
+        .span-7,
+        .span-8,
+        .span-12 {
+          grid-column: span 12;
+        }
+
+        .nav-inner {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .search {
+          width: 100%;
+        }
+      }
+
+      @media (max-width: 700px) {
+        .shell {
+          width: min(100% - 24px, 1420px);
+        }
+
+        .verdict,
+        .step,
+        .command {
+          grid-template-columns: 1fr;
+        }
+
+        .decision-grid,
+        .flow,
+        .status-cards {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          font-size: 36px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="shell">
+        <div class="eyebrow">Decision guide after implementation</div>
+        <h1>이제 뭘 해야 하나: 커밋, 푸시, 통합, 워크플로우 전환</h1>
+        <p class="lead">
+          현재 `feat/risk-tier-governance`는 기능 구현과 검증이 끝난 상태입니다. 다음 권장 경로는
+          바로 main에 섞는 것이 아니라, 검증 재실행 후 하나의 제품 커밋으로 묶고, 원격 브랜치에
+          push한 뒤 draft PR에서 마지막 리뷰를 받는 것입니다.
+        </p>
+
+        <div class="top-grid">
+          <section class="verdict">
+            <div class="score"><strong>Go</strong></div>
+            <div>
+              <div class="kicker">Recommendation</div>
+              <h2>커밋하고 push해서 PR로 통합하십시오</h2>
+              <ul class="list">
+                <li><span class="dot"></span><span>현 브랜치는 `/goal complete`, reviewer PASS, user-advocate PASS, live smoke PASS 상태입니다.</span></li>
+                <li><span class="dot"></span><span>다만 worktree가 dirty이고 untracked 문서/HTML/test 파일이 있어, 통합 전에는 하나의 명확한 commit으로 고정해야 합니다.</span></li>
+                <li><span class="dot"></span><span>main checkout은 건드리지 않고 PR merge 후 pull로 반영하는 흐름이 가장 안전합니다.</span></li>
+              </ul>
+            </div>
+          </section>
+
+          <aside class="panel pad">
+            <div class="status-cards">
+              <div class="mini">
+                <div class="label">Goal</div>
+                <div class="value">Complete</div>
+                <div class="sub">tokens 8016, 1342s</div>
+              </div>
+              <div class="mini">
+                <div class="label">Branch</div>
+                <div class="value">Dirty</div>
+                <div class="sub">commit 전 상태</div>
+              </div>
+              <div class="mini">
+                <div class="label">Workflow</div>
+                <div class="value">Ready</div>
+                <div class="sub">staged rollout 권장</div>
+              </div>
+              <div class="mini">
+                <div class="label">Merge</div>
+                <div class="value">PR</div>
+                <div class="sub">direct merge 비권장</div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </header>
+
+    <nav>
+      <div class="shell nav-inner">
+        <div class="tabs" role="tablist" aria-label="next step sections">
+          <button class="tab active" data-section="plan">추천 순서</button>
+          <button class="tab" data-section="decisions">선택지</button>
+          <button class="tab" data-section="commands">명령</button>
+          <button class="tab" data-section="workflow">새 워크플로우 사용법</button>
+          <button class="tab" data-section="rollout">통합 전략</button>
+        </div>
+        <input id="search" class="search" type="search" placeholder="commit, push, side-effect, 사용법 검색" />
+      </div>
+    </nav>
+
+    <main class="shell">
+      <section id="plan" class="section active">
+        <div class="grid">
+          <article class="panel pad span-8">
+            <div class="kicker">Recommended order</div>
+            <h2>실행 순서</h2>
+            <div id="roadmap" class="roadmap" style="margin-top: 14px"></div>
+            <div id="stepDetail" class="detail">단계를 눌러 목적과 판단 기준을 확인하십시오.</div>
+          </article>
+
+          <article class="panel pad span-4">
+            <div class="kicker">Short answer</div>
+            <h2>지금 제일 좋은 선택</h2>
+            <ul class="list">
+              <li><span class="dot"></span><span><b>1순위:</b> 최종 검증 재실행</span></li>
+              <li><span class="dot"></span><span><b>2순위:</b> 하나의 feature commit 생성</span></li>
+              <li><span class="dot"></span><span><b>3순위:</b> 원격 브랜치 push</span></li>
+              <li><span class="dot"></span><span><b>4순위:</b> draft PR로 통합 검토</span></li>
+              <li><span class="dot"></span><span><b>5순위:</b> merge 후 main checkout에서 pull + Heddle 재시작</span></li>
+            </ul>
+            <p class="note">현재 바로 main에 merge하지 않는 이유는 변경량이 크고 default workflow가 바뀌기 때문입니다.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="decisions" class="section">
+        <div class="panel pad">
+          <div class="kicker">Decision board</div>
+          <h2>커밋/푸시/통합 판단</h2>
+          <div id="decisionGrid" class="decision-grid" style="margin-top: 14px"></div>
+        </div>
+      </section>
+
+      <section id="commands" class="section">
+        <div class="grid">
+          <article class="panel pad span-7">
+            <div class="kicker">Command runner</div>
+            <h2>추천 명령 세트</h2>
+            <div class="filters" style="margin: 14px 0">
+              <button class="pill active" data-command-set="check">검증</button>
+              <button class="pill" data-command-set="commit">커밋</button>
+              <button class="pill" data-command-set="push">푸시</button>
+              <button class="pill" data-command-set="merge">통합 후</button>
+            </div>
+            <div id="commandBox" class="command-box"></div>
+          </article>
+
+          <article class="panel pad span-5">
+            <div class="kicker">Commit shape</div>
+            <h2>권장 커밋 형태</h2>
+            <ul class="list">
+              <li><span class="dot"></span><span>커밋은 하나로 묶는 것이 좋습니다. 이 기능은 Codex-only migration과 governance runtime이 같이 맞물려 있어 분리하면 리뷰 맥락이 깨집니다.</span></li>
+              <li><span class="dot"></span><span>커밋 메시지는 영어로 작성합니다.</span></li>
+              <li><span class="dot"></span><span>권장 메시지: <span class="mono">feat: add Codex-only risk-tier governance</span></span></li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="workflow" class="section">
+        <div class="panel pad">
+          <div class="kicker">How to use the new workflow</div>
+          <h2>새 워크플로우 사용법</h2>
+          <div class="workflow-layout" style="margin-top: 14px">
+            <div id="workflowChoices" class="choices"></div>
+            <div id="workflowDetail" class="workflow-detail"></div>
+          </div>
+        </div>
+
+        <div class="panel pad" style="margin-top: 16px">
+          <div class="kicker">Mental model</div>
+          <h2>실제 운용 감각</h2>
+          <div class="flow">
+            <div class="flow-step"><strong>1. 요청 해석</strong><span class="small muted">low-risk인지 code-change인지 side-effect인지 먼저 나눕니다.</span></div>
+            <div class="flow-step"><strong>2. tier 선택</strong><span class="small muted">quick/code/side_effect/enterprise 중 하나로 manifest에 기록합니다.</span></div>
+            <div class="flow-step"><strong>3. worker 실행</strong><span class="small muted">필요한 경우 Codex worker/reviewer/user-advocate를 Heddle MCP로 위임합니다.</span></div>
+            <div class="flow-step"><strong>4. gate 기록</strong><span class="small muted">heddle_record_gate로 pass/fail/blocked 상태를 남깁니다.</span></div>
+            <div class="flow-step"><strong>5. Studio 확인</strong><span class="small muted">run detail에서 tier, gate, approval, rollback 상태를 봅니다.</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="rollout" class="section">
+        <div class="grid">
+          <article class="panel pad span-6">
+            <div class="kicker">Rollout recommendation</div>
+            <h2>워크플로우를 바꿀 만한가</h2>
+            <ul class="list">
+              <li><span class="dot"></span><span><b>예.</b> 현재 구현은 Heddle의 기본 workflow로 바꿀 만합니다.</span></li>
+              <li><span class="dot"></span><span>단, main checkout에 수동으로 복사하지 말고 PR merge 후 pull로 반영하십시오.</span></li>
+              <li><span class="dot"></span><span>변경 후에는 실행 중인 Heddle MCP/server/studio 세션을 재시작해야 새 default flow와 tool surface가 확실히 반영됩니다.</span></li>
+            </ul>
+          </article>
+
+          <article class="panel pad span-6">
+            <div class="kicker">Integration safety</div>
+            <h2>통합 전 확인</h2>
+            <table class="table" style="margin-top: 14px">
+              <thead>
+                <tr><th>확인</th><th>판정</th><th>이유</th></tr>
+              </thead>
+              <tbody id="safetyRows"></tbody>
+            </table>
+          </article>
+
+          <article class="panel pad span-12">
+            <div class="kicker">Rollout modes</div>
+            <h2>적용 방식 비교</h2>
+            <table class="table" style="margin-top: 14px">
+              <thead>
+                <tr><th>방식</th><th>추천도</th><th>설명</th><th>언제 사용</th></tr>
+              </thead>
+              <tbody id="rolloutRows"></tbody>
+            </table>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const roadmap = [
+        ["Step 1", "최종 검증 재실행", "통합 직전 상태를 다시 고정합니다. 이미 통과했지만 commit 직전에는 한 번 더 돌리는 게 맞습니다."],
+        ["Step 2", "feature commit 생성", "현재 dirty worktree를 하나의 제품 변경으로 묶습니다. 메시지는 `feat: add Codex-only risk-tier governance`가 적합합니다."],
+        ["Step 3", "원격 브랜치 push", "main을 건드리지 않고 `feat/risk-tier-governance`를 원격에 올립니다."],
+        ["Step 4", "draft PR 생성", "변경량이 크므로 바로 merge하지 말고 PR description에 검증 결과와 live smoke를 적습니다."],
+        ["Step 5", "CI/review 후 merge", "CI와 리뷰가 clean이면 main/master에 merge합니다. merge 방식은 squash도 괜찮습니다."],
+        ["Step 6", "main checkout 반영", "기존 `/home/argoss/asos/dev/Project/heddle`에서는 pull만 하고 Heddle server/MCP/studio를 재시작합니다."]
+      ];
+
+      const decisions = [
+        {
+          title: "커밋",
+          tag: "Recommended",
+          kind: "recommended",
+          text: "지금 해야 합니다. 구현, docs, tests, status HTML까지 하나의 feature branch 결과물로 고정해야 다음 판단이 쉬워집니다.",
+          action: "검증 재실행 후 commit"
+        },
+        {
+          title: "푸시",
+          tag: "Recommended",
+          kind: "recommended",
+          text: "커밋 후 바로 push가 맞습니다. 원격 브랜치가 있어야 PR, CI, 리뷰가 가능합니다.",
+          action: "git push -u origin feat/risk-tier-governance"
+        },
+        {
+          title: "직접 main 통합",
+          tag: "Avoid",
+          kind: "blocked",
+          text: "지금 직접 merge는 비추천입니다. default workflow와 runtime provider surface가 바뀌므로 PR review와 CI를 거쳐야 합니다.",
+          action: "PR merge만 허용"
+        },
+        {
+          title: "워크플로우 전환",
+          tag: "Yes",
+          kind: "recommended",
+          text: "바꿀 만합니다. Codex-only + risk-tier governance는 기존 Claude auth 문제를 제거하고 side-effect 안전 경계를 제품 기능으로 만듭니다.",
+          action: "merge 후 default flow로 사용"
+        },
+        {
+          title: "기존 flow 유지",
+          tag: "Temporary",
+          kind: "",
+          text: "main에 반영 전에는 기존 Heddle checkout을 그대로 두십시오. 이 worktree에서만 확인하고 PR merge 후 전환합니다.",
+          action: "main checkout untouched"
+        },
+        {
+          title: "추가 구현",
+          tag: "Later",
+          kind: "",
+          text: "enterprise registry, RACI, cost tracking 같은 것은 이번 목표의 non-goal입니다. 지금 섞으면 범위가 흐려집니다.",
+          action: "새 spec으로 분리"
+        }
+      ];
+
+      const commandSets = {
+        check: [
+          ["작업 위치 확인", "cd /home/argoss/asos/dev/worktrees/heddle-risk-tier\ngit status --short --branch"],
+          ["최종 검증", "pnpm -r build && pnpm -r typecheck && pnpm -r test && git diff --check"],
+          ["서버/Studio 확인", "curl -sS http://127.0.0.1:8797/health\ncurl -sS http://localhost:5173/ | sed -n '1,4p'"]
+        ],
+        commit: [
+          ["스테이징", "git add -A"],
+          ["스테이징 검토", "git diff --cached --stat\ngit diff --cached --check"],
+          ["커밋", "git commit -m \"feat: add Codex-only risk-tier governance\""]
+        ],
+        push: [
+          ["원격 브랜치 push", "git push -u origin feat/risk-tier-governance"],
+          ["PR용 상태 확인", "git status --short --branch\ngit log --oneline -3 --decorate"]
+        ],
+        merge: [
+          ["main checkout 갱신", "cd /home/argoss/asos/dev/Project/heddle\ngit pull --ff-only"],
+          ["서비스 재시작", "pnpm -r build\n# then restart Heddle MCP/server/studio sessions"],
+          ["새 workflow smoke", "pnpm -r test\ncurl -sS http://127.0.0.1:8787/health"]
+        ]
+      };
+
+      const workflows = {
+        quick: {
+          label: "Quick / read-only",
+          title: "낮은 위험 작업",
+          body: "문서 확인, 상태 분석, 작은 read-only 조사처럼 외부 side effect가 없는 작업은 빠르게 처리합니다.",
+          use: ["manifest를 꼭 만들 필요는 없습니다.", "worker/reviewer/user-advocate를 강제하지 않습니다.", "기존 Heddle의 빠른 direct path를 유지합니다."]
+        },
+        code: {
+          label: "Code change",
+          title: "일반 코드 변경",
+          body: "파일 수정, schema 변경, server/runtime 변경은 code tier로 다룹니다.",
+          use: ["필요한 worker만 Heddle MCP로 위임합니다.", "비자명한 다파일 변경은 codex-reviewer를 통과시킵니다.", "테스트와 diff check를 통과시킨 뒤 commit합니다."]
+        },
+        side: {
+          label: "Side effect",
+          title: "삭제/배포/설정 변경",
+          body: "되돌리기 어렵거나 외부 영향이 있는 작업은 side_effect tier입니다.",
+          use: ["heddle_require_approval로 approval_required를 남깁니다.", "heddle_record_approval로 approved/rejected만 기록합니다.", "heddle_record_rollback이 있어야 side-effect-boundary gate pass가 됩니다."]
+        },
+        enterprise: {
+          label: "Enterprise",
+          title: "릴리즈/보안/장기 작업",
+          body: "보안, billing, release, 여러 phase가 얽힌 작업은 enterprise-controlled pack으로 처리합니다.",
+          use: ["phase acceptance를 먼저 고정합니다.", "각 phase 후 reviewer/user-advocate gate를 둡니다.", "enterprise registry 같은 추가 도구는 별도 spec으로 확장합니다."]
+        }
+      };
+
+      const safetyRows = [
+        ["main checkout 보호", "OK", "`/home/argoss/asos/dev/Project/heddle`은 건드리지 않았습니다."],
+        ["검증 상태", "OK", "build/typecheck/test/diff check, reviewer, user-advocate, live smoke가 통과했습니다."],
+        ["dirty worktree", "Action", "commit 전이므로 통합 전 반드시 commit으로 고정해야 합니다."],
+        ["실제 side effect", "OK", "삭제/배포/계정 변경 같은 real side effect는 실행하지 않았습니다."],
+        ["워크플로우 변경 영향", "Review", "default flow와 provider surface 변경이므로 PR review가 필요합니다."]
+      ];
+
+      const rolloutRows = [
+        ["Draft PR", "최고", "브랜치를 원격에 올리고 검증 결과를 PR 본문에 적습니다.", "지금"],
+        ["Direct merge", "낮음", "변경량이 크고 runtime/default workflow가 바뀌므로 위험합니다.", "긴급하고 CI가 따로 없을 때만"],
+        ["Local-only 계속 사용", "보통", "실제 통합 없이 worktree에서만 쓰면 drift가 생깁니다.", "추가 실험이 필요할 때"],
+        ["새 spec으로 확장", "좋음", "enterprise registry 등 비범위 항목은 별도 목표로 분리합니다.", "이번 기능 merge 후"]
+      ];
+
+      let activeSection = "plan";
+      let activeCommand = "check";
+      let activeWorkflow = "code";
+      let query = "";
+
+      function showSection(name) {
+        activeSection = name;
+        document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.section === name));
+        document.querySelectorAll(".section").forEach((section) => section.classList.toggle("active", section.id === name));
+      }
+
+      function renderRoadmap() {
+        const box = document.getElementById("roadmap");
+        box.innerHTML = roadmap.map((step, index) => `
+          <div class="step">
+            <span class="badge info">${step[0]}</span>
+            <div><strong>${step[1]}</strong><div class="small muted">${step[2]}</div></div>
+            <button type="button" data-step="${index}">보기</button>
+          </div>
+        `).join("");
+        box.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-step]");
+          if (!button) return;
+          const step = roadmap[Number(button.dataset.step)];
+          document.getElementById("stepDetail").textContent = `${step[0]} ${step[1]}: ${step[2]}`;
+        });
+      }
+
+      function matches(text) {
+        return !query || text.toLowerCase().includes(query.toLowerCase());
+      }
+
+      function renderDecisions() {
+        const grid = document.getElementById("decisionGrid");
+        const visible = decisions.filter((item) => matches(`${item.title} ${item.tag} ${item.text} ${item.action}`));
+        grid.innerHTML = visible.map((item) => `
+          <article class="decision-card ${item.kind}">
+            <span class="badge ${item.kind === "blocked" ? "block" : item.kind === "recommended" ? "ok" : "info"}">${item.tag}</span>
+            <h3 style="margin-top: 12px">${item.title}</h3>
+            <p style="color:#3c4b58;line-height:1.6">${item.text}</p>
+            <div class="detail" style="margin-top: 12px">${item.action}</div>
+          </article>
+        `).join("") || `<div class="muted">검색 결과가 없습니다.</div>`;
+      }
+
+      function renderCommands() {
+        document.querySelectorAll(".pill").forEach((pill) => pill.classList.toggle("active", pill.dataset.commandSet === activeCommand));
+        const box = document.getElementById("commandBox");
+        box.innerHTML = commandSets[activeCommand].map(([label, command], index) => `
+          <div>
+            <div class="small muted" style="margin: 0 0 6px 2px">${label}</div>
+            <div class="command">
+              <code id="cmd-${activeCommand}-${index}">${command}</code>
+              <button class="copy-btn" type="button" data-copy="cmd-${activeCommand}-${index}">copy</button>
+            </div>
+          </div>
+        `).join("");
+      }
+
+      function renderWorkflow() {
+        const choices = document.getElementById("workflowChoices");
+        choices.innerHTML = Object.entries(workflows).map(([key, wf]) => `
+          <button class="choice ${activeWorkflow === key ? "active" : ""}" type="button" data-workflow="${key}">${wf.label}</button>
+        `).join("");
+        const wf = workflows[activeWorkflow];
+        document.getElementById("workflowDetail").innerHTML = `
+          <span class="badge info">${wf.label}</span>
+          <h2 style="margin-top: 12px">${wf.title}</h2>
+          <p style="line-height: 1.7; color: #3c4b58">${wf.body}</p>
+          <ul class="list">${wf.use.map((line) => `<li><span class="dot"></span><span>${line}</span></li>`).join("")}</ul>
+        `;
+        choices.querySelectorAll("button").forEach((button) => {
+          button.addEventListener("click", () => {
+            activeWorkflow = button.dataset.workflow;
+            renderWorkflow();
+          });
+        });
+      }
+
+      function renderTables() {
+        document.getElementById("safetyRows").innerHTML = safetyRows.map((row) => `
+          <tr><td><strong>${row[0]}</strong></td><td><span class="badge ${row[1] === "OK" ? "ok" : row[1] === "Action" ? "warn" : "info"}">${row[1]}</span></td><td>${row[2]}</td></tr>
+        `).join("");
+        document.getElementById("rolloutRows").innerHTML = rolloutRows.map((row) => `
+          <tr><td><strong>${row[0]}</strong></td><td>${row[1]}</td><td>${row[2]}</td><td>${row[3]}</td></tr>
+        `).join("");
+      }
+
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", () => showSection(tab.dataset.section));
+      });
+
+      document.querySelectorAll(".pill").forEach((pill) => {
+        pill.addEventListener("click", () => {
+          activeCommand = pill.dataset.commandSet;
+          renderCommands();
+          showSection("commands");
+        });
+      });
+
+      document.addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-copy]");
+        if (!button) return;
+        const text = document.getElementById(button.dataset.copy).textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.textContent = "copied";
+          setTimeout(() => (button.textContent = "copy"), 1000);
+        } catch {
+          button.textContent = "select";
+        }
+      });
+
+      document.getElementById("search").addEventListener("input", (event) => {
+        query = event.target.value.trim();
+        renderDecisions();
+        if (query) showSection("decisions");
+      });
+
+      renderRoadmap();
+      renderDecisions();
+      renderCommands();
+      renderWorkflow();
+      renderTables();
+    </script>
+  </body>
+</html>

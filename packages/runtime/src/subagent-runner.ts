@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { AgentConfig } from "@aproto9787/heddle-core";
 
-export type SubagentBackend = "claude" | "codex";
+export type SubagentBackend = "codex";
 
 export interface ParsedSubagentReport {
   status: "done" | "blocked" | "needs_decision" | "unknown";
@@ -41,7 +41,7 @@ export interface RunSubagentTaskResult {
 }
 
 export function backendForAgent(agent: AgentConfig): SubagentBackend {
-  return agent.type === "codex" ? "codex" : "claude";
+  return "codex";
 }
 
 export function parseSubagentReport(raw: string): ParsedSubagentReport {

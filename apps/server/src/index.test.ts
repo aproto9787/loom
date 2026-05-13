@@ -1,4 +1,6 @@
-import { rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import type { FlowDefinition } from "@aproto9787/heddle-core";
@@ -289,7 +291,7 @@ heddleTest("runs register, batched events, stale transitions, and per-run SSE wo
       runId,
       flowPath: DEFAULT_FLOW_PATH,
       flowName: DEFAULT_FLOW_NAME,
-      agentType: "claude-code",
+      agentType: "codex",
       startTime: new Date(now).toISOString(),
       source: "cli",
       cwd: "/tmp/workspace",
@@ -306,7 +308,7 @@ heddleTest("runs register, batched events, stale transitions, and per-run SSE wo
       runId,
       flowPath: DEFAULT_FLOW_PATH,
       flowName: DEFAULT_FLOW_NAME,
-      agentType: "claude-code",
+      agentType: "codex",
       startTime: new Date(now).toISOString(),
       source: "cli",
       cwd: "/tmp/workspace",
@@ -322,7 +324,7 @@ heddleTest("runs register, batched events, stale transitions, and per-run SSE wo
       runId: "stale-run",
       flowPath: DEFAULT_FLOW_PATH,
       flowName: "Stale Flow",
-      agentType: "claude-code",
+      agentType: "codex",
       startTime: staleStart,
       source: "cli",
     },
@@ -402,6 +404,221 @@ heddleTest("runs register, batched events, stale transitions, and per-run SSE wo
   assert.equal(markStaleRuns(now + (11 * 60 * 1000)), 1);
 });
 
+heddleTest("governance events persist, reconstruct a manifest, and enforce side-effect approval", async (t) => {
+  const app = createTestApp(t);
+  const runId = "governance-events-smoke";
+  const now = Date.now();
+
+  const registerResponse = await app.inject({
+    method: "POST",
+    url: "/runs/register",
+    payload: {
+      runId,
+      flowPath: DEFAULT_FLOW_PATH,
+      flowName: DEFAULT_FLOW_NAME,
+      agentType: "codex",
+      startTime: new Date(now).toISOString(),
+      source: "cli",
+      userPrompt: "Change a production setting.",
+    },
+  });
+  assert.equal(registerResponse.statusCode, 201);
+
+  const gateBeforeManifestResponse = await app.inject({
+    method: "POST",
+    url: `/runs/${runId}/events`,
+    payload: {
+      events: [
+        {
+          ts: now,
+          type: "gate_record",
+          agentName: "leader",
+          raw: {
+            gate: "side-effect-boundary",
+            status: "pass",
+            reason: "Ready to execute before classification.",
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(gateBeforeManifestResponse.statusCode, 409);
+  assert.match(gateBeforeManifestResponse.json().error.message, /Side-effect gate/);
+
+  const manifestResponse = await app.inject({
+    method: "POST",
+    url: `/runs/${runId}/events`,
+    payload: {
+      events: [
+        {
+          ts: now + 1,
+          type: "manifest_update",
+          summary: "classified as side effect",
+          agentName: "leader",
+          raw: {
+            request: "Change a production setting.",
+            interpretedGoal: "Prepare a guarded setting change.",
+            riskTier: "side_effect",
+            governancePack: "side-effect-guarded",
+            workers: ["leader", "codex-reviewer"],
+            result: "running",
+            summary: "Approval and rollback are required before execution.",
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(manifestResponse.statusCode, 201);
+
+  const blockedGateResponse = await app.inject({
+    method: "POST",
+    url: `/runs/${runId}/events`,
+    payload: {
+      events: [
+        {
+          ts: now + 2,
+          type: "gate_record",
+          agentName: "leader",
+          raw: {
+            gate: "side-effect-boundary",
+            status: "pass",
+            reason: "Ready to execute.",
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(blockedGateResponse.statusCode, 409);
+  assert.match(blockedGateResponse.json().error.message, /approval record/);
+  assert.match(blockedGateResponse.json().error.message, /rollback record/);
+
+  const acceptedResponse = await app.inject({
+    method: "POST",
+    url: `/runs/${runId}/events`,
+    payload: {
+      events: [
+        {
+          ts: now + 3,
+          type: "approval_required",
+          agentName: "leader",
+          raw: {
+            id: "approval-1",
+            gate: "side-effect-boundary",
+            status: "required",
+            target: "production setting",
+            reason: "Side effect requires explicit approval.",
+            requestedBy: "leader",
+          },
+        },
+        {
+          ts: now + 4,
+          type: "approval_recorded",
+          agentName: "leader",
+          raw: {
+            id: "approval-1",
+            gate: "side-effect-boundary",
+            status: "approved",
+            target: "production setting",
+            approver: "user",
+            approvalText: "Approved for this smoke test.",
+          },
+        },
+        {
+          ts: now + 5,
+          type: "rollback_recorded",
+          agentName: "leader",
+          raw: {
+            id: "rollback-1",
+            gate: "side-effect-boundary",
+            status: "planned",
+            target: "production setting",
+            rollbackPlan: "Restore the previous value.",
+            currentState: "No live change has been made.",
+          },
+        },
+        {
+          ts: now + 6,
+          type: "gate_record",
+          agentName: "leader",
+          raw: {
+            gate: "side-effect-boundary",
+            status: "pass",
+            reason: "Approval and rollback evidence exist.",
+            evidence: ["approval-1", "rollback-1"],
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(acceptedResponse.statusCode, 201);
+  assert.deepEqual(acceptedResponse.json(), { runId, count: 4 });
+
+  const eventsResponse = await app.inject({
+    method: "GET",
+    url: `/runs/${runId}/events`,
+  });
+  assert.equal(eventsResponse.statusCode, 200);
+  assert.deepEqual(
+    eventsResponse.json().events.map((event: { type: string }) => event.type),
+    [
+      "gate_record",
+      "manifest_update",
+      "gate_record",
+      "approval_required",
+      "approval_recorded",
+      "rollback_recorded",
+      "gate_record",
+    ],
+  );
+
+  const readManifestResponse = await app.inject({
+    method: "GET",
+    url: `/runs/${runId}/manifest`,
+  });
+  assert.equal(readManifestResponse.statusCode, 200);
+  const body = readManifestResponse.json();
+  assert.equal(body.hasGovernance, true);
+  assert.equal(body.manifest.riskTier, "side_effect");
+  assert.equal(body.manifest.governancePack, "side-effect-guarded");
+  assert.equal(body.manifest.gates[0].gate, "side-effect-boundary");
+  assert.equal(body.manifest.gates[0].status, "blocked");
+  assert.equal(body.manifest.gates[1].status, "blocked");
+  assert.equal(body.manifest.gates[2].status, "pass");
+  assert.equal(body.manifest.approvals.length, 2);
+  assert.equal(body.manifest.rollbacks.length, 1);
+});
+
+heddleTest("POST /runs/register migrates legacy claude-code agent type", async (t) => {
+  const app = createTestApp(t);
+  const runId = "legacy-agent-type";
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/runs/register",
+    payload: {
+      runId,
+      flowPath: DEFAULT_FLOW_PATH,
+      flowName: DEFAULT_FLOW_NAME,
+      agentType: "claude-code",
+      startTime: new Date().toISOString(),
+      source: "cli",
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  const body = response.json();
+  assert.equal(body.runId, runId);
+  assert.deepEqual(body.migrationNotes, ["agentType claude-code -> codex"]);
+
+  const listResponse = await app.inject({
+    method: "GET",
+    url: "/runs?page=1&pageSize=10",
+  });
+  assert.equal(listResponse.statusCode, 200);
+  const registeredRun = listResponse.json().runs.find((run: { runId: string }) => run.runId === runId);
+  assert.equal(registeredRun.agentType, "codex");
+});
+
 heddleTest("POST /runs/:id/abort returns 404 when the run does not exist", async (t) => {
   const app = createTestApp(t);
 
@@ -412,6 +629,49 @@ heddleTest("POST /runs/:id/abort returns 404 when the run does not exist", async
 
   assert.equal(response.statusCode, 404);
   assert.deepEqual(response.json(), { error: { message: "run not found" } });
+});
+
+heddleTest("GET /mcps and /discover ignore Claude home resources", async (t) => {
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  const tempHome = await mkdtemp(path.join(tmpdir(), "heddle-codex-home-"));
+  process.env.HOME = tempHome;
+  process.env.USERPROFILE = tempHome;
+
+  t.after(async () => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
+    await rm(tempHome, { recursive: true, force: true });
+  });
+
+  await mkdir(path.join(tempHome, ".codex"), { recursive: true });
+  await writeFile(
+    path.join(tempHome, ".codex", "config.toml"),
+    "[mcp_servers.codex_db]\ncommand = \"true\"\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(tempHome, ".claude.json"),
+    JSON.stringify({ mcpServers: { legacy_claude: { command: "true" } } }),
+    "utf8",
+  );
+
+  const app = createTestApp(t);
+
+  const mcpsResponse = await app.inject({ method: "GET", url: "/mcps" });
+  assert.equal(mcpsResponse.statusCode, 200);
+  const mcps = mcpsResponse.json().mcps as string[];
+  assert.ok(mcps.includes("codex_db"));
+  assert.ok(!mcps.includes("legacy_claude"));
+
+  const discoverResponse = await app.inject({ method: "GET", url: "/discover" });
+  assert.equal(discoverResponse.statusCode, 200);
+  const body = discoverResponse.json();
+  assert.ok(body.providers.every((provider: { kind: string }) => provider.kind === "codex"));
+  assert.ok(body.resources.every((resource: { platform: string }) => resource.platform === "codex"));
+  assert.ok(!body.resources.some((resource: { name: string }) => resource.name === "legacy_claude"));
 });
 
 heddleTest("PUT /flows/save round-trips the current recursive flow through YAML", async (t) => {
@@ -456,6 +716,30 @@ heddleTest("PUT /flows/save round-trips the current recursive flow through YAML"
   });
 });
 
+heddleTest("POST /flows/new creates a Codex-only skeleton", async (t) => {
+  const app = createTestApp(t);
+  const flowPath = "examples/codex-skeleton-test.yaml";
+  const absolutePath = new URL("../../../examples/codex-skeleton-test.yaml", import.meta.url);
+  await rm(absolutePath, { force: true });
+
+  t.after(async () => {
+    await rm(absolutePath, { force: true });
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/flows/new",
+    payload: { name: "Codex Skeleton Test" },
+  });
+
+  assert.equal(response.statusCode, 201);
+  const body = response.json();
+  assert.equal(body.flowPath, flowPath);
+  assert.equal(body.flow.orchestrator.type, "codex");
+  assert.equal(body.flow.orchestrator.runtime.profile, "codex-default");
+  assert.equal(body.flow.orchestrator.model, "gpt-5.5");
+});
+
 heddleTest("PUT /flows/save rejects invalid recursive flow bodies and bad paths", async (t) => {
   const app = createTestApp(t);
 
@@ -469,7 +753,7 @@ heddleTest("PUT /flows/save rejects invalid recursive flow bodies and bad paths"
         repo: "",
         orchestrator: {
           name: "",
-          type: "claude-code",
+          type: "codex",
         },
       },
     },
@@ -485,7 +769,7 @@ heddleTest("PUT /flows/save rejects invalid recursive flow bodies and bad paths"
     repo: ".",
     orchestrator: {
       name: "leader",
-      type: "claude-code",
+      type: "codex",
     },
   };
 

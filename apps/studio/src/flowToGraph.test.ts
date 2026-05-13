@@ -5,9 +5,9 @@ import { agentTreeToGraph } from "./flowToGraph.js";
 test("agentTreeToGraph builds nodes and edges for nested agents", () => {
   const graph = agentTreeToGraph({
     name: "lead",
-    type: "claude-code",
+    type: "codex",
     agents: [
-      { name: "writer", type: "claude-code" },
+      { name: "writer", type: "codex" },
       { name: "reviewer", type: "codex" },
     ],
   });

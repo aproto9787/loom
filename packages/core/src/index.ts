@@ -1,7 +1,9 @@
 import { z } from "zod";
 
-export const agentTypeSchema = z.enum(["claude-code", "codex"]);
+export const agentTypeSchema = z.enum(["codex"]);
 export type AgentType = z.infer<typeof agentTypeSchema>;
+const CODEX_DEFAULT_MODEL = "gpt-5.5";
+const CODEX_DEFAULT_PROFILE = "codex-default";
 
 export const providerAuthStateSchema = z.enum(["ready", "missing", "unknown"]);
 export type ProviderAuthState = z.infer<typeof providerAuthStateSchema>;
@@ -152,6 +154,153 @@ export const teamDefinitionSchema: z.ZodType<TeamDefinition> = z.object({
   flowMdRef: z.string().min(1).optional(),
 });
 
+// ── Risk-tier governance contracts ───────────────────────────────
+
+export const riskTierSchema = z.enum(["quick", "code", "side_effect", "enterprise"]);
+export type RiskTier = z.infer<typeof riskTierSchema>;
+
+export const gateStatusSchema = z.enum(["pending", "pass", "fail", "blocked", "skipped"]);
+export type GateStatus = z.infer<typeof gateStatusSchema>;
+
+export const approvalStatusSchema = z.enum(["required", "approved", "rejected"]);
+export type ApprovalStatus = z.infer<typeof approvalStatusSchema>;
+
+export const rollbackStatusSchema = z.enum(["planned", "verified", "executed", "failed"]);
+export type RollbackStatus = z.infer<typeof rollbackStatusSchema>;
+
+export interface GovernancePack {
+  tier: RiskTier;
+  requiredGates: string[];
+  optionalGates?: string[];
+  description?: string;
+}
+
+export const governancePackSchema: z.ZodType<GovernancePack> = z.object({
+  tier: riskTierSchema,
+  requiredGates: z.array(z.string().min(1)),
+  optionalGates: z.array(z.string().min(1)).optional(),
+  description: z.string().min(1).optional(),
+});
+
+export interface GovernanceConfig {
+  defaultTier?: RiskTier;
+  defaultPack?: string;
+  packs?: Record<string, GovernancePack>;
+}
+
+export const governanceConfigSchema: z.ZodType<GovernanceConfig> = z.object({
+  defaultTier: riskTierSchema.optional(),
+  defaultPack: z.string().min(1).optional(),
+  packs: z.record(z.string().min(1), governancePackSchema).optional(),
+});
+
+export interface GateRecord {
+  gate: string;
+  status: GateStatus;
+  reason: string;
+  evidence?: string[];
+  blockers?: string[];
+  recordedBy?: string;
+  recordedAt?: string;
+}
+
+export const gateRecordSchema: z.ZodType<GateRecord> = z.object({
+  gate: z.string().min(1),
+  status: gateStatusSchema,
+  reason: z.string().min(1),
+  evidence: z.array(z.string().min(1)).optional(),
+  blockers: z.array(z.string().min(1)).optional(),
+  recordedBy: z.string().min(1).optional(),
+  recordedAt: z.string().min(1).optional(),
+});
+
+export interface ApprovalRecord {
+  id?: string;
+  gate?: string;
+  status: ApprovalStatus;
+  target: string;
+  reason?: string;
+  requestedBy?: string;
+  approver?: string;
+  approvalText?: string;
+  evidence?: string[];
+  recordedAt?: string;
+}
+
+export const approvalRecordSchema: z.ZodType<ApprovalRecord> = z.object({
+  id: z.string().min(1).optional(),
+  gate: z.string().min(1).optional(),
+  status: approvalStatusSchema,
+  target: z.string().min(1),
+  reason: z.string().min(1).optional(),
+  requestedBy: z.string().min(1).optional(),
+  approver: z.string().min(1).optional(),
+  approvalText: z.string().min(1).optional(),
+  evidence: z.array(z.string().min(1)).optional(),
+  recordedAt: z.string().min(1).optional(),
+});
+
+export interface RollbackRecord {
+  id?: string;
+  gate?: string;
+  status: RollbackStatus;
+  target: string;
+  rollbackPlan: string;
+  currentState?: string;
+  backupRef?: string;
+  lastSafeCheckpoint?: string;
+  evidence?: string[];
+  recordedAt?: string;
+}
+
+export const rollbackRecordSchema: z.ZodType<RollbackRecord> = z.object({
+  id: z.string().min(1).optional(),
+  gate: z.string().min(1).optional(),
+  status: rollbackStatusSchema,
+  target: z.string().min(1),
+  rollbackPlan: z.string().min(1),
+  currentState: z.string().min(1).optional(),
+  backupRef: z.string().min(1).optional(),
+  lastSafeCheckpoint: z.string().min(1).optional(),
+  evidence: z.array(z.string().min(1)).optional(),
+  recordedAt: z.string().min(1).optional(),
+});
+
+export const runManifestResultSchema = z.enum(["running", "pass", "fail", "blocked", "aborted"]);
+export type RunManifestResult = z.infer<typeof runManifestResultSchema>;
+
+export interface RunManifest {
+  runId?: string;
+  traceId?: string;
+  request: string;
+  interpretedGoal: string;
+  riskTier: RiskTier;
+  governancePack: string;
+  workers: string[];
+  gates: GateRecord[];
+  approvals?: ApprovalRecord[];
+  rollbacks?: RollbackRecord[];
+  result: RunManifestResult;
+  summary?: string;
+  updatedAt?: string;
+}
+
+export const runManifestSchema: z.ZodType<RunManifest> = z.object({
+  runId: z.string().min(1).optional(),
+  traceId: z.string().min(1).optional(),
+  request: z.string().min(1),
+  interpretedGoal: z.string().min(1),
+  riskTier: riskTierSchema,
+  governancePack: z.string().min(1),
+  workers: z.array(z.string().min(1)),
+  gates: z.array(gateRecordSchema),
+  approvals: z.array(approvalRecordSchema).optional(),
+  rollbacks: z.array(rollbackRecordSchema).optional(),
+  result: runManifestResultSchema,
+  summary: z.string().min(1).optional(),
+  updatedAt: z.string().min(1).optional(),
+});
+
 export interface FlowDefinition {
   version?: string;
   name: string;
@@ -161,6 +310,7 @@ export interface FlowDefinition {
   flowMdLibrary?: Record<string, string>;
   teams?: TeamDefinition[];
   orchestrator: AgentConfig;
+  governance?: GovernanceConfig;
   resources?: {
     mcps?: string[];
     hooks?: string[];
@@ -177,6 +327,7 @@ export const flowDefinitionSchema: z.ZodType<FlowDefinition> = z.object({
   flowMdLibrary: z.record(z.string(), z.string()).optional(),
   teams: z.array(teamDefinitionSchema).optional(),
   orchestrator: agentConfigSchema,
+  governance: governanceConfigSchema.optional(),
   resources: z.object({
     mcps: z.array(z.string().min(1)).optional(),
     hooks: z.array(z.string().min(1)).optional(),
@@ -188,7 +339,7 @@ export const flowSchema = flowDefinitionSchema;
 
 export interface RoleDefinition {
   name: string;
-  type: 'claude-code' | 'codex';
+  type: AgentType;
   model?: string;
   system: string;
   effort?: 'low' | 'medium' | 'high' | 'xhigh';
@@ -206,6 +357,109 @@ export const roleDefinitionSchema: z.ZodType<RoleDefinition> = z.object({
   mcps: z.array(z.string().min(1)).optional(),
 });
 
+export interface LegacyMigrationNote {
+  path: string;
+  from: string;
+  to: string;
+  message: string;
+}
+
+export interface LegacyMigrationResult {
+  value: unknown;
+  notes: LegacyMigrationNote[];
+  changed: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function cloneUnknown(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(cloneUnknown);
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cloneUnknown(entry)]));
+  }
+  return value;
+}
+
+function pushLegacyNote(
+  notes: LegacyMigrationNote[],
+  path: string,
+  from: string,
+  to: string,
+  message: string,
+): void {
+  notes.push({ path, from, to, message });
+}
+
+function migrateLegacyAgentRecord(record: Record<string, unknown>, path: string, notes: LegacyMigrationNote[]): void {
+  if (record.type === "claude-code") {
+    record.type = "codex";
+    pushLegacyNote(
+      notes,
+      `${path}.type`,
+      "claude-code",
+      "codex",
+      "Legacy claude-code agent type was converted to codex.",
+    );
+  }
+
+  if (isRecord(record.runtime) && record.runtime.profile === "claude-default") {
+    record.runtime.profile = CODEX_DEFAULT_PROFILE;
+    pushLegacyNote(
+      notes,
+      `${path}.runtime.profile`,
+      "claude-default",
+      CODEX_DEFAULT_PROFILE,
+      "Legacy Claude provider profile was converted to the Codex default profile.",
+    );
+  }
+
+  if (typeof record.model === "string" && record.model.startsWith("claude-")) {
+    const oldModel = record.model;
+    record.model = CODEX_DEFAULT_MODEL;
+    pushLegacyNote(
+      notes,
+      `${path}.model`,
+      oldModel,
+      CODEX_DEFAULT_MODEL,
+      "Legacy Claude model was converted to the Codex default model.",
+    );
+  }
+
+  if (Array.isArray(record.agents)) {
+    record.agents.forEach((child, index) => {
+      if (isRecord(child)) {
+        migrateLegacyAgentRecord(child, `${path}.agents.${index}`, notes);
+      }
+    });
+  }
+}
+
+export function migrateLegacyFlowDefinitionInput(input: unknown): LegacyMigrationResult {
+  const value = cloneUnknown(input);
+  const notes: LegacyMigrationNote[] = [];
+
+  if (isRecord(value) && isRecord(value.orchestrator)) {
+    migrateLegacyAgentRecord(value.orchestrator, "orchestrator", notes);
+  }
+
+  return { value, notes, changed: notes.length > 0 };
+}
+
+export function migrateLegacyRoleDefinitionInput(input: unknown): LegacyMigrationResult {
+  const value = cloneUnknown(input);
+  const notes: LegacyMigrationNote[] = [];
+
+  if (isRecord(value)) {
+    migrateLegacyAgentRecord(value, "role", notes);
+  }
+
+  return { value, notes, changed: notes.length > 0 };
+}
+
 export interface RunAgentResult {
   agentName: string;
   output: string;
@@ -213,7 +467,17 @@ export interface RunAgentResult {
   finishedAt?: string;
 }
 
-export type TimelineEventType = "user" | "assistant" | "tool_use" | "tool_result" | "error";
+export type TimelineEventType =
+  | "user"
+  | "assistant"
+  | "tool_use"
+  | "tool_result"
+  | "error"
+  | "gate_record"
+  | "manifest_update"
+  | "approval_required"
+  | "approval_recorded"
+  | "rollback_recorded";
 
 export interface TimelineEvent {
   runId: string;
@@ -290,7 +554,7 @@ export type RunEvent =
   | { type: "run_error"; error: string };
 
 // ── Flow validation helpers ───────────────────────────────────────
-const VALID_AGENT_TYPES_FOR_VALIDATION = new Set<AgentType>(["claude-code", "codex"]);
+const VALID_AGENT_TYPES_FOR_VALIDATION = new Set<AgentType>(["codex"]);
 
 function isNonEmptyValidationString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -304,7 +568,7 @@ export function validateAgentConfig(agent: AgentConfig, path = "agent"): string[
   }
 
   if (!VALID_AGENT_TYPES_FOR_VALIDATION.has(agent.type)) {
-    errors.push(`[${path}.type] type must be one of: claude-code, codex`);
+    errors.push(`[${path}.type] type must be codex`);
   }
 
   if (agent.system !== undefined && !isNonEmptyValidationString(agent.system)) {

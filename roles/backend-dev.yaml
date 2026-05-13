@@ -1,5 +1,6 @@
 name: backend-dev
-type: claude-code
+type: codex
+model: gpt-5.5
 system: >-
   You are a backend developer specializing in server-side architecture,
   API design, database optimization, and system reliability.

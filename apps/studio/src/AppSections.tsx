@@ -21,6 +21,7 @@ import {
   type RunDetailEvent,
 } from "./store.js";
 import { darkCard, inputDark, selectDark } from "./panelStyles.js";
+import type { ApprovalRecord, GateRecord, RollbackRecord, RunManifest, RunManifestResult, RiskTier } from "@aproto9787/heddle-core";
 
 function applyAgentRuntimeState(
   nodes: Node[],
@@ -207,6 +208,7 @@ export function AgentConfigPanel() {
 export function WorkflowTab() {
   const flowPath = useRunStore((s) => s.flowPath);
   const flowDraft = useRunStore((s) => s.flowDraft);
+  const migrationNotes = useRunStore((s) => s.migrationNotes);
   const availableFlows = useRunStore((s) => s.availableFlows);
   const selectedAgentPath = useRunStore((s) => s.selectedAgentPath);
   const addAgent = useRunStore((s) => s.addAgent);
@@ -340,6 +342,16 @@ export function WorkflowTab() {
             {loadError}
           </p>
         ) : null}
+        {migrationNotes.length > 0 ? (
+          <div className="mx-6 mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <p className="m-0 font-semibold">Legacy migration notes</p>
+            <ul className="m-0 mt-1 list-disc pl-5">
+              {migrationNotes.map((note, index) => (
+                <li key={`${note}-${index}`}>{note}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 p-5 min-h-0">
           <div className="flex flex-col min-h-0 min-w-0">
             <ReactFlowProvider>
@@ -405,13 +417,21 @@ function shortenPath(value: string | null | undefined): string | undefined {
 }
 
 function agentTypeLabel(value?: string): string {
-  if (value === "claude-code") return "claude";
   if (value === "codex") return "codex";
   return value ?? "";
 }
 
 function eventTypeBadge(type: RunDetailEvent["type"]): string {
   switch (type) {
+    case "gate_record":
+      return "bg-amber-500/10 text-amber-200 border-amber-500/40";
+    case "manifest_update":
+      return "bg-sky-500/10 text-sky-200 border-sky-500/40";
+    case "approval_required":
+    case "approval_recorded":
+      return "bg-fuchsia-500/10 text-fuchsia-200 border-fuchsia-500/40";
+    case "rollback_recorded":
+      return "bg-orange-500/10 text-orange-200 border-orange-500/40";
     case "tool_use":
       return "bg-indigo-500/10 text-indigo-200 border-indigo-500/40";
     case "tool_result":
@@ -448,8 +468,6 @@ function agentLabelColor(agentKind: string | undefined): string {
   switch (agentKind) {
     case "codex":
       return "text-amber-400/80";
-    case "claude":
-      return "text-sky-400/80";
     default:
       return "text-slate-500";
   }
@@ -519,6 +537,275 @@ function agentStateDot(state: AgentNode["state"]): string {
   }
 }
 
+function runResultFromStatus(status: RunHistoryItem["status"]): RunManifestResult {
+  if (status === "done" || status === "success") return "pass";
+  if (status === "failed" || status === "error") return "fail";
+  if (status === "aborted") return "aborted";
+  if (status === "stale") return "blocked";
+  return "running";
+}
+
+function rawRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim());
+  return items.length > 0 ? items : undefined;
+}
+
+function gateRecordFromRaw(value: unknown): GateRecord | undefined {
+  const raw = rawRecord(value);
+  if (!raw || typeof raw.gate !== "string" || typeof raw.status !== "string" || typeof raw.reason !== "string") return undefined;
+  return {
+    gate: raw.gate,
+    status: raw.status as GateRecord["status"],
+    reason: raw.reason,
+    evidence: stringArray(raw.evidence),
+    blockers: stringArray(raw.blockers),
+    recordedBy: typeof raw.recordedBy === "string" ? raw.recordedBy : undefined,
+    recordedAt: typeof raw.recordedAt === "string" ? raw.recordedAt : undefined,
+  };
+}
+
+function approvalRecordFromRaw(value: unknown): ApprovalRecord | undefined {
+  const raw = rawRecord(value);
+  if (!raw || typeof raw.status !== "string" || typeof raw.target !== "string") return undefined;
+  return {
+    id: typeof raw.id === "string" ? raw.id : undefined,
+    gate: typeof raw.gate === "string" ? raw.gate : undefined,
+    status: raw.status as ApprovalRecord["status"],
+    target: raw.target,
+    reason: typeof raw.reason === "string" ? raw.reason : undefined,
+    requestedBy: typeof raw.requestedBy === "string" ? raw.requestedBy : undefined,
+    approver: typeof raw.approver === "string" ? raw.approver : undefined,
+    approvalText: typeof raw.approvalText === "string" ? raw.approvalText : undefined,
+    evidence: stringArray(raw.evidence),
+    recordedAt: typeof raw.recordedAt === "string" ? raw.recordedAt : undefined,
+  };
+}
+
+function rollbackRecordFromRaw(value: unknown): RollbackRecord | undefined {
+  const raw = rawRecord(value);
+  if (!raw || typeof raw.status !== "string" || typeof raw.target !== "string" || typeof raw.rollbackPlan !== "string") return undefined;
+  return {
+    id: typeof raw.id === "string" ? raw.id : undefined,
+    gate: typeof raw.gate === "string" ? raw.gate : undefined,
+    status: raw.status as RollbackRecord["status"],
+    target: raw.target,
+    rollbackPlan: raw.rollbackPlan,
+    currentState: typeof raw.currentState === "string" ? raw.currentState : undefined,
+    backupRef: typeof raw.backupRef === "string" ? raw.backupRef : undefined,
+    lastSafeCheckpoint: typeof raw.lastSafeCheckpoint === "string" ? raw.lastSafeCheckpoint : undefined,
+    evidence: stringArray(raw.evidence),
+    recordedAt: typeof raw.recordedAt === "string" ? raw.recordedAt : undefined,
+  };
+}
+
+function buildGovernanceManifest(run: RunHistoryItem, events: RunDetailEvent[]): RunManifest | undefined {
+  const manifest: RunManifest = {
+    runId: run.runId,
+    traceId: run.runId,
+    request: run.flowName,
+    interpretedGoal: run.flowName,
+    riskTier: "quick",
+    governancePack: "quick-direct",
+    workers: [],
+    gates: [],
+    approvals: [],
+    rollbacks: [],
+    result: runResultFromStatus(run.status),
+    updatedAt: run.endedAt ?? run.startedAt ?? run.createdAt,
+  };
+  let hasGovernance = false;
+
+  for (const event of events) {
+    if (event.type === "manifest_update") {
+      const raw = rawRecord(event.raw);
+      if (!raw) continue;
+      hasGovernance = true;
+      if (typeof raw.traceId === "string") manifest.traceId = raw.traceId;
+      if (typeof raw.request === "string") manifest.request = raw.request;
+      if (typeof raw.interpretedGoal === "string") manifest.interpretedGoal = raw.interpretedGoal;
+      if (typeof raw.riskTier === "string") manifest.riskTier = raw.riskTier as RiskTier;
+      if (typeof raw.governancePack === "string") manifest.governancePack = raw.governancePack;
+      if (Array.isArray(raw.workers)) manifest.workers = stringArray(raw.workers) ?? [];
+      if (typeof raw.result === "string") manifest.result = raw.result as RunManifestResult;
+      if (typeof raw.summary === "string") manifest.summary = raw.summary;
+      manifest.updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : new Date(event.ts).toISOString();
+    } else if (event.type === "gate_record") {
+      const record = gateRecordFromRaw(event.raw);
+      if (!record) continue;
+      hasGovernance = true;
+      manifest.gates.push(record);
+      manifest.updatedAt = new Date(event.ts).toISOString();
+    } else if (event.type === "approval_required" || event.type === "approval_recorded") {
+      const record = approvalRecordFromRaw(event.raw);
+      if (!record) continue;
+      hasGovernance = true;
+      manifest.approvals = [...(manifest.approvals ?? []), record];
+      manifest.updatedAt = new Date(event.ts).toISOString();
+    } else if (event.type === "rollback_recorded") {
+      const record = rollbackRecordFromRaw(event.raw);
+      if (!record) continue;
+      hasGovernance = true;
+      manifest.rollbacks = [...(manifest.rollbacks ?? []), record];
+      manifest.updatedAt = new Date(event.ts).toISOString();
+    }
+  }
+
+  return hasGovernance ? manifest : undefined;
+}
+
+function riskTierClasses(tier: RiskTier): string {
+  switch (tier) {
+    case "quick":
+      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+    case "code":
+      return "border-sky-500/40 bg-sky-500/10 text-sky-200";
+    case "side_effect":
+      return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+    case "enterprise":
+      return "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200";
+  }
+}
+
+function gateStatusClasses(status: GateRecord["status"]): string {
+  switch (status) {
+    case "pass":
+      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+    case "fail":
+      return "border-red-500/40 bg-red-500/10 text-red-200";
+    case "blocked":
+      return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+    case "skipped":
+      return "border-slate-500/40 bg-slate-500/10 text-slate-300";
+    default:
+      return "border-blue-500/40 bg-blue-500/10 text-blue-200";
+  }
+}
+
+function GovernancePanel({
+  manifest,
+  selectedGateIndex,
+  onSelectGate,
+}: {
+  manifest: RunManifest;
+  selectedGateIndex: number;
+  onSelectGate: (index: number) => void;
+}) {
+  const selectedGate = manifest.gates[selectedGateIndex] ?? manifest.gates[0];
+  const approvals = manifest.approvals ?? [];
+  const rollbacks = manifest.rollbacks ?? [];
+
+  return (
+    <div className="border-b border-slate-800 bg-slate-950/50 px-5 py-3">
+      <div className="grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)_280px]">
+        <div className="min-w-0 rounded-md border border-slate-800 bg-slate-950/60 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${riskTierClasses(manifest.riskTier)}`}>
+              {manifest.riskTier}
+            </span>
+            <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-300">
+              {manifest.result}
+            </span>
+          </div>
+          <div className="mt-2 truncate text-[12px] font-mono text-slate-200">{manifest.governancePack}</div>
+          <div className="mt-1 line-clamp-2 text-[12px] text-slate-400">{manifest.summary ?? manifest.interpretedGoal}</div>
+        </div>
+
+        <div className="min-w-0 rounded-md border border-slate-800 bg-slate-950/60 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+            <span>Gates</span>
+            <span>{manifest.gates.length}</span>
+          </div>
+          {manifest.gates.length === 0 ? (
+            <div className="text-[12px] text-slate-500">No gate records</div>
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {manifest.gates.map((gate, index) => (
+                <button
+                  type="button"
+                  key={`${gate.gate}-${index}`}
+                  onClick={() => onSelectGate(index)}
+                  className={`shrink-0 rounded-md border px-2.5 py-1.5 text-left transition ${
+                    (manifest.gates[selectedGateIndex] ?? manifest.gates[0]) === gate
+                      ? "border-blue-400/60 bg-blue-500/10"
+                      : "border-slate-800 bg-slate-900/50 hover:border-slate-600"
+                  }`}
+                >
+                  <div className="max-w-[170px] truncate text-[12px] font-medium text-slate-100">{gate.gate}</div>
+                  <div className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${gateStatusClasses(gate.status)}`}>
+                    {gate.status}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 rounded-md border border-slate-800 bg-slate-950/60 p-3">
+          <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">Gate Detail</div>
+          {selectedGate ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-[12px] font-semibold text-slate-100">{selectedGate.gate}</span>
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${gateStatusClasses(selectedGate.status)}`}>
+                  {selectedGate.status}
+                </span>
+              </div>
+              <p className="m-0 text-[12px] leading-relaxed text-slate-300">{selectedGate.reason}</p>
+              {selectedGate.blockers?.length ? (
+                <div className="text-[11px] text-amber-200">Blocked: {selectedGate.blockers.join(", ")}</div>
+              ) : null}
+              {selectedGate.evidence?.length ? (
+                <div className="text-[11px] text-slate-400">Evidence: {selectedGate.evidence.join(", ")}</div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="text-[12px] text-slate-500">No gate selected</div>
+          )}
+        </div>
+      </div>
+
+      {(approvals.length > 0 || rollbacks.length > 0) ? (
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <div className="rounded-md border border-slate-800 bg-slate-950/60 p-3">
+            <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">Approvals</div>
+            <ul className="space-y-1.5">
+              {approvals.map((approval, index) => (
+                <li key={`${approval.id ?? approval.target}-${index}`} className="text-[12px] text-slate-300">
+                  <span className="font-semibold text-slate-100">{approval.status}</span>
+                  <span className="text-slate-500"> · </span>
+                  <span>{approval.target}</span>
+                  {approval.approver ? <span className="text-slate-500"> · {approval.approver}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-950/60 p-3">
+            <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">Rollback</div>
+            <ul className="space-y-1.5">
+              {rollbacks.map((rollback, index) => (
+                <li key={`${rollback.id ?? rollback.target}-${index}`} className="text-[12px] text-slate-300">
+                  <span className="font-semibold text-slate-100">{rollback.status}</span>
+                  <span className="text-slate-500"> · </span>
+                  <span>{rollback.target}</span>
+                  <div className="mt-0.5 text-[11px] text-slate-500">{rollback.rollbackPlan}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function isLeaderViewEvent(event: RunDetailEvent): boolean {
   if (!event.agentName) return true;
   if ((event.agentDepth ?? 0) === 0) return true;
@@ -543,6 +830,7 @@ export function RunsPanel() {
   const closeRunDetailStream = useRunStore((s) => s.closeRunDetailStream);
 
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
+  const [selectedGateIndex, setSelectedGateIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -587,6 +875,20 @@ export function RunsPanel() {
     () => (selectedAgent ? runDetailEvents.filter((e) => e.agentName === selectedAgent) : leaderViewEvents),
     [leaderViewEvents, runDetailEvents, selectedAgent],
   );
+
+  const governanceManifest = useMemo(
+    () => (selectedRun ? buildGovernanceManifest(selectedRun, runDetailEvents) : undefined),
+    [runDetailEvents, selectedRun],
+  );
+
+  useEffect(() => {
+    setSelectedGateIndex(0);
+  }, [selectedRunId]);
+
+  useEffect(() => {
+    if (!governanceManifest || selectedGateIndex < governanceManifest.gates.length) return;
+    setSelectedGateIndex(Math.max(0, governanceManifest.gates.length - 1));
+  }, [governanceManifest, selectedGateIndex]);
 
   // Jump to the bottom unconditionally when the user switches run or
   // agent filter — behave like a chat view where "latest is always in
@@ -774,6 +1076,15 @@ export function RunsPanel() {
                 </div>
               </div>
               <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                {governanceManifest ? (
+                  <div className="-mx-5 -mt-4 mb-4">
+                    <GovernancePanel
+                      manifest={governanceManifest}
+                      selectedGateIndex={selectedGateIndex}
+                      onSelectGate={setSelectedGateIndex}
+                    />
+                  </div>
+                ) : null}
                 {runDetailLoading && filteredEvents.length === 0 ? (
                   <div className="text-xs text-slate-500">Loading events…</div>
                 ) : filteredEvents.length === 0 ? (

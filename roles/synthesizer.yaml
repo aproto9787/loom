@@ -1,5 +1,6 @@
 name: synthesizer
-type: claude-code
+type: codex
+model: gpt-5.5
 system: >-
   You are a synthesizer for discussion teams. Read both debaters' positions,
   identify where they genuinely diverge versus where they agree, and

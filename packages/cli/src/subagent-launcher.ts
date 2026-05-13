@@ -2,30 +2,26 @@
 
 // heddle-subagent: generalized headless executor. Heddle MCP invokes this internal
 // runtime to execute a BRIEFING in an isolated child agent. The child runs
-// claude or codex, streams every tool_use / tool_result / assistant frame back
-// to the server tagged with this subagent's name and parent, and writes a
-// REPORT to stdout / file.
+// Codex, streams every tool_use / tool_result / assistant frame back to the
+// server tagged with this subagent's name and parent, and writes a REPORT to
+// stdout / file.
 
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
-import type { AgentConfig, FlowDefinition, HookDefinition, SkillDefinition } from "@aproto9787/heddle-core";
+import * as HeddleCore from "@aproto9787/heddle-core";
+import type { AgentConfig, FlowDefinition } from "@aproto9787/heddle-core";
 import {
   buildConfiguredAgent,
-  createScopedMcpConfig,
-  loadHookDefinitions,
-  loadSkillDefinitions,
   findAgentByName,
-  resolveAgentResources,
 } from "@aproto9787/heddle-runtime";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
 
-type Backend = "claude" | "codex";
+type Backend = "codex";
 type HeddleEventType = "tool_use" | "tool_result" | "user" | "assistant" | "error";
 
 interface CliArgs {
@@ -51,13 +47,13 @@ function printUsage(): void {
   console.error(`heddle-subagent — generalized child-agent runner for Heddle flows
 
 Usage:
-  heddle-subagent --name <role> --backend claude|codex [options] --briefing "Review the changed files"
-  heddle-subagent --name <role> --backend claude|codex [options] -- "Briefing that may start with --"
-  printf '%s\n' "Review the changed files" | heddle-subagent --name <role> --backend <claude|codex> [options]
+  heddle-subagent --name <role> --backend codex [options] --briefing "Review the changed files"
+  heddle-subagent --name <role> --backend codex [options] -- "Briefing that may start with --"
+  printf '%s\n' "Review the changed files" | heddle-subagent --name <role> --backend codex [options]
 
 Options:
   --name <role>          child agent display name (required)
-  --backend <kind>       claude | codex (required)
+  --backend <kind>       codex (required). Legacy "claude" is migrated to codex.
   --model <id>           model override (default: backend default)
   --parent <name>        parent agent name (default: env HEDDLE_PARENT_AGENT or "leader")
   --depth <n>            parent depth (default: env HEDDLE_PARENT_DEPTH or 0)
@@ -137,11 +133,14 @@ function parseArgs(argv: string[]): CliArgs | null {
     printUsage();
     return null;
   }
+  if (backendRaw === "claude") {
+    console.error("heddle-subagent: legacy --backend claude was migrated to codex");
+  }
 
   const explicitBriefing = args.briefing?.trim();
   return {
     name,
-    backend: backendRaw,
+    backend: "codex",
     model: args.model,
     parentAgent: args.parent ?? process.env.HEDDLE_PARENT_AGENT ?? "leader",
     parentDepth: Number(args.depth ?? process.env.HEDDLE_PARENT_DEPTH ?? "0"),
@@ -257,90 +256,82 @@ function mapCodexItem(item: Record<string, unknown>): MappedEvent | null {
   }
 }
 
-function mapClaudeFrame(frame: Record<string, unknown>): MappedEvent[] {
-  const results: MappedEvent[] = [];
-  const frameType = typeof frame.type === "string" ? frame.type : undefined;
-  if (!frameType) return results;
-  if (frameType === "assistant") {
-    const message = frame.message as Record<string, unknown> | undefined;
-    const content = Array.isArray(message?.content) ? message.content : [];
-    for (const part of content) {
-      if (!part || typeof part !== "object") continue;
-      const typedPart = part as Record<string, unknown>;
-      const partType = typeof typedPart.type === "string" ? typedPart.type : undefined;
-      if (partType === "text") {
-        const text = typeof typedPart.text === "string" ? typedPart.text : "";
-        if (text.trim()) results.push({ type: "assistant", summary: truncate(text) });
-      } else if (partType === "tool_use") {
-        const toolName = typeof typedPart.name === "string" ? typedPart.name : undefined;
-        const input = (typedPart.input ?? {}) as Record<string, unknown>;
-        let detail: string | undefined;
-        if (toolName === "Bash") {
-          const cmd = typeof input.command === "string" ? input.command : undefined;
-          if (cmd) detail = cmd;
-        } else if (toolName === "Agent") {
-          const sub = typeof input.subagent_type === "string" ? input.subagent_type : undefined;
-          const desc = typeof input.description === "string" ? input.description : undefined;
-          detail = sub && desc ? `${sub} — ${desc}` : sub ?? desc;
-        }
-        const summary = toolName
-          ? (detail ? `${toolName}: ${detail}` : `tool ${toolName}`)
-          : "tool use";
-        results.push({ type: "tool_use", summary: truncate(summary), toolName });
-      }
-    }
-  } else if (frameType === "user") {
-    const message = frame.message as Record<string, unknown> | undefined;
-    const content = Array.isArray(message?.content) ? message.content : [];
-    for (const part of content) {
-      if (!part || typeof part !== "object") continue;
-      const typedPart = part as Record<string, unknown>;
-      if (typedPart.type === "tool_result") {
-        const raw = typedPart.content;
-        let text: string;
-        if (typeof raw === "string") text = raw;
-        else if (Array.isArray(raw)) {
-          text = raw
-            .map((p) => (p && typeof p === "object" && typeof (p as { text?: unknown }).text === "string"
-              ? (p as { text: string }).text
-              : ""))
-            .filter(Boolean)
-            .join(" ");
-        } else text = "tool result";
-        results.push({ type: "tool_result", summary: truncate(text, 140) });
-      }
-    }
-  } else if (frameType === "result") {
-    const subtype = typeof frame.subtype === "string" ? frame.subtype : "result";
-    const result = typeof frame.result === "string" ? frame.result : "";
-    if (result.trim()) {
-      results.push({
-        type: subtype === "success" ? "assistant" : "error",
-        summary: truncate(result, 200),
-      });
-    }
-  } else if (frameType === "system") {
-    // Only surface the init frame (once per session). Hook lifecycle frames
-    // (hook_started / hook_response / etc.) are debugging noise — never
-    // meaningful to a timeline viewer, they just clutter every run.
-    const subtype = typeof frame.subtype === "string" ? frame.subtype : "system";
-    if (subtype === "init") {
-      results.push({ type: "assistant", summary: `session:init`, toolName: "system" });
-    }
-  } else if (frameType === "rate_limit_event" || frameType === "message_delta" || frameType === "message_start" || frameType === "message_stop" || frameType === "content_block_start" || frameType === "content_block_delta" || frameType === "content_block_stop" || frameType === "ping") {
-    // Known infrastructure frames that carry no user-facing signal.
-    // Dropping them keeps the timeline focused on actual tool use + text.
-  } else {
-    // Truly unmapped frame type — surface it once so a future gap is visible.
-    const preview = truncate(JSON.stringify(frame), 120);
-    results.push({ type: "tool_use", summary: `stream-json:${frameType} ${preview}`, toolName: `claude:${frameType}` });
-  }
-  return results;
-}
-
 interface FlowContext {
   flow: FlowDefinition;
   selfAgent: AgentConfig;
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function hasLegacyAgentType(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  if ((value as { type?: unknown }).type === "claude-code") return true;
+  if (Array.isArray(value)) return value.some((entry) => hasLegacyAgentType(entry));
+  return Object.values(value as Record<string, unknown>).some((entry) => hasLegacyAgentType(entry));
+}
+
+function migrateAgentRecord(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const agent = { ...(value as Record<string, unknown>) };
+  if (agent.type === "claude-code") {
+    agent.type = "codex";
+  }
+  if (agent.type === "codex") {
+    const runtime = agent.runtime && typeof agent.runtime === "object"
+      ? { ...(agent.runtime as Record<string, unknown>) }
+      : {};
+    if (runtime.profile === undefined || runtime.profile === "claude-default") {
+      runtime.profile = "codex-default";
+    }
+    if (runtime.mode === undefined) runtime.mode = "host";
+    if (runtime.applyResources === undefined) runtime.applyResources = "prompt-only";
+    if (runtime.delegationTransport === undefined) runtime.delegationTransport = "mcp";
+    agent.runtime = runtime;
+    if (agent.model === undefined || (typeof agent.model === "string" && agent.model.startsWith("claude-"))) {
+      agent.model = "gpt-5.5";
+    }
+  }
+  if (Array.isArray(agent.agents)) {
+    agent.agents = agent.agents.map((child) => migrateAgentRecord(child));
+  }
+  return agent;
+}
+
+function migrateLegacyFlowDefinitionInput(value: unknown): { value: unknown; notes: string[] } {
+  if (!hasLegacyAgentType(value)) return { value, notes: [] };
+  const helper = (HeddleCore as Record<string, unknown>).migrateLegacyFlowDefinitionInput;
+  if (typeof helper === "function") {
+    try {
+      const migrated = helper(cloneJson(value)) as { value?: unknown; notes?: unknown };
+      const notes = Array.isArray(migrated.notes)
+        ? migrated.notes
+          .map((entry) => {
+            if (typeof entry === "string") return entry;
+            if (!entry || typeof entry !== "object") return "";
+            const note = entry as { path?: unknown; from?: unknown; to?: unknown; message?: unknown };
+            const pathLabel = typeof note.path === "string" ? note.path : "legacy";
+            const from = typeof note.from === "string" ? note.from : undefined;
+            const to = typeof note.to === "string" ? note.to : undefined;
+            const message = typeof note.message === "string" ? note.message : undefined;
+            return [pathLabel, from && to ? `${from} -> ${to}` : undefined, message].filter(Boolean).join(": ");
+          })
+          .filter((entry) => entry.trim().length > 0)
+        : [];
+      return {
+        value: migrated.value ?? migrated,
+        notes: notes.length > 0 ? notes : ["core legacy migration helper applied"],
+      };
+    } catch {
+      // Fall through to the local compatibility migration.
+    }
+  }
+  const flow = { ...(value as Record<string, unknown>) };
+  if (flow.orchestrator) {
+    flow.orchestrator = migrateAgentRecord(flow.orchestrator);
+  }
+  return { value: flow, notes: ["core legacy migration helper unavailable; applied built-in Codex migration"] };
 }
 
 async function loadFlowContext(selfName: string): Promise<FlowContext | undefined> {
@@ -348,7 +339,7 @@ async function loadFlowContext(selfName: string): Promise<FlowContext | undefine
   if (!flowPath) return undefined;
   try {
     const raw = await readFile(flowPath, "utf8");
-    const parsed = YAML.parse(raw) as FlowDefinition | undefined;
+    const parsed = migrateLegacyFlowDefinitionInput(YAML.parse(raw)).value as FlowDefinition | undefined;
     if (!parsed?.orchestrator) return undefined;
     const found = findAgentByName(parsed.orchestrator, selfName);
     if (!found) return undefined;
@@ -358,44 +349,12 @@ async function loadFlowContext(selfName: string): Promise<FlowContext | undefine
   }
 }
 
-// Minimal helpers duplicated from packages/cli/src/index.ts createIsolatedHome.
-// Subagent is headless (--print / codex exec) so it skips the interactive
-// onboarding carryover the leader needs — just credentials, hooks, skills,
-// and merged flow.md / AGENTS.md.
 async function readOptional(filePath: string): Promise<string | undefined> {
   try {
     return await readFile(filePath, "utf8");
   } catch {
     return undefined;
   }
-}
-
-const CLAUDE_HOOK_EVENT_MAP: Record<HookDefinition["event"], string> = {
-  on_start: "SessionStart",
-  on_complete: "Stop",
-  on_error: "SubagentStop",
-  on_delegate: "Notification",
-};
-
-function buildHooksConfig(hooks: HookDefinition[]): Record<string, Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>> {
-  const grouped: Record<string, Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>> = {};
-  for (const hook of hooks) {
-    const event = CLAUDE_HOOK_EVENT_MAP[hook.event];
-    grouped[event] ??= [];
-    grouped[event].push({ matcher: "", hooks: [{ type: "command", command: hook.command }] });
-  }
-  return grouped;
-}
-
-async function writeSkillFiles(claudeDir: string, skills: SkillDefinition[]): Promise<void> {
-  if (skills.length === 0) return;
-  const skillsRoot = path.join(claudeDir, "skills");
-  await mkdir(skillsRoot, { recursive: true });
-  await Promise.all(skills.map(async (skill) => {
-    const skillDir = path.join(skillsRoot, skill.name);
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.prompt, "utf8");
-  }));
 }
 
 function mergeInstructions(flowFlowMd: string | undefined, agentFlowMd: string | undefined, system: string | undefined): string {
@@ -406,8 +365,6 @@ async function createSubagentHome(
   args: CliArgs,
   flow: FlowDefinition,
   configuredAgent: AgentConfig,
-  scopedHooks: HookDefinition[],
-  scopedSkills: SkillDefinition[],
   codexConfigAppend?: string,
 ): Promise<string> {
   const root = path.join(os.homedir(), ".heddle", "subagent-homes");
@@ -419,58 +376,29 @@ async function createSubagentHome(
     : undefined;
   const merged = mergeInstructions(flow.flowMd, agentFlowMd, configuredAgent.system);
 
-  if (args.backend === "claude") {
-    const claudeDir = path.join(home, ".claude");
-    await mkdir(claudeDir, { recursive: true });
-
-    const realCreds = await readOptional(path.join(realHome, ".claude", ".credentials.json"));
-    if (realCreds) {
-      await writeFile(path.join(claudeDir, ".credentials.json"), realCreds, { encoding: "utf8", mode: 0o600 });
-    }
-    // Headless `--print --no-session-persistence` doesn't require the big
-    // onboarding shape — a minimal .claude.json is enough.
-    await writeFile(
-      path.join(home, ".claude.json"),
-      JSON.stringify({ hasCompletedOnboarding: true, env: {}, permissions: { allow: [] } }, null, 2),
-      { encoding: "utf8", mode: 0o600 },
-    );
-
-    const settings: Record<string, unknown> = { env: {}, permissions: { allow: [] } };
-    if (scopedHooks.length > 0) settings.hooks = buildHooksConfig(scopedHooks);
-    await writeFile(path.join(claudeDir, "settings.json"), JSON.stringify(settings, null, 2), "utf8");
-
-    await writeSkillFiles(claudeDir, scopedSkills);
-    if (merged.trim()) {
-      // Heddle models this content as flow.md, but Claude Code discovers it
-      // through its backend-specific CLAUDE.md filename.
-      await writeFile(path.join(claudeDir, "CLAUDE.md"), merged, "utf8");
-    }
-  } else {
-    const codexDir = path.join(home, ".codex");
-    await mkdir(codexDir, { recursive: true });
-    const realAuth = await readOptional(path.join(realHome, ".codex", "auth.json"));
-    if (realAuth) {
-      await writeFile(path.join(codexDir, "auth.json"), realAuth, { encoding: "utf8", mode: 0o600 });
-    }
-    const realConfig = await readOptional(path.join(realHome, ".codex", "config.toml"));
-    const configParts = [realConfig ?? "# Heddle-seeded (empty)\n"];
-    if (codexConfigAppend?.trim()) {
-      configParts.push(codexConfigAppend.trim());
-    }
-    await writeFile(
-      path.join(codexDir, "config.toml"),
-      `${configParts.map((part) => part.trimEnd()).join("\n\n")}\n`,
-      "utf8",
-    );
-    if (merged.trim()) {
-      await writeFile(path.join(codexDir, "AGENTS.md"), merged, "utf8");
-    }
+  const codexDir = path.join(home, ".codex");
+  await mkdir(codexDir, { recursive: true });
+  const realAuth = await readOptional(path.join(realHome, ".codex", "auth.json"));
+  if (realAuth) {
+    await writeFile(path.join(codexDir, "auth.json"), realAuth, { encoding: "utf8", mode: 0o600 });
+  }
+  const realConfig = await readOptional(path.join(realHome, ".codex", "config.toml"));
+  const configParts = [realConfig ?? "# Heddle-seeded (empty)\n"];
+  if (codexConfigAppend?.trim()) {
+    configParts.push(codexConfigAppend.trim());
+  }
+  await writeFile(
+    path.join(codexDir, "config.toml"),
+    `${configParts.map((part) => part.trimEnd()).join("\n\n")}\n`,
+    "utf8",
+  );
+  if (merged.trim()) {
+    await writeFile(path.join(codexDir, "AGENTS.md"), merged, "utf8");
   }
   return home;
 }
 
 interface HeddleMcpConfig {
-  claudeConfigPath: string;
   codexConfigToml: string;
   cleanup: () => Promise<void>;
 }
@@ -497,7 +425,6 @@ function compactEnv(values: Record<string, string | undefined>): Record<string, 
 }
 
 async function createHeddleMcpConfig(args: CliArgs, flow: FlowDefinition, configuredAgent: AgentConfig): Promise<HeddleMcpConfig> {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "heddle-subagent-mcp-"));
   const cliBin = fileURLToPath(new URL("./index.js", import.meta.url));
   const subagentBin = fileURLToPath(new URL("./subagent-launcher.js", import.meta.url));
   const env = compactEnv({
@@ -512,72 +439,10 @@ async function createHeddleMcpConfig(args: CliArgs, flow: FlowDefinition, config
     HEDDLE_PARENT_DEPTH: String(args.parentDepth + 1),
     HEDDLE_SUBAGENT_BIN: subagentBin,
   });
-  const claudeConfigPath = path.join(tempDir, "mcp.json");
-  await writeFile(
-    claudeConfigPath,
-    JSON.stringify({
-      mcpServers: {
-        heddle: {
-          command: process.execPath,
-          args: [cliBin, "mcp"],
-          env,
-        },
-      },
-    }, null, 2),
-    "utf8",
-  );
   return {
-    claudeConfigPath,
     codexConfigToml: buildCodexMcpConfigToml(env, process.execPath, [cliBin, "mcp"]),
-    cleanup: async () => {
-      await rm(tempDir, { recursive: true, force: true });
-    },
+    cleanup: async () => undefined,
   };
-}
-
-async function mergeMcpConfigFiles(baseConfigPath: string | undefined, heddleConfigPath: string): Promise<{ configPath: string; cleanup: () => Promise<void> }> {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "heddle-subagent-merged-mcp-"));
-  const configPath = path.join(tempDir, "mcp.json");
-  const mergedServers: Record<string, unknown> = {};
-  if (baseConfigPath) {
-    try {
-      const parsed = JSON.parse(await readFile(baseConfigPath, "utf8")) as { mcpServers?: Record<string, unknown> };
-      Object.assign(mergedServers, parsed.mcpServers ?? {});
-    } catch {
-      // If the scoped config is unreadable, keep the Heddle MCP server available.
-    }
-  }
-  const heddleParsed = JSON.parse(await readFile(heddleConfigPath, "utf8")) as { mcpServers?: Record<string, unknown> };
-  Object.assign(mergedServers, heddleParsed.mcpServers ?? {});
-  await writeFile(configPath, JSON.stringify({ mcpServers: mergedServers }, null, 2), "utf8");
-  return {
-    configPath,
-    cleanup: async () => {
-      await rm(tempDir, { recursive: true, force: true });
-    },
-  };
-}
-
-function buildClaudePrompt(args: CliArgs, reportPath: string, delegation: string): string {
-  return `You are the "${args.name}" subagent in a Heddle flow. A single BRIEFING follows. Execute it autonomously using as many tool calls as needed. Do not ask follow-up questions back to the caller.
-
-When finished, write the REPORT to ${reportPath} in this exact format:
-
-\`\`\`
-status: done | blocked | needs_decision
-summary:
-  - <bullet — concrete fact, file:line backed>
-artifacts:
-  - <path>:<line-range>
-blockers:
-  - <one sentence — omit when status=done>
-\`\`\`
-
-Write the REPORT file before exiting.
-${delegation}
-BRIEFING:
-${args.briefing}
-`;
 }
 
 function buildCodexPrompt(args: CliArgs, reportPath: string, delegation: string): string {
@@ -611,23 +476,13 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
   const ctx = await loadFlowContext(args.name);
   let delegation = "";
   let isolatedHome: string | undefined;
-  let scopedMcpConfigPath: string | undefined;
-  let effectiveMcpConfigPath: string | undefined;
   const cleanup: Array<() => Promise<void>> = [];
 
   if (ctx) {
-    const [hookDefs, skillDefs] = await Promise.all([loadHookDefinitions(), loadSkillDefinitions()]);
-    const resources = resolveAgentResources(ctx.selfAgent, ctx.flow);
-    const scopedHooks = resources.hooks
-      .map((name) => hookDefs.get(name))
-      .filter((hook): hook is HookDefinition => Boolean(hook));
-    const scopedSkills = resources.skills
-      .map((name) => skillDefs.get(name))
-      .filter((skill): skill is SkillDefinition => Boolean(skill));
     const configuredAgent = buildConfiguredAgent(ctx.selfAgent, ctx.flow, ctx.flow.repo, {
       roles: new Map(),
-      hooks: new Map(scopedHooks.map((h) => [h.name, h])),
-      skills: new Map(scopedSkills.map((s) => [s.name, s])),
+      hooks: new Map(),
+      skills: new Map(),
     });
     delegation = buildDelegationPrompt(ctx.selfAgent, args.name);
     const heddleMcpConfig = delegation.trim()
@@ -636,24 +491,8 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
     if (heddleMcpConfig) {
       cleanup.push(heddleMcpConfig.cleanup);
     }
-    isolatedHome = await createSubagentHome(args, ctx.flow, configuredAgent, scopedHooks, scopedSkills, heddleMcpConfig?.codexConfigToml);
+    isolatedHome = await createSubagentHome(args, ctx.flow, configuredAgent, heddleMcpConfig?.codexConfigToml);
     cleanup.push(async () => { await rm(isolatedHome!, { recursive: true, force: true }).catch(() => undefined); });
-    // Read MCP server definitions from the REAL user home — the fresh
-    // isolated HOME has empty mcpServers, so passing it as homeDir would
-    // yield an empty config (exactly the bug we just saw).
-    scopedMcpConfigPath = await createScopedMcpConfig(ctx.selfAgent, ctx.flow);
-    if (scopedMcpConfigPath) {
-      cleanup.push(async () => {
-        await rm(path.dirname(scopedMcpConfigPath!), { recursive: true, force: true }).catch(() => undefined);
-      });
-    }
-    if (heddleMcpConfig) {
-      const merged = await mergeMcpConfigFiles(scopedMcpConfigPath, heddleMcpConfig.claudeConfigPath);
-      effectiveMcpConfigPath = merged.configPath;
-      cleanup.push(merged.cleanup);
-    } else {
-      effectiveMcpConfigPath = scopedMcpConfigPath;
-    }
   }
 
   const childEnv: Record<string, string> = {
@@ -670,67 +509,29 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
     childEnv.CODEX_HOME = path.join(isolatedHome, ".codex");
     childEnv.CODEX_CONFIG_DIR = path.join(isolatedHome, ".codex");
   }
-  if (effectiveMcpConfigPath) {
-    childEnv.HEDDLE_MCP_CONFIG_PATH = effectiveMcpConfigPath;
-  }
-
-  let command: string;
-  let childArgs: string[];
-  let parseLine: (line: string) => MappedEvent[];
-
-  if (args.backend === "codex") {
-    const model = args.model ?? "gpt-5.5";
-    const prompt = buildCodexPrompt(args, reportPath, delegation);
-    command = "codex";
-    childArgs = [
-      "exec",
-      "--json",
-      "--model", model,
-      "--dangerously-bypass-approvals-and-sandbox",
-      "--skip-git-repo-check",
-      prompt,
-    ];
-    parseLine = (line) => {
-      try {
-        const parsed = JSON.parse(line) as Record<string, unknown>;
-        if (parsed.type !== "item.completed") return [];
-        const item = parsed.item;
-        if (!item || typeof item !== "object") return [];
-        const mapped = mapCodexItem(item as Record<string, unknown>);
-        return mapped ? [mapped] : [];
-      } catch {
-        return [];
-      }
-    };
-  } else {
-    const model = args.model;
-    const prompt = buildClaudePrompt(args, reportPath, delegation);
-    const sessionId = randomUUID();
-    command = "claude";
-    childArgs = [
-      "--print",
-      "--output-format", "stream-json",
-      "--verbose",
-      "--session-id", sessionId,
-      "--no-session-persistence",
-      "--dangerously-skip-permissions",
-    ];
-    if (effectiveMcpConfigPath) {
-      childArgs.push("--strict-mcp-config", "--mcp-config", effectiveMcpConfigPath);
-    } else {
-      childArgs.push("--strict-mcp-config");
+  const model = args.model ?? "gpt-5.5";
+  const prompt = buildCodexPrompt(args, reportPath, delegation);
+  const command = "codex";
+  const childArgs = [
+    "exec",
+    "--json",
+    "--model", model,
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--skip-git-repo-check",
+    prompt,
+  ];
+  const parseLine = (line: string): MappedEvent[] => {
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (parsed.type !== "item.completed") return [];
+      const item = parsed.item;
+      if (!item || typeof item !== "object") return [];
+      const mapped = mapCodexItem(item as Record<string, unknown>);
+      return mapped ? [mapped] : [];
+    } catch {
+      return [];
     }
-    if (model) childArgs.push("--model", model);
-    childArgs.push(prompt);
-    parseLine = (line) => {
-      try {
-        const parsed = JSON.parse(line) as Record<string, unknown>;
-        return mapClaudeFrame(parsed);
-      } catch {
-        return [];
-      }
-    };
-  }
+  };
 
   const exitCode = await new Promise<number>((resolve) => {
     const child = spawn(command, childArgs, {

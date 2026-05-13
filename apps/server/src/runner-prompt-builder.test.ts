@@ -7,7 +7,7 @@ import type { RunResources } from "./runner-resource-loader.js";
 const flow: FlowDefinition = {
   name: "demo",
   repo: ".",
-  orchestrator: { name: "lead", type: "claude-code" },
+  orchestrator: { name: "lead", type: "codex" },
   resources: {
     mcps: ["figma"],
     hooks: ["boot"],
@@ -26,7 +26,7 @@ const resources: RunResources = {
 test("buildAgentPrompt includes resource context and delegation instructions", () => {
   const agent: AgentConfig = {
     name: "lead",
-    type: "claude-code",
+    type: "codex",
     system: "You are lead.",
     delegation: [{ to: "child", when: "When code review is needed." }],
     agents: [{ name: "child", type: "codex", delegation: [{ to: "none", when: "Never" }], system: "Reviews code changes." }],
@@ -51,10 +51,10 @@ test("buildAgentPrompt includes resource context and delegation instructions", (
 test("buildConfiguredAgent adds parallel child guidance when parallel is enabled", () => {
   const agent: AgentConfig = {
     name: "lead",
-    type: "claude-code",
+    type: "codex",
     parallel: true,
     agents: [
-      { name: "child-a", type: "claude-code" },
+      { name: "child-a", type: "codex" },
       { name: "child-b", type: "codex" },
     ],
   };
@@ -68,7 +68,7 @@ test("buildConfiguredAgent adds parallel child guidance when parallel is enabled
 test("buildConfiguredAgent inherits role defaults when agent fields are absent", () => {
   const agent: AgentConfig = {
     name: "frontend",
-    type: "claude-code",
+    type: "codex",
     role: "frontend-dev",
   };
   const roles: Map<string, RoleDefinition> = new Map([
@@ -76,7 +76,7 @@ test("buildConfiguredAgent inherits role defaults when agent fields are absent",
       "frontend-dev",
       {
         name: "frontend-dev",
-        type: "claude-code",
+        type: "codex",
         system: "Build UI.",
         description: "Role description.",
       },
@@ -102,7 +102,7 @@ test("buildConfiguredAgent lets agent values override role values", () => {
       "frontend-dev",
       {
         name: "frontend-dev",
-        type: "claude-code",
+        type: "codex",
         system: "Build UI.",
         description: "Role description.",
       },

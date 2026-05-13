@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { HookDefinition, HookEvent, SkillDefinition } from "@aproto9787/heddle-core";
-import { useRunStore, type DiscoveredResource } from "./store.js";
+import { CODEX_AGENT_TYPE, useRunStore, type DiscoveredResource } from "./store.js";
 
 const SERVER_ORIGIN =
   (import.meta.env?.VITE_HEDDLE_SERVER as string | undefined) ?? "http://localhost:8787";
@@ -11,7 +11,6 @@ const inputLight =
 const selectLight = `${inputLight} appearance-auto`;
 
 type ResourceType = "mcp" | "hook" | "skill";
-type Platform = "claude" | "codex";
 
 const TYPE_ICONS: Record<ResourceType, string> = { mcp: "⚙", hook: "⚡", skill: "✦" };
 const TYPE_COLORS: Record<ResourceType, string> = {
@@ -54,7 +53,6 @@ export function CustomPanel() {
   const deleteHook = useRunStore((s) => s.deleteHook);
   const deleteSkill = useRunStore((s) => s.deleteSkill);
 
-  const [platform, setPlatform] = useState<Platform>("claude");
   const [draft, setDraft] = useState<Draft>(emptyDraft("hook"));
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -66,12 +64,13 @@ export function CustomPanel() {
     fetchSkills(SERVER_ORIGIN);
   }, [fetchHooks, fetchSkills]);
 
-  const filteredDiscovered = discoveredResources.filter((r) => r.platform === platform);
+  const filteredDiscovered = discoveredResources.filter((r) => r.platform === CODEX_AGENT_TYPE);
 
   const savedResources = [
     ...hooks.map((h) => ({ type: "hook" as const, name: h.name, data: h })),
     ...skills.map((s) => ({ type: "skill" as const, name: s.name, data: s })),
   ];
+  const codexProviders = providers.filter((provider) => provider.kind === CODEX_AGENT_TYPE);
 
   const handleDiscover = useCallback(async () => {
     setDiscovering(true);
@@ -144,32 +143,18 @@ export function CustomPanel() {
     <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] flex-1 min-h-0">
       {/* Sidebar */}
       <aside className="bg-slate-50 border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col overflow-y-auto">
-        {/* Platform tabs */}
-        <div className="flex border-b border-slate-200 shrink-0">
-          {(["claude", "codex"] as const).map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={`flex-1 px-4 py-2.5 text-sm font-medium capitalize border-b-2 transition-colors ${
-                platform === p
-                  ? "text-slate-900 border-blue-500"
-                  : "text-slate-500 border-transparent hover:text-slate-700"
-              }`}
-              onClick={() => setPlatform(p)}
-            >
-              {p === "claude" ? "Claude Code" : "Codex"}
-            </button>
-          ))}
+        <div className="border-b border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-900">
+          Codex
         </div>
 
         <div className="p-4 flex flex-col gap-3">
-          {providers.length > 0 ? (
+          {codexProviders.length > 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-3">
               <p className="m-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Detected providers
               </p>
               <div className="mt-2 flex flex-col gap-1.5">
-                {providers.map((provider) => (
+                {codexProviders.map((provider) => (
                   <div key={provider.id} className="flex items-center justify-between gap-2 text-xs">
                     <span className="font-medium text-slate-700">{provider.displayName}</span>
                     <span className={`rounded-full px-2 py-0.5 font-semibold ${
@@ -245,7 +230,7 @@ export function CustomPanel() {
             </>
           ) : (
             <p className="text-xs text-slate-500 italic mt-2">
-              Click Discover to scan {platform === "claude" ? "Claude Code" : "Codex"} config.
+              Click Discover to scan Codex config.
             </p>
           )}
 

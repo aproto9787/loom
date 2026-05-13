@@ -5,10 +5,28 @@ import path from "node:path";
 import Fastify from "fastify";
 import { z } from "zod";
 import YAML from "yaml";
-import { flowSchema, roleDefinitionSchema, hookDefinitionSchema, skillDefinitionSchema } from "@aproto9787/heddle-core";
+import * as HeddleCore from "@aproto9787/heddle-core";
+import {
+  approvalRecordSchema,
+  flowSchema,
+  gateRecordSchema,
+  hookDefinitionSchema,
+  rollbackRecordSchema,
+  roleDefinitionSchema,
+  runManifestResultSchema,
+  riskTierSchema,
+  skillDefinitionSchema,
+  validateFlow,
+  type ApprovalRecord,
+  type GateRecord,
+  type RollbackRecord,
+  type RunManifest,
+  type RunManifestResult,
+  type RunStatus,
+  type RiskTier,
+} from "@aproto9787/heddle-core";
 import { discoverProviderProfiles } from "@aproto9787/heddle-runtime";
 import type { PersistedRunEvent } from "./trace-store.js";
-import { validateFlow } from "@aproto9787/heddle-core";
 import { stringifyFlow } from "./flow-writer.js";
 import { abortLocalCliRun, startLocalCliRun } from "./local-cli-runner.js";
 import {
@@ -27,6 +45,8 @@ const rolesDir = path.join(workspaceRoot, "roles");
 const hooksDir = path.join(workspaceRoot, "hooks");
 const skillsDir = path.join(workspaceRoot, "skills");
 
+type LegacyMigrationNote = string;
+
 function isAllowedFlowPath(flowPath: string): boolean {
   if (path.isAbsolute(flowPath)) {
     return false;
@@ -42,6 +62,124 @@ function isYamlFlowPath(flowPath: string): boolean {
 
 function flattenValidationError(error: z.ZodError) {
   return error.flatten();
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function hasLegacyAgentType(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  if ((value as { type?: unknown }).type === "claude-code") return true;
+  if ((value as { agentType?: unknown }).agentType === "claude-code") return true;
+  if (Array.isArray(value)) return value.some((entry) => hasLegacyAgentType(entry));
+  return Object.values(value as Record<string, unknown>).some((entry) => hasLegacyAgentType(entry));
+}
+
+function migrationNotesFrom(value: unknown): LegacyMigrationNote[] {
+  if (!value || typeof value !== "object") return [];
+  const notes = (value as Record<string, unknown>).notes ?? (value as Record<string, unknown>).migrationNotes;
+  if (!Array.isArray(notes)) return [];
+  return notes
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (!entry || typeof entry !== "object") return "";
+      const note = entry as { path?: unknown; from?: unknown; to?: unknown; message?: unknown };
+      const pathLabel = typeof note.path === "string" ? note.path : "legacy";
+      const from = typeof note.from === "string" ? note.from : undefined;
+      const to = typeof note.to === "string" ? note.to : undefined;
+      const message = typeof note.message === "string" ? note.message : undefined;
+      return [pathLabel, from && to ? `${from} -> ${to}` : undefined, message].filter(Boolean).join(": ");
+    })
+    .filter((entry) => entry.trim().length > 0);
+}
+
+function migrateAgentRecord(value: unknown, pathLabel: string, notes: LegacyMigrationNote[]): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const agent = { ...(value as Record<string, unknown>) };
+  if (agent.type === "claude-code") {
+    agent.type = "codex";
+    notes.push(`${pathLabel}.type claude-code -> codex`);
+  }
+  if (agent.type === "codex") {
+    const runtime = agent.runtime && typeof agent.runtime === "object"
+      ? { ...(agent.runtime as Record<string, unknown>) }
+      : {};
+    if (runtime.profile === undefined || runtime.profile === "claude-default") {
+      runtime.profile = "codex-default";
+      notes.push(`${pathLabel}.runtime.profile -> codex-default`);
+    }
+    if (runtime.mode === undefined) runtime.mode = "host";
+    if (runtime.applyResources === undefined) runtime.applyResources = "prompt-only";
+    if (runtime.delegationTransport === undefined) runtime.delegationTransport = "mcp";
+    agent.runtime = runtime;
+    if (agent.model === undefined || (typeof agent.model === "string" && agent.model.startsWith("claude-"))) {
+      agent.model = "gpt-5.5";
+      notes.push(`${pathLabel}.model -> gpt-5.5`);
+    }
+  }
+  if (Array.isArray(agent.agents)) {
+    agent.agents = agent.agents.map((child, index) => migrateAgentRecord(child, `${pathLabel}.agents.${index}`, notes));
+  }
+  return agent;
+}
+
+function migrateLegacyFlowDefinitionInput(value: unknown): { value: unknown; notes: LegacyMigrationNote[] } {
+  if (!hasLegacyAgentType(value)) return { value, notes: [] };
+  const helper = (HeddleCore as Record<string, unknown>).migrateLegacyFlowDefinitionInput;
+  if (typeof helper === "function") {
+    try {
+      const migrated = helper(cloneJson(value)) as { value?: unknown; notes?: unknown };
+      return {
+        value: migrated.value ?? migrated,
+        notes: migrationNotesFrom(migrated).length > 0
+          ? migrationNotesFrom(migrated)
+          : ["core legacy migration helper applied"],
+      };
+    } catch {
+      // Fall through to the local compatibility migration.
+    }
+  }
+  const notes: LegacyMigrationNote[] = ["core legacy migration helper unavailable; applied built-in Codex migration"];
+  const flow = { ...(value as Record<string, unknown>) };
+  if (flow.orchestrator) {
+    flow.orchestrator = migrateAgentRecord(flow.orchestrator, "orchestrator", notes);
+  }
+  return { value: flow, notes };
+}
+
+function migrateLegacyRoleDefinitionInput(value: unknown): { value: unknown; notes: LegacyMigrationNote[] } {
+  if (!hasLegacyAgentType(value)) return { value, notes: [] };
+  const helper = (HeddleCore as Record<string, unknown>).migrateLegacyRoleDefinitionInput;
+  if (typeof helper === "function") {
+    try {
+      const migrated = helper(cloneJson(value)) as { value?: unknown; notes?: unknown };
+      return {
+        value: migrated.value ?? migrated,
+        notes: migrationNotesFrom(migrated).length > 0
+          ? migrationNotesFrom(migrated)
+          : ["core legacy migration helper applied"],
+      };
+    } catch {
+      // Fall through to the local compatibility migration.
+    }
+  }
+  const notes: LegacyMigrationNote[] = ["core legacy migration helper unavailable; applied built-in Codex migration"];
+  return { value: migrateAgentRecord(value, "role", notes), notes };
+}
+
+function withMigrationNotes<T extends Record<string, unknown>>(payload: T, notes: LegacyMigrationNote[]): T | (T & { migrationNotes: LegacyMigrationNote[] }) {
+  return notes.length > 0 ? { ...payload, migrationNotes: notes } : payload;
+}
+
+function legacyAgentTypeNotes(value: unknown): LegacyMigrationNote[] {
+  return value === "claude-code" ? ["agentType claude-code -> codex"] : [];
+}
+
+function logMigrationNotes(logger: { warn: (obj: object, msg: string) => void }, scope: string, notes: LegacyMigrationNote[]): void {
+  if (notes.length > 0) {
+    logger.warn({ scope, migrationNotes: notes }, "migrated legacy Claude configuration to Codex");
+  }
 }
 
 const flowPathSchema = z
@@ -70,7 +208,7 @@ const registerRunSchema = z.object({
   runId: z.string().min(1),
   flowPath: z.string().min(1),
   flowName: z.string().min(1),
-  agentType: z.enum(["claude-code", "codex"]),
+  agentType: z.preprocess((value) => value === "claude-code" ? "codex" : value, z.literal("codex")),
   startTime: z.string().datetime(),
   source: z.literal("cli"),
   cwd: z.string().optional(),
@@ -83,10 +221,41 @@ const updateRunStatusSchema = z.object({
   status: z.enum(["done", "error"]),
 });
 
+const governanceEventTypeSchema = z.enum([
+  "gate_record",
+  "manifest_update",
+  "approval_required",
+  "approval_recorded",
+  "rollback_recorded",
+]);
+
+const manifestUpdateSchema = z.object({
+  traceId: z.string().min(1).optional(),
+  request: z.string().min(1).optional(),
+  interpretedGoal: z.string().min(1).optional(),
+  riskTier: riskTierSchema.optional(),
+  governancePack: z.string().min(1).optional(),
+  workers: z.array(z.string().min(1)).optional(),
+  result: runManifestResultSchema.optional(),
+  summary: z.string().min(1).optional(),
+  updatedAt: z.string().min(1).optional(),
+}).strict();
+
 const runEventSchema = z.object({
   runId: z.string().min(1),
   ts: z.number().finite(),
-  type: z.enum(["user", "assistant", "tool_use", "tool_result", "error"]),
+  type: z.enum([
+    "user",
+    "assistant",
+    "tool_use",
+    "tool_result",
+    "error",
+    "gate_record",
+    "manifest_update",
+    "approval_required",
+    "approval_recorded",
+    "rollback_recorded",
+  ]),
   summary: z.string().min(1).optional(),
   toolName: z.string().min(1).optional(),
   agentName: z.string().min(1).optional(),
@@ -116,12 +285,30 @@ const runEventBatchRequestSchema = z.object({
 
 const saveFlowSchema = z.object({
   flowPath: flowPathSchema,
-  flow: flowSchema,
+  flow: z.unknown(),
 });
 
 const staleThresholdMs = 10 * 60 * 1000;
 
+type ManifestUpdate = z.infer<typeof manifestUpdateSchema>;
+type GovernanceEventType = z.infer<typeof governanceEventTypeSchema>;
+
+function parseGovernanceRaw(type: GovernanceEventType, raw: unknown): GateRecord | ManifestUpdate | ApprovalRecord | RollbackRecord {
+  if (type === "gate_record") {
+    return gateRecordSchema.parse(raw);
+  }
+  if (type === "manifest_update") {
+    return manifestUpdateSchema.parse(raw);
+  }
+  if (type === "approval_required" || type === "approval_recorded") {
+    return approvalRecordSchema.parse(raw);
+  }
+  return rollbackRecordSchema.parse(raw);
+}
+
 function toRunEvent(runId: string, payload: z.infer<typeof runEventRequestSchema>): PersistedRunEvent {
+  const governanceType = governanceEventTypeSchema.safeParse(payload.type);
+  const raw = governanceType.success ? parseGovernanceRaw(governanceType.data, payload.raw) : payload.raw;
   return {
     runId,
     ts: payload.ts,
@@ -132,7 +319,133 @@ function toRunEvent(runId: string, payload: z.infer<typeof runEventRequestSchema
     agentDepth: payload.agentDepth,
     parentAgent: payload.parentAgent,
     agentKind: payload.agentKind,
-    raw: payload.raw,
+    raw,
+  };
+}
+
+function resultFromRunStatus(status: RunStatus): RunManifestResult {
+  if (status === "done" || status === "success") return "pass";
+  if (status === "failed" || status === "error") return "fail";
+  if (status === "aborted") return "aborted";
+  if (status === "stale") return "blocked";
+  return "running";
+}
+
+function isSideEffectTier(tier: RiskTier): boolean {
+  return tier === "side_effect" || tier === "enterprise";
+}
+
+function isSideEffectBoundaryGate(gate: string): boolean {
+  const normalized = gate.toLowerCase();
+  return normalized.includes("side-effect") || normalized.includes("dispatch");
+}
+
+function hasSideEffectApproval(manifest: RunManifest): boolean {
+  return (manifest.approvals ?? []).some((approval) =>
+    approval.status === "approved"
+      && (approval.gate === undefined || isSideEffectBoundaryGate(approval.gate) || approval.gate === "approval-record")
+      && Boolean(approval.approvalText?.trim() || approval.evidence?.length),
+  );
+}
+
+function hasRollbackEvidence(manifest: RunManifest): boolean {
+  return (manifest.rollbacks ?? []).some((rollback) =>
+    ["planned", "verified", "executed"].includes(rollback.status)
+      && Boolean(rollback.rollbackPlan.trim())
+      && (rollback.gate === undefined || isSideEffectBoundaryGate(rollback.gate) || rollback.gate === "rollback-record"),
+  );
+}
+
+function buildRunManifestFromEvents(
+  run: NonNullable<ReturnType<typeof getRun>>,
+  events: PersistedRunEvent[],
+): { manifest: RunManifest; hasGovernance: boolean } {
+  const fallbackRequest = run.userPrompt?.trim() || "(request not recorded)";
+  const manifest: RunManifest = {
+    runId: run.runId,
+    traceId: run.runId,
+    request: fallbackRequest,
+    interpretedGoal: fallbackRequest,
+    riskTier: "quick",
+    governancePack: "quick-direct",
+    workers: run.agentResults.map((agent) => agent.agentName),
+    gates: [],
+    approvals: [],
+    rollbacks: [],
+    result: resultFromRunStatus(run.status),
+    updatedAt: run.endedAt ?? run.startedAt ?? run.createdAt,
+  };
+  let hasGovernance = false;
+
+  for (const event of events) {
+    const parsedType = governanceEventTypeSchema.safeParse(event.type);
+    if (!parsedType.success) continue;
+    hasGovernance = true;
+
+    if (parsedType.data === "manifest_update") {
+      const update = manifestUpdateSchema.parse(event.raw);
+      if (update.traceId !== undefined) manifest.traceId = update.traceId;
+      if (update.request !== undefined) manifest.request = update.request;
+      if (update.interpretedGoal !== undefined) manifest.interpretedGoal = update.interpretedGoal;
+      if (update.riskTier !== undefined) manifest.riskTier = update.riskTier;
+      if (update.governancePack !== undefined) manifest.governancePack = update.governancePack;
+      if (update.workers !== undefined) manifest.workers = update.workers;
+      if (update.result !== undefined) manifest.result = update.result;
+      if (update.summary !== undefined) manifest.summary = update.summary;
+      manifest.updatedAt = update.updatedAt ?? new Date(event.ts).toISOString();
+      continue;
+    }
+
+    if (parsedType.data === "gate_record") {
+      manifest.gates.push(gateRecordSchema.parse(event.raw));
+      manifest.updatedAt = new Date(event.ts).toISOString();
+      continue;
+    }
+
+    if (parsedType.data === "approval_required" || parsedType.data === "approval_recorded") {
+      manifest.approvals = [...(manifest.approvals ?? []), approvalRecordSchema.parse(event.raw)];
+      manifest.updatedAt = new Date(event.ts).toISOString();
+      continue;
+    }
+
+    manifest.rollbacks = [...(manifest.rollbacks ?? []), rollbackRecordSchema.parse(event.raw)];
+    manifest.updatedAt = new Date(event.ts).toISOString();
+  }
+
+  return { manifest, hasGovernance };
+}
+
+function blockedSideEffectGateEvent(
+  run: NonNullable<ReturnType<typeof getRun>>,
+  existingEvents: PersistedRunEvent[],
+  event: PersistedRunEvent,
+): { event: PersistedRunEvent; message: string } | undefined {
+  if (event.type !== "gate_record") return undefined;
+  const gate = gateRecordSchema.parse(event.raw);
+  if (gate.status !== "pass" || !isSideEffectBoundaryGate(gate.gate)) return undefined;
+
+  const { manifest } = buildRunManifestFromEvents(run, existingEvents);
+  const missing: string[] = [];
+  if (!hasSideEffectApproval(manifest)) missing.push("approved approval record");
+  if (!hasRollbackEvidence(manifest)) missing.push("rollback record");
+  if (missing.length === 0) return undefined;
+
+  const tierLabel = isSideEffectTier(manifest.riskTier) ? `Tier ${manifest.riskTier}` : "Side-effect";
+  const message = `${tierLabel} gate "${gate.gate}" cannot pass before ${missing.join(" and ")} exist.`;
+  const blockedGate: GateRecord = {
+    ...gate,
+    status: "blocked",
+    reason: message,
+    blockers: [...new Set([...(gate.blockers ?? []), ...missing])],
+    recordedAt: gate.recordedAt ?? new Date(event.ts).toISOString(),
+  };
+  return {
+    message,
+    event: {
+      ...event,
+      summary: `gate ${gate.gate}: blocked`,
+      raw: blockedGate,
+    },
   };
 }
 
@@ -149,10 +462,9 @@ function getServerOriginFromRequest(request: { headers: { origin?: string | stri
   return `http://localhost:${port}`;
 }
 
-async function loadFlowForRun(flowPath: string): Promise<z.infer<typeof flowSchema>> {
-  const absolutePath = path.resolve(workspaceRoot, flowPath);
-  const raw = await readFile(absolutePath, "utf8");
-  const parsedFlow = flowSchema.safeParse(YAML.parse(raw));
+function parseFlowPayload(input: unknown): { flow: z.infer<typeof flowSchema>; migrationNotes: LegacyMigrationNote[] } {
+  const migrated = migrateLegacyFlowDefinitionInput(input);
+  const parsedFlow = flowSchema.safeParse(migrated.value);
   if (!parsedFlow.success) {
     throw parsedFlow.error;
   }
@@ -160,7 +472,13 @@ async function loadFlowForRun(flowPath: string): Promise<z.infer<typeof flowSche
   if (validationErrors.length > 0) {
     throw new Error(validationErrors.join("\n"));
   }
-  return parsedFlow.data;
+  return { flow: parsedFlow.data, migrationNotes: migrated.notes };
+}
+
+async function loadFlowForRun(flowPath: string): Promise<{ flow: z.infer<typeof flowSchema>; migrationNotes: LegacyMigrationNote[] }> {
+  const absolutePath = path.resolve(workspaceRoot, flowPath);
+  const raw = await readFile(absolutePath, "utf8");
+  return parseFlowPayload(YAML.parse(raw));
 }
 
 export function buildServer() {
@@ -202,22 +520,23 @@ export function buildServer() {
 
     const absolutePath = path.resolve(workspaceRoot, parsed.data.path);
     const raw = await readFile(absolutePath, "utf8");
-    const parsedFlow = flowSchema.safeParse(YAML.parse(raw));
-    if (!parsedFlow.success) {
-      return reply.code(400).send({ error: flattenValidationError(parsedFlow.error) });
-    }
-
-    const validationErrors = validateFlow(parsedFlow.data);
-    if (validationErrors.length > 0) {
+    let loaded;
+    try {
+      loaded = parseFlowPayload(YAML.parse(raw));
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ error: flattenValidationError(error) });
+      }
       return reply.code(400).send({
         error: {
-          formErrors: validationErrors,
-          fieldErrors: { flow: validationErrors },
+          formErrors: [error instanceof Error ? error.message : String(error)],
+          fieldErrors: { flow: [error instanceof Error ? error.message : String(error)] },
         },
       });
     }
 
-    return reply.code(200).send({ flowPath: parsed.data.path, flow: parsedFlow.data });
+    logMigrationNotes(request.log, parsed.data.path, loaded.migrationNotes);
+    return reply.code(200).send(withMigrationNotes({ flowPath: parsed.data.path, flow: loaded.flow }, loaded.migrationNotes));
   });
 
   app.put("/flows/save", async (request, reply) => {
@@ -226,24 +545,30 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
 
-    const validationErrors = validateFlow(parsed.data.flow);
-    if (validationErrors.length > 0) {
+    let loaded;
+    try {
+      loaded = parseFlowPayload(parsed.data.flow);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ error: flattenValidationError(error) });
+      }
       return reply.code(400).send({
         error: {
-          formErrors: validationErrors,
-          fieldErrors: { flow: validationErrors },
+          formErrors: [error instanceof Error ? error.message : String(error)],
+          fieldErrors: { flow: [error instanceof Error ? error.message : String(error)] },
         },
       });
     }
 
     const absolutePath = path.resolve(workspaceRoot, parsed.data.flowPath);
     const tempPath = path.join(path.dirname(absolutePath), `.${path.basename(absolutePath)}.tmp`);
-    const yaml = stringifyFlow(parsed.data.flow);
+    const yaml = stringifyFlow(loaded.flow);
 
     await writeFile(tempPath, yaml, "utf8");
     await rename(tempPath, absolutePath);
 
-    return reply.code(200).send({ flowPath: parsed.data.flowPath });
+    logMigrationNotes(request.log, parsed.data.flowPath, loaded.migrationNotes);
+    return reply.code(200).send(withMigrationNotes({ flowPath: parsed.data.flowPath }, loaded.migrationNotes));
   });
 
   app.post("/flows/duplicate", async (request, reply) => {
@@ -254,9 +579,14 @@ export function buildServer() {
 
     const sourcePath = path.resolve(workspaceRoot, parsed.data.sourcePath);
     const raw = await readFile(sourcePath, "utf8");
-    const sourceFlow = flowSchema.safeParse(YAML.parse(raw));
-    if (!sourceFlow.success) {
-      return reply.code(400).send({ error: flattenValidationError(sourceFlow.error) });
+    let sourceFlow;
+    try {
+      sourceFlow = parseFlowPayload(YAML.parse(raw));
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ error: flattenValidationError(error) });
+      }
+      return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } });
     }
 
     const baseName = parsed.data.name
@@ -278,7 +608,7 @@ export function buildServer() {
     }
 
     const duplicatedFlow = {
-      ...sourceFlow.data,
+      ...sourceFlow.flow,
       name: parsed.data.name,
     };
     const tempPath = path.join(allowedFlowDir, `.${path.basename(candidatePath)}.tmp`);
@@ -286,7 +616,8 @@ export function buildServer() {
     await writeFile(tempPath, stringifyFlow(duplicatedFlow), "utf8");
     await rename(tempPath, absolutePath);
 
-    return reply.code(201).send({ flowPath: candidatePath, flow: duplicatedFlow });
+    logMigrationNotes(request.log, parsed.data.sourcePath, sourceFlow.migrationNotes);
+    return reply.code(201).send(withMigrationNotes({ flowPath: candidatePath, flow: duplicatedFlow }, sourceFlow.migrationNotes));
   });
 
   app.post("/flows/new", async (request, reply) => {
@@ -315,14 +646,14 @@ export function buildServer() {
       flowMdLibrary: {},
       orchestrator: {
         name: "leader",
-        type: "claude-code" as const,
+        type: "codex" as const,
         runtime: {
           mode: "host" as const,
-          profile: "claude-default",
+          profile: "codex-default",
           applyResources: "prompt-only" as const,
           delegationTransport: "mcp" as const,
         },
-        model: "claude-opus-4-7",
+        model: "gpt-5.5",
         system: `You are the orchestrator for ${name}. Delegate work to your team.\n`,
         effort: "high" as const,
         delegation: [],
@@ -405,9 +736,9 @@ export function buildServer() {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
 
-    let flow;
+    let loadedFlow;
     try {
-      flow = await loadFlowForRun(parsed.data.flowPath);
+      loadedFlow = await loadFlowForRun(parsed.data.flowPath);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return reply.code(400).send({ error: flattenValidationError(error) });
@@ -415,6 +746,8 @@ export function buildServer() {
       return reply.code(400).send({ error: { message: error instanceof Error ? error.message : String(error) } });
     }
 
+    const flow = loadedFlow.flow;
+    logMigrationNotes(request.log, parsed.data.flowPath, loadedFlow.migrationNotes);
     const runId = randomUUID();
     const startTime = new Date().toISOString();
     const flowCwd = flow.repo ? (path.isAbsolute(flow.repo) ? flow.repo : path.resolve(workspaceRoot, flow.repo)) : workspaceRoot;
@@ -450,22 +783,24 @@ export function buildServer() {
       },
     });
 
-    return reply.code(202).send({
+    return reply.code(202).send(withMigrationNotes({
       runId,
       flowName: flow.name,
       status: "running",
       source: "server",
-    });
+    }, loadedFlow.migrationNotes));
   });
 
   app.post("/runs/register", async (request, reply) => {
+    const registerMigrationNotes = legacyAgentTypeNotes((request.body as { agentType?: unknown } | null)?.agentType);
     const parsed = registerRunSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
+    logMigrationNotes(request.log, parsed.data.runId, registerMigrationNotes);
 
     if (getRun(parsed.data.runId)) {
-      return reply.code(200).send({ runId: parsed.data.runId });
+      return reply.code(200).send(withMigrationNotes({ runId: parsed.data.runId }, registerMigrationNotes));
     }
     createRunRecord({
       runId: parsed.data.runId,
@@ -486,7 +821,7 @@ export function buildServer() {
         },
       ],
     });
-    return reply.code(201).send({ runId: parsed.data.runId });
+    return reply.code(201).send(withMigrationNotes({ runId: parsed.data.runId }, registerMigrationNotes));
   });
 
   app.post("/runs/:id/events", async (request, reply) => {
@@ -505,10 +840,60 @@ export function buildServer() {
       return reply.code(404).send({ error: { message: "run not found" } });
     }
 
-    for (const event of parsed.data.events) {
-      emitRunEvent(toRunEvent(params.data.id, event));
+    const stagedEvents = listRunEvents(params.data.id);
+    const acceptedEvents: PersistedRunEvent[] = [];
+    let blockedMessage: string | undefined;
+    try {
+      for (const eventPayload of parsed.data.events) {
+        const event = toRunEvent(params.data.id, eventPayload);
+        const blocked = blockedSideEffectGateEvent(run, stagedEvents, event);
+        if (blocked) {
+          stagedEvents.push(blocked.event);
+          acceptedEvents.push(blocked.event);
+          blockedMessage = blocked.message;
+          break;
+        }
+        stagedEvents.push(event);
+        acceptedEvents.push(event);
+      }
+    } catch (error) {
+      return reply.code(409).send({
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+
+    for (const event of acceptedEvents) {
+      emitRunEvent(event);
+    }
+    if (blockedMessage) {
+      return reply.code(409).send({
+        error: {
+          message: blockedMessage,
+        },
+      });
     }
     return reply.code(201).send({ runId: params.data.id, count: parsed.data.events.length });
+  });
+
+  app.get("/runs/:id/manifest", async (request, reply) => {
+    const params = runParamsSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: flattenValidationError(params.error) });
+    }
+
+    const run = getRun(params.data.id);
+    if (!run) {
+      return reply.code(404).send({ error: { message: "run not found" } });
+    }
+
+    const manifestState = buildRunManifestFromEvents(run, listRunEvents(params.data.id));
+    return reply.code(200).send({
+      runId: params.data.id,
+      hasGovernance: manifestState.hasGovernance,
+      manifest: manifestState.manifest,
+    });
   });
 
   app.get("/runs/:id/events", async (request, reply) => {
@@ -598,21 +983,25 @@ export function buildServer() {
 // ── Resource discovery ──────────────────────────────────────────
 
   app.get("/mcps", async () => {
-    const sources = [
-      path.join(homedir(), ".claude.json"),
-      path.join(workspaceRoot, ".mcp.json"),
-    ];
     const names = new Set<string>();
-    for (const src of sources) {
-      try {
-        const raw = await readFile(src, "utf8");
-        const cfg = JSON.parse(raw);
-        const servers = cfg.mcpServers;
-        if (servers && typeof servers === "object") {
-          for (const k of Object.keys(servers)) names.add(k);
-        }
-      } catch { /* skip missing files */ }
-    }
+    try {
+      const raw = await readFile(path.join(workspaceRoot, ".mcp.json"), "utf8");
+      const cfg = JSON.parse(raw);
+      const servers = cfg.mcpServers;
+      if (servers && typeof servers === "object") {
+        for (const k of Object.keys(servers)) names.add(k);
+      }
+    } catch { /* skip missing file */ }
+
+    try {
+      const raw = await readFile(path.join(homedir(), ".codex", "config.toml"), "utf8");
+      const mcpSectionRegex = /^\[mcp_servers\.([^\]]+)\]/gm;
+      let match;
+      while ((match = mcpSectionRegex.exec(raw)) !== null) {
+        names.add(match[1].trim());
+      }
+    } catch { /* skip missing file */ }
+
     return { mcps: [...names].sort() };
   });
 
@@ -621,32 +1010,24 @@ export function buildServer() {
       type: "mcp" | "hook" | "skill";
       name: string;
       source: string;
-      platform: "claude" | "codex";
+      platform: "codex";
       event?: string;
       command?: string;
       prompt?: string;
     }
     const resources: DiscoveredResource[] = [];
-    const providers = await discoverProviderProfiles();
+    const providers = (await discoverProviderProfiles()).filter((provider) => provider.kind === "codex");
 
-    // ── Claude resources ────────────────────────────────────────
-
-    // MCPs — Claude side
-    const mcpSources = [
-      path.join(homedir(), ".claude.json"),
-      path.join(workspaceRoot, ".mcp.json"),
-    ];
-    for (const src of mcpSources) {
-      try {
-        const raw = await readFile(src, "utf8");
-        const cfg = JSON.parse(raw);
-        if (cfg.mcpServers && typeof cfg.mcpServers === "object") {
-          for (const name of Object.keys(cfg.mcpServers)) {
-            resources.push({ type: "mcp", name, source: src, platform: "claude" });
-          }
+    const workspaceMcpPath = path.join(workspaceRoot, ".mcp.json");
+    try {
+      const raw = await readFile(workspaceMcpPath, "utf8");
+      const cfg = JSON.parse(raw);
+      if (cfg.mcpServers && typeof cfg.mcpServers === "object") {
+        for (const name of Object.keys(cfg.mcpServers)) {
+          resources.push({ type: "mcp", name, source: workspaceMcpPath, platform: "codex" });
         }
-      } catch { /* skip */ }
-    }
+      }
+    } catch { /* skip */ }
 
     // MCPs — Codex side (~/.codex/config.toml's [mcp_servers.NAME] sections)
     const codexConfigPath = path.join(homedir(), ".codex", "config.toml");
@@ -664,59 +1045,7 @@ export function buildServer() {
       }
     } catch { /* skip */ }
 
-    // Hooks
-    const hookSources = [
-      path.join(homedir(), ".claude", "settings.json"),
-      path.join(workspaceRoot, ".claude", "settings.json"),
-    ];
-    for (const src of hookSources) {
-      try {
-        const raw = await readFile(src, "utf8");
-        const cfg = JSON.parse(raw);
-        if (cfg.hooks && typeof cfg.hooks === "object") {
-          for (const [event, rules] of Object.entries(cfg.hooks)) {
-            if (!Array.isArray(rules)) continue;
-            for (const rule of rules as Array<{ matcher?: string; hooks?: Array<{ command?: string }> }>) {
-              const cmds = (rule.hooks ?? []).map((h) => h.command).filter(Boolean);
-              if (cmds.length > 0) {
-                const label = rule.matcher ? `${event}:${rule.matcher}` : event;
-                resources.push({ type: "hook", name: label, source: src, platform: "claude", event, command: cmds.join(" && ") });
-              }
-            }
-          }
-        }
-      } catch { /* skip */ }
-    }
-
-    // Claude skills — ~/.claude/skills/*/SKILL.md
-    const claudeSkillsDir = path.join(homedir(), ".claude", "skills");
-    try {
-      const skillEntries = await readdir(claudeSkillsDir, { withFileTypes: true });
-      for (const entry of skillEntries) {
-        if (!entry.isDirectory()) continue;
-        const skillFile = path.join(claudeSkillsDir, entry.name, "SKILL.md");
-        const prompt = await readFile(skillFile, "utf8").catch(() => "");
-        if (prompt) {
-          resources.push({ type: "skill", name: entry.name, source: claudeSkillsDir, platform: "claude", prompt: prompt.slice(0, 300) });
-        }
-      }
-    } catch { /* skip */ }
-
-    // Project-level claude skills
-    const projSkillsDir = path.join(workspaceRoot, ".claude", "skills");
-    try {
-      const skillEntries = await readdir(projSkillsDir, { withFileTypes: true });
-      for (const entry of skillEntries) {
-        if (!entry.isDirectory()) continue;
-        const skillFile = path.join(projSkillsDir, entry.name, "SKILL.md");
-        const prompt = await readFile(skillFile, "utf8").catch(() => "");
-        if (prompt) {
-          resources.push({ type: "skill", name: entry.name, source: projSkillsDir, platform: "claude", prompt: prompt.slice(0, 300) });
-        }
-      }
-    } catch { /* skip */ }
-
-    // Heddle project skills (workspace/skills/*.yaml) — platform-neutral, surface on both
+    // Heddle project skills (workspace/skills/*.yaml)
     const heddleSkillsDir = path.join(workspaceRoot, "skills");
     try {
       const entries = await readdir(heddleSkillsDir, { withFileTypes: true });
@@ -724,12 +1053,11 @@ export function buildServer() {
         if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
         const name = entry.name.replace(/\.yaml$/, "");
         const raw = await readFile(path.join(heddleSkillsDir, entry.name), "utf8").catch(() => "");
-        resources.push({ type: "skill", name, source: heddleSkillsDir, platform: "claude", prompt: raw.slice(0, 300) });
         resources.push({ type: "skill", name, source: heddleSkillsDir, platform: "codex", prompt: raw.slice(0, 300) });
       }
     } catch { /* skip */ }
 
-    // Heddle project hooks (workspace/hooks/*.yaml) — platform-neutral
+    // Heddle project hooks (workspace/hooks/*.yaml)
     const heddleHooksDir = path.join(workspaceRoot, "hooks");
     try {
       const entries = await readdir(heddleHooksDir, { withFileTypes: true });
@@ -741,7 +1069,6 @@ export function buildServer() {
         const commandMatch = raw.match(/^command:\s*(.+)$/m);
         const event = eventMatch?.[1];
         const command = commandMatch?.[1]?.trim().replace(/^['"]|['"]$/g, "");
-        resources.push({ type: "hook", name, source: heddleHooksDir, platform: "claude", event, command });
         resources.push({ type: "hook", name, source: heddleHooksDir, platform: "codex", event, command });
       }
     } catch { /* skip */ }
@@ -758,7 +1085,8 @@ export function buildServer() {
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".yaml")) continue;
       const raw = await readFile(path.join(rolesDir, entry.name), "utf8");
-      const parsed = roleDefinitionSchema.safeParse(YAML.parse(raw));
+      const migrated = migrateLegacyRoleDefinitionInput(YAML.parse(raw));
+      const parsed = roleDefinitionSchema.safeParse(migrated.value);
       if (parsed.success) roles.push(parsed.data);
     }
     return { roles };
@@ -769,26 +1097,30 @@ export function buildServer() {
     const filePath = path.join(rolesDir, `${name}.yaml`);
     try {
       const raw = await readFile(filePath, "utf8");
-      const parsed = roleDefinitionSchema.safeParse(YAML.parse(raw));
+      const migrated = migrateLegacyRoleDefinitionInput(YAML.parse(raw));
+      const parsed = roleDefinitionSchema.safeParse(migrated.value);
       if (!parsed.success) {
         return reply.code(400).send({ error: flattenValidationError(parsed.error) });
       }
-      return { role: parsed.data };
+      logMigrationNotes(request.log, name, migrated.notes);
+      return withMigrationNotes({ role: parsed.data }, migrated.notes);
     } catch {
       return reply.code(404).send({ error: { message: "role not found" } });
     }
   });
 
   app.put("/roles/save", async (request, reply) => {
-    const parsed = roleDefinitionSchema.safeParse(request.body);
+    const migrated = migrateLegacyRoleDefinitionInput(request.body);
+    const parsed = roleDefinitionSchema.safeParse(migrated.value);
     if (!parsed.success) {
       return reply.code(400).send({ error: flattenValidationError(parsed.error) });
     }
+    logMigrationNotes(request.log, parsed.data.name, migrated.notes);
     await mkdir(rolesDir, { recursive: true });
     const fileName = parsed.data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const filePath = path.join(rolesDir, `${fileName}.yaml`);
     await writeFile(filePath, YAML.stringify(parsed.data), "utf8");
-    return reply.code(200).send({ role: parsed.data });
+    return reply.code(200).send(withMigrationNotes({ role: parsed.data }, migrated.notes));
   });
 
   app.delete("/roles/:name", async (request, reply) => {

@@ -22,7 +22,7 @@ function layoutAgent(
   y: number,
 ): TreeLayoutResult {
   const nodeId = path.join("/");
-  const typeLabel = agent.type === "claude-code" ? "CC" : "CX";
+  const typeLabel = "CX";
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
@@ -34,7 +34,7 @@ function layoutAgent(
       type: "default",
       position: { x, y },
       data: { label: `${agent.name}\n[${typeLabel}]`, agentPath: path },
-      className: `heddle-agent heddle-agent--${agent.type}`,
+      className: "heddle-agent heddle-agent--codex",
       style: { whiteSpace: "pre-line", lineHeight: 1.25 },
     });
     return { nodes, edges, width: 1 };
@@ -85,7 +85,7 @@ function layoutAgent(
     type: "default",
     position: { x, y },
     data: { label: `${agent.name}\n[${typeLabel}]`, agentPath: path },
-    className: `heddle-agent heddle-agent--${agent.type}`,
+    className: "heddle-agent heddle-agent--codex",
     style: { whiteSpace: "pre-line", lineHeight: 1.25 },
   });
 

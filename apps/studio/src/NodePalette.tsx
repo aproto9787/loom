@@ -26,19 +26,6 @@ export function NodePalette({ onAdd, disabled, selectedAgentName }: AgentPalette
           <button
             type="button"
             className="w-full text-left px-3 py-2 rounded-lg border border-dashed border-slate-300 bg-white text-slate-800 font-mono text-sm cursor-grab hover:border-blue-400 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed active:cursor-grabbing transition-colors"
-            onClick={() => onAdd("claude-code")}
-            disabled={disabled || !selectedAgentName}
-          >
-            Claude Code
-            <span className="block text-xs text-slate-500 font-sans mt-0.5">
-              Claude Code CLI session agent
-            </span>
-          </button>
-        </li>
-        <li>
-          <button
-            type="button"
-            className="w-full text-left px-3 py-2 rounded-lg border border-dashed border-slate-300 bg-white text-slate-800 font-mono text-sm cursor-grab hover:border-purple-400 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed active:cursor-grabbing transition-colors"
             onClick={() => onAdd("codex")}
             disabled={disabled || !selectedAgentName}
           >
