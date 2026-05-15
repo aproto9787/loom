@@ -20,6 +20,7 @@ import {
   findAgentByName,
 } from "@aproto9787/heddle-runtime";
 import { buildDelegationPrompt } from "./delegation-prompt.js";
+import { initialReport, isCompleteReport as isValidReport, recoverReport } from "./subagent-report.js";
 
 type Backend = "codex";
 type HeddleEventType = "tool_use" | "tool_result" | "user" | "assistant" | "error";
@@ -173,19 +174,8 @@ function truncate(value: string, max = 160): string {
   return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
 }
 
-function initialReport(name: string): string {
-  return `status: blocked\nsummary:\n  - ${name} did not start\n`;
-}
-
 function isCompleteReport(report: string, args: CliArgs): boolean {
-  const trimmed = report.trim();
-  if (!trimmed || trimmed === initialReport(args.name).trim()) {
-    return false;
-  }
-
-  return /^status:\s*(done|blocked|needs_decision)\s*$/m.test(report)
-    && /^summary:\s*$/m.test(report)
-    && /^\s*-\s+\S/m.test(report);
+  return isValidReport(report, args.name);
 }
 
 async function postEvent(
@@ -518,7 +508,7 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
     "--model", model,
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
-    prompt,
+    "-",
   ];
   const parseLine = (line: string): MappedEvent[] => {
     try {
@@ -535,11 +525,13 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
 
   const exitCode = await new Promise<number>((resolve) => {
     const child = spawn(command, childArgs, {
-      stdio: ["ignore", "pipe", "inherit"],
+      stdio: ["pipe", "pipe", "pipe"],
       env: childEnv,
     });
 
     let buffer = "";
+    let stdout = "";
+    let stderr = "";
     let reportSnapshot = "";
     let reportSeenAt = 0;
     let reportDrivenExit = false;
@@ -597,8 +589,17 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
       }, REPORT_SHUTDOWN_GRACE_MS);
     };
 
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(prompt);
     child.stdout?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk: string) => flushLines(chunk));
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+      flushLines(chunk);
+    });
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
 
     const killer = setTimeout(() => {
       child.kill("SIGTERM");
@@ -609,15 +610,35 @@ async function runBackend(args: CliArgs, reportPath: string): Promise<number> {
     void checkReport();
 
     child.once("exit", (code) => {
-      childExited = true;
-      cleanupTimers();
-      if (buffer.trim()) {
-        for (const mapped of parseLine(buffer.trim())) {
-          postEvent(args, mapped.type, mapped.summary, { toolName: mapped.toolName }).catch(() => undefined);
+      void (async () => {
+        childExited = true;
+        cleanupTimers();
+        if (buffer.trim()) {
+          for (const mapped of parseLine(buffer.trim())) {
+            postEvent(args, mapped.type, mapped.summary, { toolName: mapped.toolName }).catch(() => undefined);
+          }
+          buffer = "";
         }
-        buffer = "";
-      }
-      resolve(reportDrivenExit || isCompleteReport(reportSnapshot, args) ? 0 : (code ?? 1));
+
+        let finalReport = reportSnapshot;
+        try {
+          finalReport = await readFile(reportPath, "utf8");
+        } catch {
+          finalReport = "";
+        }
+        if (!isCompleteReport(finalReport, args)) {
+          finalReport = recoverReport({
+            name: args.name,
+            exitCode: code ?? 1,
+            stdout,
+            stderr,
+          });
+          await writeFile(reportPath, finalReport, "utf8");
+        }
+        resolve(isCompleteReport(finalReport, args) ? 0 : (code ?? 1));
+      })().catch(() => {
+        resolve(reportDrivenExit || isCompleteReport(reportSnapshot, args) ? 0 : (code ?? 1));
+      });
     });
     child.once("error", () => {
       cleanupTimers();
