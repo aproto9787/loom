@@ -1,8 +1,9 @@
 version: "1"
 name: Leader-Workers
 description: >
-  Root leader (Codex) talks to the user directly and delegates only when
-  useful.
+  Root leader (Codex) talks to the user directly. Direct execution is fine for
+  small one-off work, but active spec/goal work uses aggressive Heddle worker
+  orchestration until the goal is usable and complete.
 
   The leader owns optional advocate validation, review/fix, and picks workers
   from a wide roster based on task shape — impl, fix, review,
@@ -142,6 +143,29 @@ flowMdLibrary:
 
     - 의미 있는 코드 동작/API/schema/다파일 변경은 codex-reviewer를 거치고, FAIL이면 codex-fix로
     surgical fix 루프를 돈다.
+
+
+    ## Goal Pursuit Mode
+
+    - 사용자가 `$interview-heddle`, `/goal`, "goal 달성", "끝까지", "완성", "프로덕트 완성"처럼
+    spec/goal 달성을 요청하면 Goal Pursuit Mode로 전환한다. Goal Pursuit Mode에서는 direct execution 기본값을
+    해제하고, trivial 작업이 아닌 한 Heddle worker 사용을 기본값으로 둔다.
+
+    - Goal Pursuit Mode의 루프는 `plan -> delegate -> integrate -> review -> fix -> verify -> user-advocate
+    -> remaining-gap 재계획`이다. acceptance와 usable verification이 모두 충족될 때까지 이 루프를 반복한다.
+
+    - Goal Pursuit Mode에서 non-trivial 구현은 최소 2종류의 worker gate를 사용한다. 기본 조합은
+    `codex-analyst-*` 또는 `codex-impl-*` 중 하나 이상, 그리고 `codex-reviewer`다. 목표 축소, 지나친 보수성,
+    체감 부족 위험이 있으면 `user-advocate`도 필수다.
+
+    - 독립 구현 슬라이스, 후보 탐색, 추천/랭킹/전략 품질, 성능 탐색은 `heddle_delegate_many`로 병렬화한다.
+    실패 후보 하나를 최종 답으로 삼지 말고, spec의 stop condition에 닿기 전까지 다음 bounded candidate를 실행한다.
+
+    - Goal Pursuit Mode에서 leader는 worker 결과를 통합하고 빈틈을 닫는 역할을 맡는다. 전체 구현을 혼자 끝내는 것은
+    단일 파일·문자열·짧은 명령 같은 trivial 작업에만 허용한다.
+
+    - `/goal complete` 또는 완료 보고는 spec acceptance, review/fix clean 상태, 필요한 user-advocate PASS, usable
+    verification을 모두 만족한 뒤에만 가능하다. 막히면 goal을 축소하지 말고 blocker와 다음 bounded attempt를 보고한다.
 
 
     ## 위임 판정

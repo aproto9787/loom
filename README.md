@@ -107,6 +107,7 @@ MCP connects them with a traceable delegation boundary.
 - Studio UI for flows, roles, hooks, skills, resources, run detail views, and risk-tier governance state.
 - Default `leader-workers` flow with implementers, analysts, reviewer, fixer, debaters, synthesizer, and user-advocate.
 - Tier C+ side-effect gates block until approval and rollback evidence are recorded.
+- Goal Pursuit Mode for active spec/goal work: non-trivial goals bias toward worker orchestration, review/fix, usable verification, and user-advocate checks against goal shrinking.
 - Phase-gated workflow policy: phase work can require `user-advocate` PASS before moving forward.
 - Debate routing policy: casual `debate`, `vs`, comparison, recommendation, or decision prompts can route through debater agents.
 

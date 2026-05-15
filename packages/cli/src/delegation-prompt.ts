@@ -18,6 +18,9 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, _selfName: string)
   lines.push("`heddle_delegate_many` starts parallel tasks and may return `status: running` with taskIds; poll `heddle_get_status` / `heddle_read_report` until each child REPORT is available.");
   lines.push("If Heddle MCP tools are unavailable or a Heddle MCP call fails, stop and report `status: blocked` with the exact tool/discovery error. Do not spawn child agents with Bash.");
   lines.push("If the user explicitly asks to delegate, assign work, use workers/agents/team members, or parallelize, treat delegation as required for the relevant non-trivial work. Do not complete the whole task yourself unless no suitable subagent exists.");
+  lines.push("If the task is active spec/goal work (`$interview-heddle`, `/goal`, goal completion, product-complete implementation, or similar), use Goal Pursuit Mode: direct execution is allowed only for trivial work, and non-trivial progress should use Heddle workers until the goal is usable and complete.");
+  lines.push("In Goal Pursuit Mode, run a loop of plan -> delegate -> integrate -> review -> fix -> verify -> user-advocate when goal shrinking or excessive conservatism is a risk -> remaining-gap replanning. Do not mark the goal complete while acceptance criteria, review/fix, or usable verification remain open.");
+  lines.push("For independent slices, candidate search, recommendation/ranking quality, or performance exploration, prefer `heddle_delegate_many` and run bounded competing candidates instead of stopping after one failed attempt.");
   lines.push("");
   lines.push("Available subagents:");
   for (const child of children) {
@@ -34,6 +37,7 @@ export function buildDelegationPrompt(selfAgent: AgentConfig, _selfName: string)
   lines.push("5. Without an explicit delegation request, direct execution is fine for low-complexity work; delegate through MCP for independent slices, specialist work, broad parallel investigation, or review/fix gates.");
   lines.push("6. You may call multiple subagents in parallel only when their tasks are independent.");
   lines.push("7. Do not treat `status: running` as completion. For any `wait: false` delegation, poll until each REPORT is available; decide next step based on `status:`, `summary:`, `artifacts:`, and `blockers:` lines.");
+  lines.push("8. Goal Pursuit Mode overrides the low-complexity direct-execution default for non-trivial active-goal work.");
   lines.push("");
   return lines.join("\n");
 }
