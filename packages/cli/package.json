@@ -50,6 +50,7 @@
     "build": "tsc -b",
     "prepack": "node scripts/pack-examples.mjs copy",
     "postpack": "node scripts/pack-examples.mjs clean",
+    "test": "node --test dist/**/*.test.js",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
