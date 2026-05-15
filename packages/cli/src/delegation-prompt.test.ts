@@ -18,6 +18,9 @@ test("buildDelegationPrompt contains only Heddle delegation guidance", () => {
 
   assert.match(prompt, /Subagent Delegation Protocol/);
   assert.match(prompt, /heddle_delegate/);
+  assert.match(prompt, /Goal Pursuit Mode/);
+  assert.match(prompt, /heddle_delegate_many/);
+  assert.match(prompt, /active spec\/goal work/);
   assert.match(prompt, /\*\*reviewer\*\*/);
   assert.doesNotMatch(prompt, /Oracle/);
   assert.doesNotMatch(prompt, /heddle_oracle/);

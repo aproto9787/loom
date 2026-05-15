@@ -232,6 +232,28 @@ heddleTest("leader-workers gates phased work with user-advocate before next phas
   assert.match(rootLeaderRules, /수정-검증 루프를 반복한다/);
 });
 
+heddleTest("leader-workers uses goal pursuit mode for active spec and goal work", async (t) => {
+  const app = createTestApp(t);
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/flows/get",
+    query: { path: DEFAULT_FLOW_PATH },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  const flow = body.flow as FlowDefinition;
+  const rootLeaderRules = flow.flowMdLibrary?.["root-leader-rules"] ?? "";
+
+  assert.match(rootLeaderRules, /Goal Pursuit Mode/);
+  assert.match(rootLeaderRules, /direct execution 기본값을\s+해제/);
+  assert.match(rootLeaderRules, /plan -> delegate -> integrate -> review -> fix -> verify -> user-advocate/);
+  assert.match(rootLeaderRules, /최소 2종류의 worker gate/);
+  assert.match(rootLeaderRules, /heddle_delegate_many/);
+  assert.match(rootLeaderRules, /\/goal complete/);
+});
+
 heddleTest("POST /runs accepts the current flow and persists the mocked local CLI run", async (t) => {
   const app = createTestApp(t);
   const userPrompt = "Inspect the local-only runtime path";

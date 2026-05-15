@@ -69,6 +69,7 @@ Do not document these as implemented unless the code changes first:
 - Best-effort async cancellation for MCP-delegated subagent processes started with `wait: false`.
 - Root leader MCP config injection for Codex host sessions. Host leaders are instructed to use Heddle MCP delegation only; `heddle-subagent` is the internal worker runtime behind the MCP server.
 - `heddle-subagent` as the generalized child-agent launcher.
+- Goal Pursuit Mode in the default `leader-workers` flow for active `$interview-heddle`/`/goal` style work, including mandatory worker use for non-trivial goals, review/fix loops, usable verification, and user-advocate checks when goal shrinking or excessive conservatism is a risk.
 - Codex CLI adapter.
 - Role/hook/skill YAML CRUD.
 - MCP/resource discovery and selected MCP config generation.
